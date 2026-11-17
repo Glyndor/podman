@@ -30,7 +30,9 @@ done
 # --rootfs runs a directory as the container, so the test needs no registry.
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
-cp -a /bin /lib /lib64 /usr "$root/"
+cp -a /bin /lib /usr "$root/"
+# amd64 keeps its dynamic loader under /lib64; arm64 has no such directory.
+[ ! -e /lib64 ] || cp -a /lib64 "$root/"
 out="$(podman --storage-driver vfs run --rm --network none --rootfs "$root" /usr/bin/echo smoke-ok)"
 [ "$out" = smoke-ok ] || { echo "container did not run: $out" >&2; exit 1; }
 # A user-defined network goes through netavark, whose version Debian 13 pins
