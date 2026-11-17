@@ -25,6 +25,9 @@ export GOTOOLCHAIN=auto
 make -C "$src" PREFIX=/usr >&2
 make -C "$src" install PREFIX=/usr DESTDIR="$stage" >&2
 
+# Release artifacts ship stripped (releases standard): drop debug symbols from every ELF.
+find "$stage" -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && strip --strip-unneeded "$1"' _ {} \; 2>/dev/null || true
+
 # Shared libraries the binaries really link against, as Debian package names.
 libs="$(find "$stage" -type f -perm -u+x -print0 \
 	| xargs -0 -r ldd 2>/dev/null \

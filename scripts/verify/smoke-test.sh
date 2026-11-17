@@ -23,10 +23,12 @@ podman --storage-driver vfs info >/dev/null
 # --rootfs runs a directory as the container, so the test needs no registry.
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
-mkdir -p "$root"/{bin,lib,lib64,usr}
-cp -a /bin/. "$root/bin/" 2>/dev/null || true
-cp -a /lib/. "$root/lib/" 2>/dev/null || true
-cp -a /usr/. "$root/usr/" 2>/dev/null || true
-out="$(podman --storage-driver vfs run --rm --network none --rootfs "$root" /bin/echo smoke-ok)"
+cp -a /bin /lib /lib64 /usr "$root/"
+out="$(podman --storage-driver vfs run --rm --network none --rootfs "$root" /usr/bin/echo smoke-ok)"
 [ "$out" = smoke-ok ] || { echo "container did not run: $out" >&2; exit 1; }
+# A user-defined network goes through netavark, whose version Debian 13 pins
+# older than the one Podman 6 expects, so this is the check that catches it.
+podman --storage-driver vfs network create smoke >/dev/null
+out="$(podman --storage-driver vfs run --rm --network smoke --rootfs "$root" /usr/bin/echo net-ok)"
+[ "$out" = net-ok ] || { echo "container did not run on a bridge network: $out" >&2; exit 1; }
 echo "smoke test passed: podman $version"
