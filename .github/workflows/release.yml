@@ -72,7 +72,7 @@ jobs:
     # a few minutes. Tighten after the first scheduled runs.
     timeout-minutes: 60
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - { arch: amd64, runner: ubuntu-latest }
