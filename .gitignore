@@ -45,3 +45,7 @@ build/
 # Playwright
 **/playwright-report/
 **/test-results/
+
+# Source folders named build are code here, not output.
+!scripts/build/
+!tests/build/
