@@ -1,9 +1,10 @@
 name: release
 
-# Packages the newest stable upstream Podman as a signed .deb, with no human
-# step. Every few hours it asks upstream for its newest stable tag; if this
-# repository has no release for it yet, it verifies the tag, builds on Debian
-# 13, smoke-tests the package, signs it and publishes it. The apt repository
+# Packages the newest stable upstream Podman, with the netavark and aardvark-dns
+# it needs, as a signed .deb, with no human step. Every few hours it asks
+# upstream for the newest stable tag of each of the three; if they differ from
+# the latest release it verifies the tags, builds on Debian 13, smoke-tests the
+# package, signs it and publishes it. The apt repository
 # picks the release up on its next daily run. Any failed step stops the run
 # before anything is published, so the previous release stays the latest.
 
@@ -11,11 +12,6 @@ on:
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Upstream tag to package (default: newest stable)"
-        required: false
-        type: string
 
 permissions: {}
 
@@ -33,6 +29,9 @@ jobs:
     outputs:
       tag: ${{ steps.p.outputs.tag }}
       build: ${{ steps.p.outputs.build }}
+      podman: ${{ steps.p.outputs.podman }}
+      netavark: ${{ steps.p.outputs.netavark }}
+      aardvark: ${{ steps.p.outputs.aardvark }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,14 +41,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          tag="${INPUT_TAG:-$(scripts/upstream/latest-stable.sh)}"
-          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad tag: $tag"; exit 1; }
-          if gh release view "$tag" >/dev/null 2>&1; then build=false; else build=true; fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "build=$build" >> "$GITHUB_OUTPUT"
-          echo "upstream $tag, build needed: $build"
+          w="$RUNNER_TEMP/plan"; mkdir -p "$w"
+          for c in podman netavark aardvark-dns; do
+            echo "$c $(scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")" >> "$w/fresh"
+          done
+          gh release list --limit 200 --json tagName --jq '.[].tagName' > "$w/tags"
+          : > "$w/released"
+          latest="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          if [ -n "$latest" ]; then
+            gh release download "$latest" --pattern components.txt --output "$w/released" || : > "$w/released"
+          fi
+          scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
+          for c in podman netavark aardvark-dns; do
+            echo "${c%-dns}=$(awk -v c="$c" '$1 == c {print $2}' "$w/fresh")" >> "$GITHUB_OUTPUT"
+          done
+          cat "$w/fresh"
 
   # This job installs a compiler and fetches the Go toolchain: third-party code
   # runs here, so it holds contents: read and no secrets. What it hands forward
@@ -72,30 +79,39 @@ jobs:
           - { arch: arm64, runner: ubuntu-24.04-arm }
     env:
       TAG: ${{ needs.plan.outputs.tag }}
+      PODMAN: ${{ needs.plan.outputs.podman }}
+      NETAVARK: ${{ needs.plan.outputs.netavark }}
+      AARDVARK: ${{ needs.plan.outputs.aardvark }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Fetch the upstream tag and verify its signature
+      - name: Fetch the upstream tags and verify their signatures
         run: |
-          git clone --quiet --branch "$TAG" https://github.com/containers/podman.git "$RUNNER_TEMP/src"
-          commit="$(scripts/upstream/verify-tag.sh "$RUNNER_TEMP/src" "$TAG")"
-          [ "$(git -C "$RUNNER_TEMP/src" rev-parse HEAD)" = "$commit" ]
-          echo "verified $TAG at $commit"
+          fetch() { # <directory> <repository> <tag>
+            git clone --quiet --branch "$3" "https://github.com/containers/$2.git" "$RUNNER_TEMP/$1"
+            commit="$(scripts/upstream/verify-tag.sh "$RUNNER_TEMP/$1" "$3")"
+            [ "$(git -C "$RUNNER_TEMP/$1" rev-parse HEAD)" = "$commit" ]
+            echo "verified $2 $3 at $commit"
+          }
+          fetch podman podman "$PODMAN"
+          fetch netavark netavark "$NETAVARK"
+          fetch aardvark aardvark-dns "$AARDVARK"
       - name: Build the package
         run: |
           docker build --quiet --target build -t podman-deb-build scripts/build
           docker run --rm \
-            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
-            -v "$RUNNER_TEMP/src:/src" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            -v "$RUNNER_TEMP/podman:/src/podman" -v "$RUNNER_TEMP/netavark:/src/netavark" \
+            -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
             -v "$RUNNER_TEMP/out:/out" podman-deb-build \
-            bash /scripts/build/build-deb.sh /src "${TAG#v}" /out
+            bash /scripts/build/build-deb.sh /src/podman /src/netavark /src/aardvark "${TAG#v}" /out
       - name: Smoke-test the package on a clean Debian 13
         run: |
           docker build --quiet --target base -t podman-deb-base scripts/build
           docker run --rm --privileged \
             -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" podman-deb-base \
-            bash /scripts/verify/smoke-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb" "${TAG#v}"
+            bash /scripts/verify/smoke-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb" "${PODMAN#v}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deb-${{ matrix.arch }}
@@ -114,6 +130,9 @@ jobs:
     timeout-minutes: 15
     env:
       TAG: ${{ needs.plan.outputs.tag }}
+      PODMAN: ${{ needs.plan.outputs.podman }}
+      NETAVARK: ${{ needs.plan.outputs.netavark }}
+      AARDVARK: ${{ needs.plan.outputs.aardvark }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -150,6 +169,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          printf 'podman %s\nnetavark %s\naardvark-dns %s\n' "$PODMAN" "$NETAVARK" "$AARDVARK" > components.txt
           gh release create "$TAG" --target "$GITHUB_SHA" --title "Podman ${TAG#v}" \
-            --notes "Podman ${TAG#v}, built from the upstream tag $TAG on Debian 13. The tag signature was verified against the keys in containers/release-keys, and each package was installed and run before signing." \
-            podman_*.deb podman_*.deb.sig
+            --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \
+            podman_*.deb podman_*.deb.sig components.txt

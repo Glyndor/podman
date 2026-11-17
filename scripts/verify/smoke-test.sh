@@ -20,6 +20,12 @@ got="$(podman --version)"
 
 podman --storage-driver vfs info >/dev/null
 
+# The network stack must be the one shipped in the package, not Debian's.
+for helper in netavark aardvark-dns; do
+	[ -x "/usr/libexec/podman/$helper" ] || { echo "missing $helper in the package" >&2; exit 1; }
+	"/usr/libexec/podman/$helper" --version
+done
+
 # --rootfs runs a directory as the container, so the test needs no registry.
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
