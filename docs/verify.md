@@ -5,7 +5,7 @@ Each release publishes `podman_<version>_<arch>.deb` and `podman_<version>_<arch
 Releases also carry a build provenance attestation:
 
 ```bash
-gh attestation verify podman_<version>_<arch>.deb --repo Glyndor/podman-deb
+gh attestation verify podman_<version>_<arch>.deb --repo Glyndor/podman
 ```
 
 `apt` verifies the archive signature automatically, so this is only needed when downloading a package by hand.

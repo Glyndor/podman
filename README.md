@@ -1,8 +1,8 @@
-# podman-deb
+# podman
 
 Signed Podman packages for Debian 13 and Ubuntu 24.04 and 26.04, built from the latest stable upstream releases.
 
-[![release](https://github.com/Glyndor/podman-deb/actions/workflows/release.yml/badge.svg)](https://github.com/Glyndor/podman-deb/actions/workflows/release.yml)
+[![release](https://github.com/Glyndor/podman/actions/workflows/release.yml/badge.svg)](https://github.com/Glyndor/podman/actions/workflows/release.yml)
 
 Debian 13 ships Podman 5.4 with netavark 1.14, which is too old for current Podman. This repository packages the newest stable Podman together with the netavark and aardvark-dns it needs as one `.deb` for `amd64` and `arm64`, so a Debian 13 or Ubuntu 24.04 or 26.04 host can run the current release and receive its fixes through `apt`.
 
