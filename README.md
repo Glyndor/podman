@@ -1,38 +1,45 @@
-# Project name
+# podman-deb
 
-> One-line description of what this project does and why it exists.
+Signed Podman packages for Debian 13, built from the latest stable upstream release.
 
-<!-- Badges: GitHub-native only (workflow status, release). No shields.io. -->
-[![CI](https://github.com/Glyndor/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/Glyndor/REPO/actions/workflows/ci.yml)
+[![release](https://github.com/Glyndor/podman-deb/actions/workflows/release.yml/badge.svg)](https://github.com/Glyndor/podman-deb/actions/workflows/release.yml)
 
-## Overview
+Debian 13 ships Podman 5.4. This repository packages the newest stable Podman as a `.deb` for `amd64` and `arm64`, so a Debian 13 host can run the current release and receive its fixes through `apt`.
 
-<!-- Screenshot or architecture diagram here (Mermaid preferred for architecture/flows). -->
+## Install
 
-## Features
-
-- Feature one
-- Feature two
-- Feature three
-
-## Quick start
+The package is served from the Glyndor apt repository. See [apt.glyndor.net](https://apt.glyndor.net) for setup, then:
 
 ```bash
-# Install
-curl -fsSL https://github.com/Glyndor/REPO/releases/latest/download/install.sh | sh
-
-# Usage
-<binary> --help
+sudo apt install podman
 ```
 
-## Documentation
+Because the Glyndor version is newer than Debian's, `apt` prefers it once the repository is configured.
 
-Full documentation lives in [`docs/`](docs/).
+## How a release is made
 
-## Contributing
+```mermaid
+flowchart LR
+  A[Upstream stable tag] --> B[Verify tag signature]
+  B --> C[Build on Debian 13]
+  C --> D[Install and run on clean Debian 13]
+  D --> E[Sign the package]
+  E --> F[GitHub release]
+  F --> G[apt.glyndor.net]
+```
 
-See the [organization contributing guide](https://github.com/Glyndor/.github/blob/main/CONTRIBUTING.md). Pull requests are invitation-only; issues are open to everyone.
+- A scheduled workflow looks for the newest stable `containers/podman` tag every six hours. Pre-releases are ignored.
+- The tag must be an annotated tag signed by a key listed in [containers/release-keys](https://github.com/containers/release-keys); the keys are kept in `keyring/podman/`. An unsigned, expired or unknown signature stops the run.
+- The package is built from the official sources with the upstream `make` targets.
+- Before signing, the package is installed on a clean Debian 13 and runs a container.
+- If any step fails nothing is published, and the previous release remains the latest.
+
+Each release carries one `.deb` and one detached `.sig` per architecture. Verification instructions are in [docs/verify.md](docs/verify.md).
+
+## Scope
+
+This repository only packages Podman. Dependencies such as `conmon`, `crun` and `netavark` come from Debian. Report Podman bugs to [containers/podman](https://github.com/containers/podman).
 
 ## License
 
-[LICENSE](LICENSE)
+[MIT](LICENSE) for the packaging scripts. Podman is licensed under Apache-2.0 by its authors.
