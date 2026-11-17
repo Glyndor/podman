@@ -9,3 +9,11 @@ updates:
       - "type:deps"
       - "type:ci"
     open-pull-requests-limit: 10
+  - package-ecosystem: "docker"
+    directory: "/scripts/build"
+    schedule:
+      interval: "daily"
+    labels:
+      - "type:deps"
+      - "type:ci"
+    open-pull-requests-limit: 5

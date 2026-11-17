@@ -1,38 +1,47 @@
-# Project name
+# podman-deb
 
-> One-line description of what this project does and why it exists.
+Signed Podman packages for Debian 13 and Ubuntu 24.04 and 26.04, built from the latest stable upstream releases.
 
-<!-- Badges: GitHub-native only (workflow status, release). No shields.io. -->
-[![CI](https://github.com/Glyndor/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/Glyndor/REPO/actions/workflows/ci.yml)
+[![release](https://github.com/Glyndor/podman-deb/actions/workflows/release.yml/badge.svg)](https://github.com/Glyndor/podman-deb/actions/workflows/release.yml)
 
-## Overview
+Debian 13 ships Podman 5.4 with netavark 1.14, which is too old for current Podman. This repository packages the newest stable Podman together with the netavark and aardvark-dns it needs as one `.deb` for `amd64` and `arm64`, so a Debian 13 or Ubuntu 24.04 or 26.04 host can run the current release and receive its fixes through `apt`.
 
-<!-- Screenshot or architecture diagram here (Mermaid preferred for architecture/flows). -->
+## Install
 
-## Features
-
-- Feature one
-- Feature two
-- Feature three
-
-## Quick start
+The package is served from the Glyndor apt repository. See [apt.glyndor.net](https://apt.glyndor.net) for setup, then:
 
 ```bash
-# Install
-curl -fsSL https://github.com/Glyndor/REPO/releases/latest/download/install.sh | sh
-
-# Usage
-<binary> --help
+sudo apt install podman
 ```
 
-## Documentation
+Because the Glyndor version is newer than Debian's, `apt` prefers it once the repository is configured.
 
-Full documentation lives in [`docs/`](docs/).
+## How a release is made
 
-## Contributing
+```mermaid
+flowchart LR
+  A[Upstream stable tags] --> B[Verify tag signatures]
+  B --> C[Build on Debian 13]
+  C --> D[Install and run on clean Debian 13, Ubuntu 24.04 and 26.04]
+  D --> E[Sign the package]
+  E --> F[GitHub release]
+  F --> G[apt.glyndor.net]
+```
 
-See the [organization contributing guide](https://github.com/Glyndor/.github/blob/main/CONTRIBUTING.md). Pull requests are invitation-only; issues are open to everyone.
+- A scheduled workflow looks for the newest stable tag of `containers/podman`, `containers/netavark` and `containers/aardvark-dns` every six hours. Pre-releases are ignored. A new tag of any of the three starts a release.
+- Each tag must be an annotated tag signed by a key listed in [containers/release-keys](https://github.com/containers/release-keys); the keys are kept in `keyring/podman/`. An unsigned, expired or unknown signature stops the run.
+- The package is built from the official sources with the upstream `make` targets. Rust comes from Debian's own `trixie-backports`.
+- Before signing, the same package is installed on clean Debian 13, Ubuntu 24.04 and Ubuntu 26.04, and runs a container on each, including one on a bridge network.
+- It links only libc, libgcc and libseccomp, so one package serves every release. Signature checks use Go's OpenPGP instead of gpgme, and subid and sqlite are not linked, because those libraries are renamed between releases. Debian 12 is not supported: its glibc is older than netavark needs.
+- On Ubuntu 24.04 the package uses `runc`, because that release's `crun` is too old for current Podman.
+- If any step fails nothing is published, and the previous release remains the latest.
+
+Each release carries one `.deb` and one detached `.sig` per architecture. Verification instructions are in [docs/verify.md](docs/verify.md).
+
+## Scope
+
+The package replaces Debian's `netavark` and `aardvark-dns`. Other dependencies such as `conmon`, `crun` and `passt` come from Debian. Release versions follow Podman's (`6.2.0`), with a `+rN` suffix when netavark or aardvark-dns change under the same Podman. Report Podman bugs to [containers/podman](https://github.com/containers/podman).
 
 ## License
 
-[LICENSE](LICENSE)
+[MIT](LICENSE) for the packaging scripts. Podman is licensed under Apache-2.0 by its authors.

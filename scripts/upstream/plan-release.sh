@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+# Decide whether a new release is needed and what to call it.
+#
+# Inputs (files, one "<component> <tag>" per line):
+#   fresh     the newest stable tag upstream publishes for each component
+#   released  the components of the newest release of this repository (may be empty)
+#   tags      release tags this repository already has, one per line (may be empty)
+#
+# Prints "build=false", or "build=true" and "tag=<tag>". The tag is v<podman
+# version> the first time a Podman version is packaged, and v<version>+r<N> when
+# a component changes under a Podman version that already has a release. The
+# "+" keeps it part of the upstream version for the apt binding, and dpkg sorts
+# 6.2.0+r2 after 6.2.0 and before 6.2.1.
+#
+# Usage: plan-release.sh <fresh> <released> <tags>
+
+set -euo pipefail
+
+fresh="${1:?fresh}"; released="${2:?released}"; tags="${3:?tags}"
+
+sort "$fresh" | cmp -s - <(sort "$released") && { echo "build=false"; exit 0; }
+
+podman="$(awk '$1 == "podman" {print $2}' "$fresh")"
+[[ "$podman" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no podman tag in $fresh" >&2; exit 1; }
+
+n="$(grep -c -x -E "$(printf '%s' "$podman" | sed 's/\./\\./g')(\\+r[0-9]+)?" "$tags" || true)"
+if [ "$n" -eq 0 ]; then tag="$podman"; else tag="$podman+r$((n + 1))"; fi
+echo "build=true"
+echo "tag=$tag"

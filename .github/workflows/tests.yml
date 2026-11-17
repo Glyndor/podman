@@ -1,0 +1,34 @@
+name: tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions: {}
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Under two minutes locally; the suite builds a fake .deb and a few tags.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        run: shellcheck -S warning scripts/*/*.sh tests/*/*.sh
+      - name: every script has a test
+        run: scripts/quality/check-test-coverage.sh
+      - name: suites
+        run: |
+          status=0
+          for t in tests/*/*.test.sh; do
+            echo "== $t"
+            bash "$t" || status=1
+          done
+          exit "$status"
