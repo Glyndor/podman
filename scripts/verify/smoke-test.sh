@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Install a freshly built podman .deb on Debian 13 and prove it works before it
+# Install a freshly built podman .deb on a clean Debian or Ubuntu and prove it works before it
 # is signed or published: right version, engine starts, a container runs.
-# Run as root inside a debian:13 container started with --privileged.
+# Run as root inside a clean container started with --privileged. The same
+# package is tried on Debian 13 and Ubuntu 24.04 and 26.04.
 #
 # Usage: smoke-test.sh <deb> <version>
 

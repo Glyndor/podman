@@ -27,7 +27,11 @@ trap 'rm -rf "$stage"' EXIT
 # GOTOOLCHAIN=auto lets the go in Debian 13 fetch the exact toolchain go.mod
 # asks for; the module proxy checks it against the Go checksum database.
 export GOTOOLCHAIN=auto
-make -C "$podman_src" PREFIX=/usr >&2
+# containers_image_openpgp uses Go's own OpenPGP instead of gpgme, and the build
+# image has no subid or sqlite headers, so Podman links only libseccomp. That is
+# what lets one package install on Debian 13 and on Ubuntu 24.04 and 26.04,
+# whose gpgme and subid libraries have different names.
+make -C "$podman_src" PREFIX=/usr EXTRA_BUILDTAGS=containers_image_openpgp >&2
 make -C "$podman_src" install PREFIX=/usr DESTDIR="$stage" >&2
 
 # The Rust components install into /usr/libexec/podman, a directory Podman
@@ -47,6 +51,14 @@ libs="$(find "$stage" -type f -perm -u+x -print0 \
 	| xargs -r -n1 realpath | xargs -r dpkg -S 2>/dev/null \
 	| sed 's/:[a-z0-9]*:.*//; s/: .*//' | sort -u | paste -sd, | sed 's/,/, /g')"
 
+# These libraries are renamed between Debian and Ubuntu releases; a binary linked
+# to one would not start elsewhere, so a build that picks one up is refused.
+case ",$libs," in
+	*gpgme*|*assuan*|*subid*|*sqlite*)
+		echo "build links a library that differs between releases: $libs" >&2
+		exit 1 ;;
+esac
+
 mkdir -p "$stage/DEBIAN"
 cat > "$stage/DEBIAN/control" <<CONTROL
 Package: podman
@@ -56,7 +68,7 @@ Maintainer: Glyndor <noreply@glyndor.net>
 Section: admin
 Priority: optional
 Homepage: https://podman.io
-Depends: conmon, crun | runc, golang-github-containers-common, init-system-helpers, nftables${libs:+, $libs}
+Depends: conmon, crun (>= 1.21) | runc, golang-github-containers-common, init-system-helpers, nftables${libs:+, $libs}
 Recommends: ca-certificates, catatonit | tini | dumb-init, passt, uidmap, dbus-user-session
 Provides: netavark, aardvark-dns
 Conflicts: netavark, aardvark-dns

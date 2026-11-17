@@ -1,10 +1,10 @@
 # podman-deb
 
-Signed Podman packages for Debian 13, built from the latest stable upstream releases.
+Signed Podman packages for Debian 13 and Ubuntu 24.04 and 26.04, built from the latest stable upstream releases.
 
 [![release](https://github.com/Glyndor/podman-deb/actions/workflows/release.yml/badge.svg)](https://github.com/Glyndor/podman-deb/actions/workflows/release.yml)
 
-Debian 13 ships Podman 5.4 with netavark 1.14, which is too old for current Podman. This repository packages the newest stable Podman together with the netavark and aardvark-dns it needs as one `.deb` for `amd64` and `arm64`, so a Debian 13 host can run the current release and receive its fixes through `apt`.
+Debian 13 ships Podman 5.4 with netavark 1.14, which is too old for current Podman. This repository packages the newest stable Podman together with the netavark and aardvark-dns it needs as one `.deb` for `amd64` and `arm64`, so a Debian 13 or Ubuntu 24.04 or 26.04 host can run the current release and receive its fixes through `apt`.
 
 ## Install
 
@@ -22,7 +22,7 @@ Because the Glyndor version is newer than Debian's, `apt` prefers it once the re
 flowchart LR
   A[Upstream stable tags] --> B[Verify tag signatures]
   B --> C[Build on Debian 13]
-  C --> D[Install and run on clean Debian 13]
+  C --> D[Install and run on clean Debian 13, Ubuntu 24.04 and 26.04]
   D --> E[Sign the package]
   E --> F[GitHub release]
   F --> G[apt.glyndor.net]
@@ -31,7 +31,9 @@ flowchart LR
 - A scheduled workflow looks for the newest stable tag of `containers/podman`, `containers/netavark` and `containers/aardvark-dns` every six hours. Pre-releases are ignored. A new tag of any of the three starts a release.
 - Each tag must be an annotated tag signed by a key listed in [containers/release-keys](https://github.com/containers/release-keys); the keys are kept in `keyring/podman/`. An unsigned, expired or unknown signature stops the run.
 - The package is built from the official sources with the upstream `make` targets. Rust comes from Debian's own `trixie-backports`.
-- Before signing, the package is installed on a clean Debian 13 and runs a container.
+- Before signing, the same package is installed on clean Debian 13, Ubuntu 24.04 and Ubuntu 26.04, and runs a container on each, including one on a bridge network.
+- It links only libc, libgcc and libseccomp, so one package serves every release. Signature checks use Go's OpenPGP instead of gpgme, and subid and sqlite are not linked, because those libraries are renamed between releases. Debian 12 is not supported: its glibc is older than netavark needs.
+- On Ubuntu 24.04 the package uses `runc`, because that release's `crun` is too old for current Podman.
 - If any step fails nothing is published, and the previous release remains the latest.
 
 Each release carries one `.deb` and one detached `.sig` per architecture. Verification instructions are in [docs/verify.md](docs/verify.md).

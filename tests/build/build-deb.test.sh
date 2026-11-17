@@ -16,7 +16,7 @@ check() { # <desc> <want> <got>
 }
 
 mkdir "$WORK/src" "$WORK/nv" "$WORK/aa"
-printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\n' > "$WORK/src/Makefile"
+printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\n' "$WORK" > "$WORK/src/Makefile"
 printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/netavark\n' > "$WORK/nv/Makefile"
 printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/aardvark-dns\n' > "$WORK/aa/Makefile"
 build() { "$SCRIPT" "$WORK/src" "$WORK/nv" "$WORK/aa" "$@"; }
@@ -35,6 +35,10 @@ for helper in netavark aardvark-dns; do
 done
 check "replaces the distribution netavark" "netavark, aardvark-dns" "$(dpkg-deb -f "$deb" Conflicts 2>/dev/null)"
 check "provides what Debian packages depend on" "netavark, aardvark-dns" "$(dpkg-deb -f "$deb" Provides 2>/dev/null)"
+
+check "gpgme is replaced by Go's OpenPGP" containers_image_openpgp "$(cat "$WORK/tags" 2>/dev/null)"
+check "old crun falls back to runc" "conmon, crun (>= 1.21) | runc" \
+	"$(dpkg-deb -f "$deb" Depends 2>/dev/null | cut -d, -f1-2)"
 
 check "a rebuild version is accepted" "6.2.0+r2" \
 	"$(dpkg-deb -f "$(build 6.2.0+r2 "$WORK/out2" 2>/dev/null)" Version 2>/dev/null)"

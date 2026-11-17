@@ -106,12 +106,14 @@ jobs:
             -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
             -v "$RUNNER_TEMP/out:/out" podman-deb-build \
             bash /scripts/build/build-deb.sh /src/podman /src/netavark /src/aardvark "${TAG#v}" /out
-      - name: Smoke-test the package on a clean Debian 13
+      - name: Smoke-test the package on Debian 13 and Ubuntu 24.04 and 26.04
         run: |
-          docker build --quiet --target base -t podman-deb-base scripts/build
-          docker run --rm --privileged \
-            -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" podman-deb-base \
-            bash /scripts/verify/smoke-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb" "${PODMAN#v}"
+          for target in base ubuntu2404 ubuntu2604; do
+            docker build --quiet --target "$target" -t "podman-deb-$target" scripts/build
+            docker run --rm --privileged \
+              -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \
+              bash /scripts/verify/smoke-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb" "${PODMAN#v}"
+          done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deb-${{ matrix.arch }}
