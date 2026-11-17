@@ -27,19 +27,20 @@ for helper in netavark aardvark-dns; do
 	"/usr/libexec/podman/$helper" --version
 done
 
-# The CI container has no cgroup controllers to hand out (crun: controller `pids`
-# is not available), and the test is about the package, not the host cgroups.
+# A CI container has no pids cgroup controller to hand out, so crun refuses the
+# default limit ("controller `pids` is not available"). runc, which Ubuntu 24.04
+# uses, rejects --cgroups=disabled, so the limit is the thing turned off.
 # --rootfs runs a directory as the container, so the test needs no registry.
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
 cp -a /bin /lib /usr "$root/"
 # amd64 keeps its dynamic loader under /lib64; arm64 has no such directory.
 [ ! -e /lib64 ] || cp -a /lib64 "$root/"
-out="$(podman --storage-driver vfs run --rm --cgroups=disabled --network none --rootfs "$root" /usr/bin/echo smoke-ok)"
+out="$(podman --storage-driver vfs run --rm --pids-limit=0 --network none --rootfs "$root" /usr/bin/echo smoke-ok)"
 [ "$out" = smoke-ok ] || { echo "container did not run: $out" >&2; exit 1; }
 # A user-defined network goes through netavark, whose version Debian 13 pins
 # older than the one Podman 6 expects, so this is the check that catches it.
 podman --storage-driver vfs network create smoke >/dev/null
-out="$(podman --storage-driver vfs run --rm --cgroups=disabled --network smoke --rootfs "$root" /usr/bin/echo net-ok)"
+out="$(podman --storage-driver vfs run --rm --pids-limit=0 --network smoke --rootfs "$root" /usr/bin/echo net-ok)"
 [ "$out" = net-ok ] || { echo "container did not run on a bridge network: $out" >&2; exit 1; }
 echo "smoke test passed: podman $version"
