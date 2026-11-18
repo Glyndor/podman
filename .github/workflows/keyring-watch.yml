@@ -1,0 +1,123 @@
+name: keyring watch
+
+# Upstream decides who may sign a Podman release, in containers/release-keys.
+# The copy in keyring/podman is what every release is verified against, so when
+# upstream adds a key, renews one or removes a revoked one, releases are refused
+# until the copy catches up, and nothing says so until the first tag it cannot
+# verify. This looks every day, and when the two differ it prepares the change.
+#
+# What it does not do is decide. A key that is allowed to sign Podman is a trust
+# decision, so the update arrives as a branch and an issue with the link that
+# opens the pull request. A pull request a workflow opens with its own token does
+# not start the checks the ruleset requires, so the one click is yours, and the
+# pull request that results is a normal one.
+
+on:
+  schedule:
+    - cron: "27 7 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keyring-watch
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    name: compare with upstream
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+
+      - name: Fetch the keys upstream publishes
+        run: |
+          git clone --quiet --depth 1 https://github.com/containers/release-keys.git "$RUNNER_TEMP/release-keys"
+          ls "$RUNNER_TEMP"/release-keys/podman/*.asc >/dev/null
+
+      - name: Prepare an update when they differ
+        id: diff
+        run: |
+          set +e
+          scripts/upstream/keyring-diff.sh keyring/podman "$RUNNER_TEMP/release-keys/podman" > "$RUNNER_TEMP/diff.txt"
+          rc=$?
+          set -e
+          [ "$rc" -le 1 ] || { echo "::error::could not compare the keyrings"; exit 1; }
+          echo "differs=$([ "$rc" -eq 1 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/diff.txt"
+
+      - name: Push the update to a branch and open an issue
+        if: steps.diff.outputs.differs == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          branch="keyring/update-$(date -u +%Y%m%d)"
+          title="Upstream changed the keys that sign Podman"
+          if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
+            echo "an issue for this is already open"; exit 0
+          fi
+          bot="41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "$bot"
+          git checkout -q -b "$branch"
+          rm -f keyring/podman/*.asc
+          cp "$RUNNER_TEMP"/release-keys/podman/*.asc keyring/podman/
+          git add -A keyring/podman
+          {
+            echo "chore: follow upstream's list of Podman signing keys"
+            echo
+            sed 's/^/- /' "$RUNNER_TEMP/diff.txt"
+          } > "$RUNNER_TEMP/message.txt"
+          git commit -q -s -F "$RUNNER_TEMP/message.txt"
+          git push -q origin "$branch"
+          {
+            echo "containers/release-keys no longer matches keyring/podman:"
+            echo
+            sed 's/^/- /' "$RUNNER_TEMP/diff.txt"
+            echo
+            echo "Until the copy follows, a release signed by a key that is not here is refused. The update is ready on the branch \`$branch\`. Check that each key belongs to a Podman maintainer, then open the pull request: https://github.com/$GH_REPO/compare/main...$branch?expand=1"
+          } > "$RUNNER_TEMP/body.txt"
+          gh issue create --title "$title" --label type:security --label prio:P1 --label area:upstream --body-file "$RUNNER_TEMP/body.txt"
+
+  health:
+    name: enough keys can still sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: At least two keys are valid for the next sixty days
+        id: health
+        run: |
+          set +e
+          scripts/upstream/keyring-health.sh keyring/podman "$(date +%s)" 60 2 | tee "$RUNNER_TEMP/health.txt"
+          echo "ok=$([ "${PIPESTATUS[0]}" -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Open an issue when they are not
+        if: steps.health.outputs.ok == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          title="Fewer than two Podman signing keys will be valid"
+          if [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
+            {
+              cat "$RUNNER_TEMP/health.txt"
+              echo
+              echo "A single departure or expiry would stop every release. Check containers/release-keys for a newer key."
+            } > "$RUNNER_TEMP/body.txt"
+            gh issue create --title "$title" --label type:security --label prio:P1 --label area:upstream --body-file "$RUNNER_TEMP/body.txt"
+          fi
+          exit 1
