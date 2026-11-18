@@ -1,0 +1,63 @@
+name: dependabot automerge
+
+# A dependency update should not wait for a person. This arms auto-merge on the
+# pull requests Dependabot opens, so they merge by themselves once every check the
+# ruleset requires has passed, and asks Dependabot to rebase the ones that fall
+# behind main, which the ruleset's up-to-date rule would otherwise leave waiting.
+#
+# Why this is safe enough here: nothing a bump changes is published unchecked. A
+# new image digest or action version changes how the package is built, the next
+# release builds with it and has to pass its smoke tests before it is signed, and
+# if it cannot the previous release stays the latest and the watchdog says so.
+# Why it is a first in this organisation: no other repository merges anything
+# by itself.
+#
+# pull_request_target gives the job a token that can merge, and runs the workflow
+# from main, not from the pull request. It checks nothing out and runs nothing the
+# pull request contains: it only calls gh with the number.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  arm:
+    name: arm auto-merge
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Merge when the required checks pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          gh pr merge "$NUMBER" --auto --squash \
+            --subject "$TITLE (#$NUMBER)" \
+            --body "Signed-off-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>"
+
+  rebase:
+    name: rebase what fell behind
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Ask Dependabot to rebase its open pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh pr list --state open --author "app/dependabot" --json number,mergeStateStatus \
+            --jq '.[] | select(.mergeStateStatus == "BEHIND") | .number' \
+            | while read -r n; do gh pr comment "$n" --body "@dependabot rebase"; done
