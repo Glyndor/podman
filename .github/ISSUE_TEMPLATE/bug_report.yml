@@ -1,0 +1,62 @@
+name: Bug report
+description: The package does not install, update or run the way it should
+title: "[bug]: "
+labels: ["type:bug", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, search existing issues to avoid duplicates.
+        **Security issue? Do NOT file it here.** Use the Security tab, then "Report a vulnerability".
+        A bug that also happens with the upstream Podman binary belongs to containers/podman.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it fail?
+      options:
+        - Installing or upgrading the package
+        - Running podman, netavark or aardvark-dns from the package
+        - Release automation (a release is missing or wrong)
+        - Signature or attestation verification
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Debian 13, Ubuntu 24.04 and Ubuntu 26.04 are the supported ones.
+      placeholder: Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: Output of `dpkg -s podman | grep Version`.
+      placeholder: 6.2.0+r2
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste relevant output. **Redact secrets, IPs, hostnames and emails.**
+      render: shell
