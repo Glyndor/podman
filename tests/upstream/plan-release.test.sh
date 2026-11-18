@@ -51,6 +51,9 @@ printf 'v6.1.4\nv6.1.4+r2\n' > "$WORK/t3"
 check "a new podman starts at its own version" "build=true tag=v6.2.0" \
 	"$("$SCRIPT" "$fresh" "$WORK/older" "$WORK/t3" | paste -sd' ' | sed 's/^build=true //; s/^/build=true /')"
 
+"$SCRIPT" "$fresh" "$WORK/none" "$WORK/t1" >/dev/null 2>&1
+check "tags without readable released components fails instead of building" 1 "$?"
+
 printf 'netavark v2.1.0\n' > "$WORK/nopodman"
 "$SCRIPT" "$WORK/nopodman" "$WORK/none" "$WORK/none" >/dev/null 2>&1; check "no podman line fails" 1 "$?"
 
