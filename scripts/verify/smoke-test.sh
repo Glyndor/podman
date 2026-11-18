@@ -14,7 +14,9 @@ version="${2:?version}"
 [ -f "$deb" ] || { echo "no such file: $deb" >&2; exit 2; }
 
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends "$deb"
+# With the recommended packages, as a customer's apt installs them: passt, uidmap,
+# a container init and dbus-user-session come with it.
+apt-get install -y -qq "$deb"
 
 got="$(podman --version)"
 [ "$got" = "podman version $version" ] || { echo "version mismatch: $got" >&2; exit 1; }
@@ -52,4 +54,11 @@ out="$(podman --storage-driver vfs run --rm --network none --rootfs "$root" /usr
 podman --storage-driver vfs network create smoke >/dev/null
 out="$(podman --storage-driver vfs run --rm --network smoke --rootfs "$root" /usr/bin/echo net-ok)"
 [ "$out" = net-ok ] || { echo "container did not run on a bridge network: $out" >&2; exit 1; }
+# Two containers on that network have to find each other by name. That is
+# aardvark-dns, the part of the network stack a single container cannot show:
+# the bridge can be up and name resolution still broken.
+podman --storage-driver vfs run -d --name smoke-a --network smoke --rootfs "$root" /usr/bin/sleep 120 >/dev/null
+found="$(podman --storage-driver vfs run --rm --network smoke --rootfs "$root" /usr/bin/getent hosts smoke-a || true)"
+podman --storage-driver vfs rm -f smoke-a >/dev/null 2>&1 || true
+[ -n "$found" ] || { echo "a container on the bridge network could not resolve another by name" >&2; exit 1; }
 echo "smoke test passed: podman $version"

@@ -15,7 +15,14 @@ set -euo pipefail
 deb="${1:?deb}"
 [ -f "$deb" ] || { echo "no such file: $deb" >&2; exit 2; }
 
-apt-get update -qq
+# An end-of-life Ubuntu moves its archive to old-releases. The release this runs
+# on exists to be old, so a 404 from the live archive is the expected day, not a
+# reason to stop publishing: point apt at old-releases and try once more.
+if ! apt-get update -qq; then
+	# shellcheck disable=SC2086 # the list of files is meant to be split and globbed
+	sed -i -E 's#https?://([a-z]{2}\.)?(archive|security)\.ubuntu\.com#http://old-releases.ubuntu.com#g' ${APT_SOURCES:-/etc/apt/sources.list /etc/apt/sources.list.d/*} 2>/dev/null || true
+	apt-get update -qq
+fi
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 if apt-get install -y --no-install-recommends "$deb" > "$log" 2>&1; then
