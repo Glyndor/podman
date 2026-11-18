@@ -44,12 +44,21 @@ done
 # Release artifacts ship stripped (releases standard): drop debug symbols from every ELF.
 find "$stage" -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && strip --strip-unneeded "$1"' _ {} \; 2>/dev/null || true
 
+# The newest glibc symbol any binary asks for. libc6 has to be declared with it:
+# without a version apt installs the package on a release whose glibc is older
+# and every binary then fails to start (measured on Ubuntu 22.04, where netavark
+# needs 2.39 and the release has 2.35).
+glibc_min="$(find "$stage" -type f -perm -u+x -print0 \
+	| xargs -0 -r objdump -T 2>/dev/null \
+	| grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -n 1 || true)"
+
 # Shared libraries the binaries really link against, as Debian package names.
 libs="$(find "$stage" -type f -perm -u+x -print0 \
 	| xargs -0 -r ldd 2>/dev/null \
 	| awk '$3 ~ /^\// {print $3}' | sort -u \
 	| xargs -r -n1 realpath | xargs -r dpkg -S 2>/dev/null \
-	| sed 's/:[a-z0-9]*:.*//; s/: .*//' | sort -u | paste -sd, | sed 's/,/, /g')"
+	| sed 's/:[a-z0-9]*:.*//; s/: .*//' | sort -u \
+	| sed "s/^libc6\$/libc6 (>= ${glibc_min:-2.0})/" | paste -sd, | sed 's/,/, /g')"
 
 # These libraries are renamed between Debian and Ubuntu releases; a binary linked
 # to one would not start elsewhere, so a build that picks one up is refused.
