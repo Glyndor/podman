@@ -60,16 +60,11 @@ make -C "$podman_src" install PREFIX=/usr DESTDIR="$stage" >&2
 # A shell tab completion is generated from the binary just built, so this runs after.
 make -C "$podman_src" install.completions PREFIX=/usr DESTDIR="$stage" >&2
 
-# Podman 6 takes its seccomp profile from /usr/share/containers/seccomp.json, which
-# the distribution's containers-common provides at 0.57 to 0.66, older than the 0.70
-# this Podman is built with: it lacks the futex_wait family and, on Ubuntu 24.04,
-# fchmodat2, so a container with a recent libc can be refused a system call it
-# needs. /etc/containers/seccomp.json is the path Podman reads first. The file
-# comes from the vendor tree of the signed Podman tag, so it is the one this
-# release was built and tested with.
-profile="$podman_src/vendor/go.podman.io/common/pkg/seccomp/seccomp.json"
-[ -s "$profile" ] || { echo "the Podman source has no seccomp profile at $profile" >&2; exit 1; }
-install -D -m 0644 "$profile" "$stage/etc/containers/seccomp.json"
+# The containers-common configuration of this release (0.70 for Podman 6.2.0), which
+# upstream's spec requires at 0.68 or newer. Debian 13, Ubuntu 24.04 and 26.04 carry
+# 0.62, 0.57 and 0.66: their seccomp profile, for one, lacks the futex_wait family and
+# on 24.04 fchmodat2. The package provides it instead of depending on the distribution's.
+common_version="$("$(dirname "$0")/install-common-config.sh" "$podman_src" "$stage" "${GLYNDOR_SHORTNAMES:-/usr/share/glyndor-build/shortnames.conf}")"
 
 # The Rust components install into /usr/libexec/podman, a directory Podman
 # searches for its helpers.
@@ -118,6 +113,10 @@ aardvark_version="$(crate_version "$aardvark_src")"
 [[ "$netavark_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$aardvark_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
 	|| { echo "cannot read the netavark or aardvark-dns version from Cargo.toml" >&2; exit 1; }
 
+# A host that ran the distribution's Podman keeps the crun that came with it. Ubuntu 24.04
+# ships 1.14, which cannot read the runtime spec Podman 6 writes ("unknown version
+# specified"), and Podman prefers crun over runc, so the Depends alternative is not enough:
+# the old crun has to go, and runc takes its place.
 mkdir -p "$stage/DEBIAN"
 cat > "$stage/DEBIAN/control" <<CONTROL
 Package: podman
@@ -127,15 +126,17 @@ Maintainer: Glyndor <noreply@glyndor.net>
 Section: admin
 Priority: optional
 Homepage: https://podman.io
-Depends: conmon (>= 2.1.7), crun (>= 1.21) | runc, catatonit, golang-github-containers-common, init-system-helpers, nftables${libs:+, $libs}
+Depends: conmon (>= 2.1.7), crun (>= 1.21) | runc, catatonit, init-system-helpers, nftables${libs:+, $libs}
 Recommends: ca-certificates, passt, uidmap, dbus-user-session, criu
-Provides: netavark (= $netavark_version), aardvark-dns (= $aardvark_version)
-Conflicts: netavark, aardvark-dns
-Replaces: netavark, aardvark-dns
+Provides: netavark (= $netavark_version), aardvark-dns (= $aardvark_version), golang-github-containers-common (= $common_version)
+Conflicts: netavark, aardvark-dns, golang-github-containers-common
+Breaks: crun (<< 1.21)
+Replaces: netavark, aardvark-dns, golang-github-containers-common
 Description: Podman with its network stack, built from the upstream releases
  Daemonless container engine, packaged from the signed upstream tags of Podman,
- netavark and aardvark-dns. The two network components replace the older
- copies in Debian 13.
+ netavark and aardvark-dns, with the containers-common configuration it asks for.
+ The network components and that configuration replace the older copies the
+ distributions ship.
 CONTROL
 
 dpkg-deb --root-owner-group -Zxz --build "$stage" "$out/podman_${version}_${arch}.deb" >/dev/null
