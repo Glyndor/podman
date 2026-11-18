@@ -40,7 +40,14 @@ export GOTOOLCHAIN=auto
 # independent executable, control-flow protection and full RELRO. The commit date and
 # an origin go into the binary so the same tag gives the same Podman.
 export GOFLAGS="-trimpath -buildmode=pie"
-export CGO_CFLAGS="-O2 -g -fcf-protection=full -D_FORTIFY_SOURCE=2"
+# Control-flow protection is spelled differently per architecture: -fcf-protection is
+# x86 only (gcc refuses it on arm64), whose counterpart is -mbranch-protection.
+case "$arch" in
+	amd64) flow_protection="-fcf-protection=full" ;;
+	arm64) flow_protection="-mbranch-protection=standard" ;;
+	*) flow_protection="" ;;
+esac
+export CGO_CFLAGS="-O2 -g $flow_protection -D_FORTIFY_SOURCE=2"
 export CGO_LDFLAGS="-Wl,-z,relro -Wl,-z,now"
 SOURCE_DATE_EPOCH="$(git -C "$podman_src" log -1 --format=%ct 2>/dev/null || date +%s)"
 export SOURCE_DATE_EPOCH
