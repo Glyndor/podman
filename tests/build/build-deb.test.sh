@@ -20,6 +20,8 @@ mkdir -p "$WORK/src/vendor/go.podman.io/common/pkg/seccomp"
 echo '{"syscalls":[{"names":["futex_waitv"],"action":"SCMP_ACT_ALLOW"}]}' > "$WORK/src/vendor/go.podman.io/common/pkg/seccomp/seccomp.json"
 printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" > "$WORK/src/Makefile"
 printf 'all:\n\t@echo "$(CARGO)" > %s/cargo-nv\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/netavark\n' "$WORK" > "$WORK/nv/Makefile"; touch "$WORK/nv/Cargo.lock" "$WORK/aa/Cargo.lock"
+printf '[package]\nname = "netavark"\nversion = "2.1.0"\n' > "$WORK/nv/Cargo.toml"
+printf '[package]\nname = "aardvark-dns"\nversion = "2.1.3"\n' > "$WORK/aa/Cargo.toml"
 printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/aardvark-dns\n' > "$WORK/aa/Makefile"
 build() { "$SCRIPT" "$WORK/src" "$WORK/nv" "$WORK/aa" "$@"; }
 arch="$(dpkg --print-architecture)"
@@ -36,7 +38,7 @@ for helper in netavark aardvark-dns; do
 		"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "./usr/libexec/podman/$helper")"
 done
 check "replaces the distribution netavark" "netavark, aardvark-dns" "$(dpkg-deb -f "$deb" Conflicts 2>/dev/null)"
-check "provides what Debian packages depend on" "netavark, aardvark-dns" "$(dpkg-deb -f "$deb" Provides 2>/dev/null)"
+check "provides what Debian packages depend on, with the versions built" "netavark (= 2.1.0), aardvark-dns (= 2.1.3)" "$(dpkg-deb -f "$deb" Provides 2>/dev/null)"
 
 check "the shell completions are installed" ./usr/share/bash-completion/completions/podman \
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/bash-completion/completions/podman')"
@@ -50,7 +52,7 @@ build 6.2.0 "$WORK/out2" >/dev/null 2>&1; rc=$?; check "a source without a secco
 echo '{"syscalls":[]}' > "$WORK/src/vendor/go.podman.io/common/pkg/seccomp/seccomp.json"
 check "cargo builds only what the lockfile of the tag says" "cargo --locked" "$(cat "$WORK/cargo-nv" 2>/dev/null)"
 check "gpgme is replaced by Go's OpenPGP" containers_image_openpgp "$(cat "$WORK/tags" 2>/dev/null)"
-check "old crun falls back to runc" "conmon, crun (>= 1.21) | runc" \
+check "old crun falls back to runc, and conmon has the floor upstream asks for" "conmon (>= 2.1.7), crun (>= 1.21) | runc" \
 	"$(dpkg-deb -f "$deb" Depends 2>/dev/null | cut -d, -f1-2)"
 
 check "libc6 carries the glibc the binaries need" 1 \

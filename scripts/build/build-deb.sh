@@ -31,7 +31,29 @@ export GOTOOLCHAIN=auto
 # image has no subid or sqlite headers, so Podman links only libseccomp. That is
 # what lets one package install on Debian 13 and on Ubuntu 24.04 and 26.04,
 # whose gpgme and subid libraries have different names.
-make -C "$podman_src" PREFIX=/usr EXTRA_BUILDTAGS=containers_image_openpgp >&2
+# Podman's own Makefile picks the apparmor and btrfs tags when it finds their headers,
+# and the build image has them, so Debian's AppArmor profile support and the btrfs
+# storage driver are on as they are in Debian's package. Neither links a shared library.
+#
+# What Fedora's spec for this release does, and Debian's package does too: build with
+# -trimpath (the Makefile sets it as a make variable, which go never sees), a position
+# independent executable, control-flow protection and full RELRO. The commit date and
+# an origin go into the binary so the same tag gives the same Podman.
+export GOFLAGS="-trimpath -buildmode=pie"
+export CGO_CFLAGS="-O2 -g -fcf-protection=full -D_FORTIFY_SOURCE=2"
+export CGO_LDFLAGS="-Wl,-z,relro -Wl,-z,now"
+SOURCE_DATE_EPOCH="$(git -C "$podman_src" log -1 --format=%ct 2>/dev/null || date +%s)"
+export SOURCE_DATE_EPOCH
+make -C "$podman_src" PREFIX=/usr EXTRA_BUILDTAGS=containers_image_openpgp \
+	BUILD_INFO="$SOURCE_DATE_EPOCH" BUILD_ORIGIN="Glyndor" >&2
+# The binary has to carry what was asked for; a Makefile that stops passing a flag
+# along would otherwise ship without it and nothing would say so.
+if command -v go >/dev/null && [ -f "$podman_src/bin/podman" ]; then
+	built="$(go version -m "$podman_src/bin/podman" 2>/dev/null || true)"
+	for want in '-trimpath=true' '-buildmode=pie' 'apparmor' 'seccomp' 'systemd'; do
+		printf '%s' "$built" | grep -q -- "$want" || { echo "the built podman lacks $want" >&2; exit 1; }
+	done
+fi
 make -C "$podman_src" install PREFIX=/usr DESTDIR="$stage" >&2
 # `install` does not put the shell completions in place; Debian's own package ships
 # them, so a customer who moves to this one would otherwise lose tab completion.
@@ -83,10 +105,18 @@ libs="$(find "$stage" -type f -perm -u+x -print0 \
 # These libraries are renamed between Debian and Ubuntu releases; a binary linked
 # to one would not start elsewhere, so a build that picks one up is refused.
 case ",$libs," in
-	*gpgme*|*assuan*|*subid*|*sqlite*)
+	*gpgme*|*assuan*|*subid*|*sqlite*|*apparmor*|*btrfs*)
 		echo "build links a library that differs between releases: $libs" >&2
 		exit 1 ;;
 esac
+
+# Debian's aardvark-dns asks for netavark (>> 1.14), and an unversioned Provides does
+# not satisfy a versioned dependency, so the Provides carries the versions built here.
+crate_version() { awk -F'"' '/^version *=/ {print $2; exit}' "$1/Cargo.toml"; }
+netavark_version="$(crate_version "$netavark_src")"
+aardvark_version="$(crate_version "$aardvark_src")"
+[[ "$netavark_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$aardvark_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+	|| { echo "cannot read the netavark or aardvark-dns version from Cargo.toml" >&2; exit 1; }
 
 mkdir -p "$stage/DEBIAN"
 cat > "$stage/DEBIAN/control" <<CONTROL
@@ -97,9 +127,9 @@ Maintainer: Glyndor <noreply@glyndor.net>
 Section: admin
 Priority: optional
 Homepage: https://podman.io
-Depends: conmon, crun (>= 1.21) | runc, catatonit, golang-github-containers-common, init-system-helpers, nftables${libs:+, $libs}
+Depends: conmon (>= 2.1.7), crun (>= 1.21) | runc, catatonit, golang-github-containers-common, init-system-helpers, nftables${libs:+, $libs}
 Recommends: ca-certificates, passt, uidmap, dbus-user-session, criu
-Provides: netavark, aardvark-dns
+Provides: netavark (= $netavark_version), aardvark-dns (= $aardvark_version)
 Conflicts: netavark, aardvark-dns
 Replaces: netavark, aardvark-dns
 Description: Podman with its network stack, built from the upstream releases

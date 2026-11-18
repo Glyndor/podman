@@ -29,5 +29,5 @@ RUN echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sou
 	&& apt-get install -y -qq --no-install-recommends \
 		ca-certificates git make gcc golang-go go-md2man pkg-config dpkg-dev xz-utils \
 		protobuf-compiler python3 \
-		libseccomp-dev libsystemd-dev \
+		libseccomp-dev libsystemd-dev libapparmor-dev libbtrfs-dev \
 	&& rm -rf /var/lib/apt/lists/*
