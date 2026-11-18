@@ -22,7 +22,7 @@ for f in common/pkg/config/containers.conf common/rpm/policy.json image/registri
 echo '{"syscalls":[{"names":["futex_waitv"]}]}' > "$WORK/mods/common/pkg/seccomp/seccomp.json"
 echo '[aliases]' > "$WORK/short.conf"
 export GLYNDOR_MODULES_DIR="$WORK/mods" GLYNDOR_SHORTNAMES="$WORK/short.conf"
-printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" > "$WORK/src/Makefile"
+printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags; echo "$$CGO_CFLAGS" > %s/cflags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" "$WORK" > "$WORK/src/Makefile"
 printf 'all:\n\t@echo "$(CARGO)" > %s/cargo-nv\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/netavark\n' "$WORK" > "$WORK/nv/Makefile"; touch "$WORK/nv/Cargo.lock" "$WORK/aa/Cargo.lock"
 printf '[package]\nname = "netavark"\nversion = "2.1.0"\n' > "$WORK/nv/Cargo.toml"
 printf '[package]\nname = "aardvark-dns"\nversion = "2.1.3"\n' > "$WORK/aa/Cargo.toml"
@@ -56,6 +56,8 @@ check "catatonit is required, as upstream does" 1 "$(dpkg-deb -f "$deb" Depends 
 rm "$WORK/mods/common/pkg/seccomp/seccomp.json"
 build 6.2.0 "$WORK/out2" >/dev/null 2>&1; rc=$?; check "a release without a seccomp profile is refused" 1 "$rc"
 echo '{}' > "$WORK/mods/common/pkg/seccomp/seccomp.json"
+case "$arch" in amd64) want_flag="-fcf-protection=full" ;; arm64) want_flag="-mbranch-protection=standard" ;; *) want_flag="" ;; esac
+check "control-flow protection uses the flag this architecture has" 1 "$(grep -c -e "${want_flag:-.}" "$WORK/cflags" 2>/dev/null)"
 check "cargo builds only what the lockfile of the tag says" "cargo --locked" "$(cat "$WORK/cargo-nv" 2>/dev/null)"
 check "gpgme is replaced by Go's OpenPGP" containers_image_openpgp "$(cat "$WORK/tags" 2>/dev/null)"
 check "old crun falls back to runc, and conmon has the floor upstream asks for" "conmon (>= 2.1.7), crun (>= 1.21) | runc" \
