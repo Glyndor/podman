@@ -34,6 +34,8 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 10
+    outputs:
+      code: ${{ steps.lag.outputs.code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,6 +43,7 @@ jobs:
           persist-credentials: false
 
       - name: Is the newest release missing something that has waited too long
+        id: lag
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -62,7 +65,14 @@ jobs:
           git ls-remote --tags "https://github.com/$GH_REPO.git" \
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
           scripts/upstream/read-released.sh "$w/released"
+          # 1 means it is behind for too long; 2 means it could not tell, and the
+          # alert says which, because they call for different things.
+          set +e
           scripts/monitoring/delivery-lag.sh "$w/fresh" "$w/released" "$w/tags" "$w/dates" "$(date +%s)" "$MAX_HOURS"
+          rc=$?
+          set -e
+          echo "code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
   alert:
     name: alert
@@ -78,10 +88,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CODE: ${{ needs.delivery-lag.outputs.code }}
         run: |
-          title="Release pipeline is behind upstream"
+          if [ "$CODE" = "2" ]; then
+            title="The release pipeline's delivery check could not decide"
+            body="The delivery check could not tell whether the newest release is behind upstream: it could not read what the release carries, or an upstream date. Read the run: $RUN_URL"
+          else
+            title="Release pipeline is behind upstream"
+            body="The newest release is missing something upstream, or this repository's build recipe, has had for more than a day. Run: $RUN_URL"
+          fi
           open="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
-          body="The delivery check failed: the newest release is missing something upstream has had for more than a day. Run: $RUN_URL"
           if [ -n "$open" ]; then
             gh issue comment "$open" --body "$body"
           else

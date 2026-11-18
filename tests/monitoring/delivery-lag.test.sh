@@ -36,10 +36,23 @@ check "and names the component that is missing" 1 "$(printf '%s' "$out" | grep -
 
 check "the same lag passes under a longer limit" 0 "$(run 48 >/dev/null 2>&1; echo $?)"
 
-# Several components: the newest of the missing ones starts the clock.
+# Several components: the oldest of the missing ones starts the clock. A newer
+# component must not hide a stalled one.
 printf 'podman v6.3.0\nnetavark v2.2.0\naardvark-dns v2.1.0\nrecipe aaa\n' > "$WORK/fresh"
 printf 'podman v6.3.0 %d\nnetavark v2.2.0 %d\n' $((now - 90 * hour)) $((now - 2 * hour)) > "$WORK/dates"
-run >/dev/null 2>&1; check "the newest missing component sets the clock" 0 "$?"
+out="$(run 2>&1)"; rc=$?
+check "the oldest missing component sets the clock" 1 "$rc"
+check "and says it has waited ninety hours" 1 "$(printf '%s' "$out" | grep -c 'for 90 hours')"
+printf 'podman v6.3.0 %d\nnetavark v2.2.0 %d\n' $((now - 20 * hour)) $((now - 2 * hour)) > "$WORK/dates"
+run >/dev/null 2>&1; check "two recent components pass" 0 "$?"
+
+# A line the release carries and upstream no longer has is not a stall.
+printf 'podman v6.2.0\nnetavark v2.1.0\naardvark-dns v2.1.0\nrecipe aaa\nold-thing v1\n' > "$WORK/released"
+cp "$WORK/fresh" "$WORK/fresh.keep"; printf 'podman v6.2.0\nnetavark v2.1.0\naardvark-dns v2.1.0\nrecipe aaa\n' > "$WORK/fresh"; : > "$WORK/dates"
+out="$(run 2>&1)"; rc=$?
+check "a line only the release has is not an alarm" 0 "$rc"
+check "and does not print a meaningless number of hours" 0 "$(printf '%s' "$out" | grep -c 'hours')"
+printf 'podman v6.2.0\nnetavark v2.1.0\naardvark-dns v2.1.0\nrecipe aaa\n' > "$WORK/released"; cp "$WORK/fresh.keep" "$WORK/fresh"
 
 # A change in how the package is built counts like an upstream release.
 cp "$WORK/released" "$WORK/fresh"; sed -i 's/recipe aaa/recipe bbb/' "$WORK/fresh"

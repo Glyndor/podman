@@ -11,8 +11,11 @@ name: release
 on:
   schedule:
     - cron: "17 */6 * * *"
-  # A change to how the package is built, or to the keys that verify upstream,
-  # does not wait for the next tick: the plan notices the new recipe and builds.
+  # A change to how the package is built does not wait for the next tick: the plan
+  # notices the new recipe and builds. A change to the keys that verify upstream,
+  # or to this workflow, runs the plan too, which only builds if something is
+  # missing; it is how a release that was refused for a missing key retries at
+  # once, and how an edit to this file is exercised the moment it lands.
   push:
     branches: [main]
     paths:
