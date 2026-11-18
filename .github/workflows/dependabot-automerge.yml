@@ -45,7 +45,13 @@ jobs:
           # Every commit must be Dependabot's own. The pull request's author stays
           # Dependabot when somebody pushes to its branch, so the commits are what
           # say whether a person added anything.
-          others="$(gh pr view "$NUMBER" --json commits --jq '[.commits[].authors[].login] | map(select(. != "dependabot[bot]" and . != "app/dependabot")) | length')"
+          # Fail closed: a call that fails or answers with nothing must stop here,
+          # not read as "no commit from anybody else".
+          others="$(gh pr view "$NUMBER" --json commits --jq '[.commits[].authors[].login] | map(select(. != "dependabot[bot]" and . != "app/dependabot")) | length')" \
+            || { echo "::error::could not read the commits of this pull request"; exit 1; }
+          case "$others" in
+            '' | *[!0-9]*) echo "::error::unexpected answer reading the commits: '$others'"; exit 1 ;;
+          esac
           if [ "$others" -ne 0 ]; then
             echo "::error::this branch has a commit that is not Dependabot's; auto-merge is not armed"
             exit 1
@@ -68,7 +74,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr merge "$NUMBER" --disable-auto
+        run: |
+          # Only if it was armed: turning off something that is not on is an error
+          # the API rejects, and a red job for it would only be noise.
+          armed="$(gh pr view "$NUMBER" --json autoMergeRequest --jq '.autoMergeRequest != null')" \
+            || { echo "::error::could not read the pull request"; exit 1; }
+          if [ "$armed" = true ]; then gh pr merge "$NUMBER" --disable-auto; else echo "auto-merge was not on"; fi
 
   rebase:
     name: rebase what fell behind
@@ -83,6 +94,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh pr list --state open --author "app/dependabot" --json number,mergeStateStatus \
-            --jq '.[] | select(.mergeStateStatus == "BEHIND") | .number' \
-            | while read -r n; do gh pr comment "$n" --body "@dependabot rebase"; done
+          # Every open one, whatever its state: a pull request that is behind and
+          # also blocked by the up-to-date rule is reported as BLOCKED, not BEHIND,
+          # so filtering on the state would skip exactly the ones that need this.
+          # Dependabot does nothing for a branch that is already current.
+          numbers="$(gh pr list --state open --author "app/dependabot" --json number --jq '.[].number')" \
+            || { echo "::error::could not list the open pull requests"; exit 1; }
+          for n in $numbers; do gh pr comment "$n" --body "@dependabot rebase"; done

@@ -37,24 +37,11 @@ jobs:
           # merge-commit tree integrity rather than sign-off trailers.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          # Local change to the copy of the shared reusable. A sign-off is a
-          # person saying "I wrote this or may submit it", and Dependabot's
-          # commits carry none, so no dependency update could ever pass. A commit
-          # is exempt only when the pull request was opened by Dependabot AND the
-          # commit itself is Dependabot's: its author is the Dependabot account
-          # and GitHub is the committer, which is how its commits come out. A
-          # commit someone adds to Dependabot's branch is neither, and still needs
-          # its sign-off.
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           missing=0
           for sha in $(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}"); do
             author="$(git show -s --format='%an <%ae>' "$sha")"
-            if [ "$PR_AUTHOR" = "dependabot[bot]" ] \
-              && [ "$(git show -s --format='%ae|%ce' "$sha")" = "49699333+dependabot[bot]@users.noreply.github.com|noreply@github.com" ]; then
-              continue
-            fi
             if ! git show -s --format='%(trailers:key=Signed-off-by)' "$sha" \
               | grep -qi 'Signed-off-by:'; then
               echo "::error::commit $sha ($author) is missing a Signed-off-by trailer"
