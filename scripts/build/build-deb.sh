@@ -51,8 +51,13 @@ install -D -m 0644 "$profile" "$stage/etc/containers/seccomp.json"
 
 # The Rust components install into /usr/libexec/podman, a directory Podman
 # searches for its helpers.
+# --locked makes cargo build exactly the dependency versions in the Cargo.lock of the
+# signed tag and fail if they would change. netavark's Makefile adds it only when
+# CI is set, so without this a build could pick newer crates than upstream tested.
+# Podman needs nothing: its Go modules come from the vendor tree of the tag.
 for src in "$netavark_src" "$aardvark_src"; do
-	make -C "$src" >&2
+	[ -f "$src/Cargo.lock" ] || { echo "$src has no Cargo.lock to build against" >&2; exit 1; }
+	make -C "$src" CARGO="cargo --locked" >&2
 	make -C "$src" install PREFIX=/usr DESTDIR="$stage" >&2
 done
 
