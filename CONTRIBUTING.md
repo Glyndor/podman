@@ -63,7 +63,8 @@ reason it names. Assert which failure fired, never that some failure did.
 | `tests.yml` | the suite and shellcheck |
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
 | `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |
-| `release.yml` | the scheduled plan, build, smoke test, signing and publish |
+| `release.yml` | the scheduled plan, build, smoke test, signing and publish; also runs when `scripts/build`, `keyring` or the workflow itself changes, and only publishes from `main` |
+| `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it |
 
 Job ids are load-bearing. A required status check is named
 `<caller job id> / <inner job name>`, so renaming a job renames its check and
