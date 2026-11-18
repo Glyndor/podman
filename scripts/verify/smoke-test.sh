@@ -32,6 +32,9 @@ done
 # tell dpkg to leave /usr/share/man out, so the files are shipped and not there.
 dpkg -L podman | grep -q '^/usr/share/man/man1/podman-run\.1' || { echo "the package does not ship the man pages" >&2; exit 1; }
 
+# The profile of this release, not the older one in the distribution's package.
+grep -q '"futex_waitv"' /etc/containers/seccomp.json || { echo "the seccomp profile is not this release's" >&2; exit 1; }
+
 got="$(podman --version)"
 [ "$got" = "podman version $version" ] || { echo "version mismatch: $got" >&2; exit 1; }
 

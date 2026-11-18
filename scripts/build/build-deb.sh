@@ -38,6 +38,17 @@ make -C "$podman_src" install PREFIX=/usr DESTDIR="$stage" >&2
 # A shell tab completion is generated from the binary just built, so this runs after.
 make -C "$podman_src" install.completions PREFIX=/usr DESTDIR="$stage" >&2
 
+# Podman 6 takes its seccomp profile from /usr/share/containers/seccomp.json, which
+# the distribution's containers-common provides at 0.57 to 0.66, older than the 0.70
+# this Podman is built with: it lacks the futex_wait family and, on Ubuntu 24.04,
+# fchmodat2, so a container with a recent libc can be refused a system call it
+# needs. /etc/containers/seccomp.json is the path Podman reads first. The file
+# comes from the vendor tree of the signed Podman tag, so it is the one this
+# release was built and tested with.
+profile="$podman_src/vendor/go.podman.io/common/pkg/seccomp/seccomp.json"
+[ -s "$profile" ] || { echo "the Podman source has no seccomp profile at $profile" >&2; exit 1; }
+install -D -m 0644 "$profile" "$stage/etc/containers/seccomp.json"
+
 # The Rust components install into /usr/libexec/podman, a directory Podman
 # searches for its helpers.
 for src in "$netavark_src" "$aardvark_src"; do
@@ -81,8 +92,8 @@ Maintainer: Glyndor <noreply@glyndor.net>
 Section: admin
 Priority: optional
 Homepage: https://podman.io
-Depends: conmon, crun (>= 1.21) | runc, golang-github-containers-common, init-system-helpers, nftables${libs:+, $libs}
-Recommends: ca-certificates, catatonit | tini | dumb-init, passt, uidmap, dbus-user-session, criu
+Depends: conmon, crun (>= 1.21) | runc, catatonit, golang-github-containers-common, init-system-helpers, nftables${libs:+, $libs}
+Recommends: ca-certificates, passt, uidmap, dbus-user-session, criu
 Provides: netavark, aardvark-dns
 Conflicts: netavark, aardvark-dns
 Replaces: netavark, aardvark-dns
