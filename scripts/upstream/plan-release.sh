@@ -24,7 +24,16 @@ sort "$fresh" | cmp -s - <(sort "$released") && { echo "build=false"; exit 0; }
 podman="$(awk '$1 == "podman" {print $2}' "$fresh")"
 [[ "$podman" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no podman tag in $fresh" >&2; exit 1; }
 
-n="$(grep -c -x -E "$(printf '%s' "$podman" | sed 's/\./\\./g')(\\+r[0-9]+)?" "$tags" || true)"
-if [ "$n" -eq 0 ]; then tag="$podman"; else tag="$podman+r$((n + 1))"; fi
+# The next revision is one past the highest the repository already has for this
+# Podman version, not a count of its tags: a count lands on a name that exists as
+# soon as one revision is missing, and then every later run picks it again.
+max=0
+re="^$(printf '%s' "$podman" | sed 's/\./\\./g')(\\+r([0-9]+))?$"
+while IFS= read -r t; do
+	[[ "$t" =~ $re ]] || continue
+	k="${BASH_REMATCH[2]:-1}"
+	[ "$k" -le "$max" ] || max="$k"
+done < "$tags"
+if [ "$max" -eq 0 ]; then tag="$podman"; else tag="$podman+r$((max + 1))"; fi
 echo "build=true"
 echo "tag=$tag"

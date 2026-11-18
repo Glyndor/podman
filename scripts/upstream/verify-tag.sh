@@ -18,6 +18,13 @@ keys="${3:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/keyring/podman}"
 [ "$(git -C "$src" cat-file -t "refs/tags/$tag")" = tag ] \
 	|| { echo "$tag is not an annotated tag" >&2; exit 1; }
 
+# The signature covers the tag object, whose own header names the tag. A ref that
+# is renamed onto an older signed object would still verify, so the name inside
+# the object has to be the one that was asked for.
+named="$(git -C "$src" cat-file -p "refs/tags/$tag" | sed -n 's/^tag //p' | head -n 1)"
+[ "$named" = "$tag" ] \
+	|| { echo "ref $tag points at a signed tag object named '$named'" >&2; exit 1; }
+
 GNUPGHOME="$(mktemp -d)"
 export GNUPGHOME
 trap 'rm -rf "$GNUPGHOME"' EXIT

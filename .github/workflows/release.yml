@@ -33,6 +33,9 @@ jobs:
       netavark: ${{ steps.p.outputs.netavark }}
       aardvark: ${{ steps.p.outputs.aardvark }}
       recipe: ${{ steps.p.outputs.recipe }}
+      podman_sha: ${{ steps.p.outputs.podman_sha }}
+      netavark_sha: ${{ steps.p.outputs.netavark_sha }}
+      aardvark_sha: ${{ steps.p.outputs.aardvark_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,9 +53,13 @@ jobs:
           # How the package is built counts as a component: upstream tags cannot
           # see a packaging fix, so without this one never produces a release.
           echo "recipe $(scripts/build/recipe-id.sh)" >> "$w/fresh"
-          gh release list --limit 200 --json tagName --jq '.[].tagName' > "$w/tags"
+          # Every tag the repository has, from git rather than from the release
+          # list: a tag can exist without a release, and a window of the newest
+          # releases would one day miss the revision the planner has to step past.
+          git ls-remote --tags "https://github.com/$GH_REPO.git" \
+            | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
           : > "$w/released"
-          latest="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          latest="$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // empty')"
           if [ -n "$latest" ]; then
             gh release download "$latest" --pattern components.txt --output "$w/released" || : > "$w/released"
           fi
@@ -61,6 +68,15 @@ jobs:
             echo "${c%-dns}=$(awk -v c="$c" '$1 == c {print $2}' "$w/fresh")" >> "$GITHUB_OUTPUT"
           done
           echo "recipe=$(awk '$1 == "recipe" {print $2}' "$w/fresh")" >> "$GITHUB_OUTPUT"
+          # The commit each tag points at right now, fixed here so both build
+          # jobs check out exactly this and an upstream tag moved in between
+          # cannot give the two architectures different sources.
+          for c in podman netavark aardvark-dns; do
+            tag="$(awk -v c="$c" '$1 == c {print $2}' "$w/fresh")"
+            sha="$(git ls-remote "https://github.com/containers/$c.git" "refs/tags/$tag^{}" | awk '{print $1}')"
+            [ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }
+            echo "${c%-dns}_sha=$sha" >> "$GITHUB_OUTPUT"
+          done
           cat "$w/fresh"
 
   # This job installs a compiler and fetches the Go toolchain: third-party code
@@ -87,21 +103,27 @@ jobs:
       PODMAN: ${{ needs.plan.outputs.podman }}
       NETAVARK: ${{ needs.plan.outputs.netavark }}
       AARDVARK: ${{ needs.plan.outputs.aardvark }}
+      PODMAN_SHA: ${{ needs.plan.outputs.podman_sha }}
+      NETAVARK_SHA: ${{ needs.plan.outputs.netavark_sha }}
+      AARDVARK_SHA: ${{ needs.plan.outputs.aardvark_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Fetch the upstream tags and verify their signatures
         run: |
-          fetch() { # <directory> <repository> <tag>
+          fetch() { # <directory> <repository> <tag> <commit the plan resolved>
             git clone --quiet --branch "$3" "https://github.com/containers/$2.git" "$RUNNER_TEMP/$1"
             commit="$(scripts/upstream/verify-tag.sh "$RUNNER_TEMP/$1" "$3")"
             [ "$(git -C "$RUNNER_TEMP/$1" rev-parse HEAD)" = "$commit" ]
+            # Both architectures check out the commit the plan saw, so an upstream
+            # tag moved in between cannot give them different sources.
+            [ "$commit" = "$4" ] || { echo "$2 $3 is at $commit, the plan saw $4" >&2; exit 1; }
             echo "verified $2 $3 at $commit"
           }
-          fetch podman podman "$PODMAN"
-          fetch netavark netavark "$NETAVARK"
-          fetch aardvark aardvark-dns "$AARDVARK"
+          fetch podman podman "$PODMAN" "$PODMAN_SHA"
+          fetch netavark netavark "$NETAVARK" "$NETAVARK_SHA"
+          fetch aardvark aardvark-dns "$AARDVARK" "$AARDVARK_SHA"
       - name: Build the package
         run: |
           docker build --quiet --target build -t podman-deb-build scripts/build
