@@ -1,0 +1,89 @@
+name: watchdog
+
+# Checks the result, not the machinery. The release pipeline can stop in ways
+# that leave no red run: a cron GitHub never fires, a schedule it switches off
+# after sixty quiet days, a run that succeeds while publishing nothing. So this
+# asks whether the newest release is missing something upstream (or this
+# repository's own build recipe) has had for more than a day, and says so.
+#
+# It runs on pull requests and pushes as well as on a schedule, so a quiet
+# repository still shows the answer on ordinary work, and on the schedule it
+# opens an issue, which GitHub turns into a notification. None of it is a
+# required check: it fails because something happened elsewhere, never because
+# a pull request is wrong, and requiring it would block the repair.
+
+on:
+  schedule:
+    - cron: "43 8,20 * * *"
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  delivery-lag:
+    name: delivery lag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Is the newest release missing something that has waited too long
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MAX_HOURS: "24"
+        run: |
+          w="$RUNNER_TEMP/lag"; mkdir -p "$w"
+          for c in podman netavark aardvark-dns; do
+            tag="$(scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")"
+            echo "$c $tag" >> "$w/fresh"
+            # When upstream published it. A tag with no GitHub release has no
+            # date, so it counts as appearing now rather than raising a false alarm.
+            when="$(gh release view "$tag" --repo "containers/$c" --json publishedAt --jq .publishedAt 2>/dev/null || true)"
+            epoch="$(date -d "${when:-now}" +%s)"
+            echo "$c $tag $epoch" >> "$w/dates"
+          done
+          recipe="$(scripts/build/recipe-id.sh)"
+          echo "recipe $recipe" >> "$w/fresh"
+          echo "recipe $recipe $(git log -1 --format=%ct -- scripts/build)" >> "$w/dates"
+          git ls-remote --tags "https://github.com/$GH_REPO.git" \
+            | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
+          scripts/upstream/read-released.sh "$w/released"
+          scripts/monitoring/delivery-lag.sh "$w/fresh" "$w/released" "$w/tags" "$w/dates" "$(date +%s)" "$MAX_HOURS"
+
+  alert:
+    name: alert
+    needs: delivery-lag
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    timeout-minutes: 5
+    steps:
+      - name: Open an issue, or add to the one that is open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Release pipeline is behind upstream"
+          open="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
+          body="The delivery check failed: the newest release is missing something upstream has had for more than a day. Run: $RUN_URL"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --label type:bug --label prio:P1 --label area:release --body "$body"
+          fi

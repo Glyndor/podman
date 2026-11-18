@@ -11,6 +11,14 @@ name: release
 on:
   schedule:
     - cron: "17 */6 * * *"
+  # A change to how the package is built, or to the keys that verify upstream,
+  # does not wait for the next tick: the plan notices the new recipe and builds.
+  push:
+    branches: [main]
+    paths:
+      - "scripts/build/**"
+      - "keyring/**"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions: {}
@@ -22,6 +30,9 @@ concurrency:
 jobs:
   plan:
     name: Plan
+    # Only main publishes. A dispatch from a branch would otherwise tag an
+    # unreviewed commit as the release apt serves.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
