@@ -11,6 +11,16 @@ updates:
     open-pull-requests-limit: 10
   - package-ecosystem: "docker"
     directory: "/scripts/build"
+    # The Dockerfile pins each release on purpose: Debian 13 builds the package,
+    # Ubuntu 24.04 and 26.04 prove it installs, and Ubuntu 22.04 proves an older
+    # release refuses it. Moving any of them to a newer release would change what
+    # the build and the smoke tests mean, so only the digest and patch updates
+    # of the pinned release come through.
+    ignore:
+      - dependency-name: "ubuntu"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "debian"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     schedule:
       interval: "daily"
     labels:
