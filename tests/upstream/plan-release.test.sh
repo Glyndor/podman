@@ -34,6 +34,18 @@ printf 'v6.2.0\nv6.2.0+r2\nv6.1.4\n' > "$WORK/t2"
 check "the counter keeps climbing" "build=true tag=v6.2.0+r3" \
 	"$("$SCRIPT" "$fresh" "$WORK/old" "$WORK/t2" | paste -sd' ')"
 
+printf 'v6.2.0\nv6.2.0+r3\n' > "$WORK/tgap"
+check "a missing revision does not make the next name collide" "build=true tag=v6.2.0+r4" \
+	"$("$SCRIPT" "$fresh" "$WORK/old" "$WORK/tgap" | paste -sd' ')"
+
+{ echo v6.2.0; for i in $(seq 2 250); do echo "v6.2.0+r$i"; done; } > "$WORK/tmany"
+check "past two hundred revisions it still picks a free name" "build=true tag=v6.2.0+r251" \
+	"$("$SCRIPT" "$fresh" "$WORK/old" "$WORK/tmany" | paste -sd' ')"
+
+printf 'v6.2.0+r2\n' > "$WORK/tonlyr"
+check "a revision without its base tag still counts" "build=true tag=v6.2.0+r3" \
+	"$("$SCRIPT" "$fresh" "$WORK/old" "$WORK/tonlyr" | paste -sd' ')"
+
 printf 'podman v6.1.4\nnetavark v2.1.0\naardvark-dns v2.1.0\n' > "$WORK/older"
 printf 'v6.1.4\nv6.1.4+r2\n' > "$WORK/t3"
 check "a new podman starts at its own version" "build=true tag=v6.2.0" \

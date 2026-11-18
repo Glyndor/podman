@@ -48,6 +48,13 @@ check "prints the commit it points to" "$commit" "$out"
 "$SCRIPT" "$repo" v1.0.2 "$WORK/keys" >/dev/null 2>&1; check "annotated but unsigned fails" 1 "$?"
 "$SCRIPT" "$repo" v1.0.3 "$WORK/keys" >/dev/null 2>&1; check "lightweight tag fails" 1 "$?"
 
+# A ref renamed onto an older signed tag object: the signature is genuine, the
+# name is not the one the object was signed under.
+git -C "$repo" update-ref refs/tags/v1.0.9 "$(git -C "$repo" rev-parse refs/tags/v1.0.0)"
+err="$("$SCRIPT" "$repo" v1.0.9 "$WORK/keys" 2>&1 >/dev/null)"; rc=$?
+check "a signed tag object under another name fails" 1 "$rc"
+check "and says which name the object carries" 1 "$(printf '%s' "$err" | grep -c "named 'v1.0.0'")"
+
 mkdir "$WORK/empty"
 "$SCRIPT" "$repo" v1.0.0 "$WORK/empty" >/dev/null 2>&1; check "no keys fails" 1 "$?"
 
