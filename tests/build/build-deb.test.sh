@@ -40,6 +40,9 @@ check "gpgme is replaced by Go's OpenPGP" containers_image_openpgp "$(cat "$WORK
 check "old crun falls back to runc" "conmon, crun (>= 1.21) | runc" \
 	"$(dpkg-deb -f "$deb" Depends 2>/dev/null | cut -d, -f1-2)"
 
+check "libc6 carries the glibc the binaries need" 1 \
+	"$(dpkg-deb -f "$deb" Depends 2>/dev/null | grep -c -E 'libc6 \(>= [0-9]+\.[0-9]+\)')"
+
 check "a rebuild version is accepted" "6.2.0+r2" \
 	"$(dpkg-deb -f "$(build 6.2.0+r2 "$WORK/out2" 2>/dev/null)" Version 2>/dev/null)"
 build v6.2.0 "$WORK/out" >/dev/null 2>&1; check "version with a v is refused" 1 "$?"

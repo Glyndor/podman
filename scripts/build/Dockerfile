@@ -12,6 +12,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 FROM ubuntu:26.04@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d AS ubuntu2604
 ENV DEBIAN_FRONTEND=noninteractive
 
+# An older release, only used to prove the package is refused there.
+FROM ubuntu:22.04@sha256:45e9ddc6895604674618a409ca9f73d301da8fdb75fe330e8e9a27b3b219e4ad AS ubuntu2204
+ENV DEBIAN_FRONTEND=noninteractive
+
 # No gpgme, assuan, subid or sqlite headers on purpose: those libraries change
 # name between releases (libgpgme11t64 / libgpgme45, libsubid4 / libsubid5), and
 # a package linked against one fails to start on the others. Without the headers
