@@ -38,6 +38,23 @@ check "a minimum of three is not met" 1 "$?"
 "$SCRIPT" "$WORK/keys" "$((now + 500 * 86400))" 60 2 >/dev/null 2>&1
 check "five hundred days from now the 400-day key has expired too" 1 "$?"
 
+# A revoked key has no expiry date, so only gpg's own verdict shows it. A key that
+# gpg cannot read at all is not "too few keys" either.
+mkdir "$WORK/rev"
+cp "$WORK/keys/long.asc" "$WORK/keys/forever.asc" "$WORK/rev/"
+newkey gone 0
+home="$WORK/gh-gone"
+fpr="$(GNUPGHOME="$home" gpg --batch --with-colons --list-keys gone@x | awk -F: '/^fpr/ {print $10; exit}')"
+printf 'revkey\ny\n0\n\ny\nsave\n' | GNUPGHOME="$home" gpg --batch --yes --command-fd 0 --pinentry-mode loopback --edit-key "$fpr" >/dev/null 2>&1
+GNUPGHOME="$home" gpg --batch --armor --export gone@x > "$WORK/rev/gone.asc"
+out="$("$SCRIPT" "$WORK/rev" "$now" 60 3 2>&1)"; rc=$?
+check "a revoked key does not count even though it never expires" 1 "$rc"
+check "and is shown as revoked" 1 "$(printf '%s' "$out" | grep -c 'revoked')"
+check "the two good keys are still counted" 1 "$(printf '%s' "$out" | grep -c '2 key(s) still valid')"
+
+mkdir "$WORK/broken"; printf 'not a key\n' > "$WORK/broken/x.asc"
+"$SCRIPT" "$WORK/broken" "$now" 60 1 >/dev/null 2>&1; check "an unreadable keyring is exit 2, not too few keys" 2 "$?"
+
 mkdir "$WORK/none"
 "$SCRIPT" "$WORK/none" "$now" 60 1 >/dev/null 2>&1; check "no keys is exit 2" 2 "$?"
 "$SCRIPT" >/dev/null 2>&1; check "no arguments fails" 1 "$([ $? -ne 0 ] && echo 1 || echo 0)"

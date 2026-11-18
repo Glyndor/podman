@@ -22,17 +22,31 @@ trap 'rm -rf "$GNUPGHOME"' EXIT
 shopt -s nullglob
 files=("$keys"/*.asc)
 [ ${#files[@]} -gt 0 ] || { echo "no keys under $keys" >&2; exit 2; }
-gpg --batch --quiet --import "${files[@]}" 2>/dev/null
+gpg --batch --quiet --import "${files[@]}" \
+	|| { echo "could not import the keys under $keys" >&2; exit 2; }
 
 horizon=$((now + days * 86400))
 valid=0
-while IFS=: read -r kind _ _ _ keyid created expires _; do
+# Field 2 of a pub record is what gpg itself concluded about the key today: e is
+# expired, r is revoked, d is disabled. A revoked key has no expiry date to read,
+# so the dates alone would count it as good.
+while IFS=: read -r kind validity _ _ keyid created expires _; do
 	[ "$kind" = pub ] || continue
-	if [ -z "$expires" ]; then when="never"; ok=1
-	else when="$(date -u -d "@$expires" +%F)"; [ "$expires" -gt "$horizon" ] && ok=1 || ok=0; fi
+	ok=1
+	case "$validity" in e | r | d | i) ok=0; why="$validity" ;; esac
+	if [ -z "$expires" ]; then when="never"
+	else
+		when="$(date -u -d "@$expires" +%F)"
+		[ "$expires" -gt "$horizon" ] || { ok=0; why="${why:-expires inside the window}"; }
+	fi
 	uid="$(gpg --batch --with-colons --list-keys "$keyid" 2>/dev/null | awk -F: '/^uid/ {print $10; exit}' | sed 's/ <.*//')"
-	echo "$keyid ($uid) expires $when$([ "$ok" -eq 1 ] || echo ' - not valid in the window')"
+	case "${why:-}" in
+		e) note=" - expired" ;; r) note=" - revoked" ;; d) note=" - disabled" ;; i) note=" - invalid" ;;
+		"") note="" ;; *) note=" - not valid in the window" ;;
+	esac
+	echo "$keyid ($uid) expires $when$note"
 	valid=$((valid + ok))
+	why=""
 	: "$created"
 done < <(gpg --batch --with-colons --list-keys 2>/dev/null)
 
