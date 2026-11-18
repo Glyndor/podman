@@ -31,3 +31,10 @@ RUN echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sou
 		protobuf-compiler python3 \
 		libseccomp-dev libsystemd-dev libapparmor-dev libbtrfs-dev \
 	&& rm -rf /var/lib/apt/lists/*
+# The short-name list the package ships is Debian's own, taken from its signed archive:
+# upstream's spec fetches the head of a branch that carries no signature.
+RUN apt-get update -qq && cd "$(mktemp -d)" \
+	&& apt-get download golang-github-containers-common \
+	&& dpkg-deb -x golang-github-containers-common_*.deb x \
+	&& install -D -m 0644 x/etc/containers/registries.conf.d/shortnames.conf /usr/share/glyndor-build/shortnames.conf \
+	&& rm -rf /var/lib/apt/lists/*

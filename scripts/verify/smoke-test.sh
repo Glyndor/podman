@@ -14,6 +14,10 @@ version="${2:?version}"
 [ -f "$deb" ] || { echo "no such file: $deb" >&2; exit 2; }
 
 apt-get update -qq
+# A customer who already runs the distribution's Podman, with the tools that depend on
+# its containers-common, upgrades onto this package: that is the path to prove, not only
+# an install on a clean image. buildah and skopeo have to stay.
+apt-get install -y -qq podman buildah skopeo >/dev/null
 # With the recommended packages, as a customer's apt installs them: passt, uidmap,
 # a container init and dbus-user-session come with it.
 apt-get install -y -qq "$deb"
@@ -32,8 +36,21 @@ done
 # tell dpkg to leave /usr/share/man out, so the files are shipped and not there.
 dpkg -L podman | grep -q '^/usr/share/man/man1/podman-run\.1' || { echo "the package does not ship the man pages" >&2; exit 1; }
 
-# The profile of this release, not the older one in the distribution's package.
-grep -q '"futex_waitv"' /etc/containers/seccomp.json || { echo "the seccomp profile is not this release's" >&2; exit 1; }
+# The containers-common configuration of this release, not the older one a distribution
+# ships: the profile has the futex family, a pull has the policy it needs, and the
+# distribution's package is not what satisfies the dependency.
+grep -q '"futex_waitv"' /usr/share/containers/seccomp.json || { echo "the seccomp profile is not this release's" >&2; exit 1; }
+for f in policy.json registries.conf containers.conf registries.conf.d/000-shortnames.conf; do
+	[ -s "/usr/share/containers/$f" ] || { echo "the package does not ship /usr/share/containers/$f" >&2; exit 1; }
+done
+! dpkg-query -W -f='${Status}' golang-github-containers-common 2>/dev/null | grep -q 'ok installed' \
+	|| { echo "the distribution's containers-common is installed next to this package" >&2; exit 1; }
+for kept in buildah skopeo; do
+	dpkg-query -W -f='${Status}' "$kept" 2>/dev/null | grep -q 'ok installed' \
+		|| { echo "$kept was removed by the upgrade" >&2; exit 1; }
+done
+dpkg -s podman | grep -q '^Provides:.*golang-github-containers-common (= 0\.[6-9][0-9]' \
+	|| { echo "the package does not provide containers-common" >&2; exit 1; }
 
 got="$(podman --version)"
 [ "$got" = "podman version $version" ] || { echo "version mismatch: $got" >&2; exit 1; }
