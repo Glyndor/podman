@@ -16,7 +16,7 @@ check() { # <desc> <want> <got>
 }
 
 mkdir "$WORK/src" "$WORK/nv" "$WORK/aa"
-printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\n' "$WORK" > "$WORK/src/Makefile"
+printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" > "$WORK/src/Makefile"
 printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/netavark\n' > "$WORK/nv/Makefile"
 printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/aardvark-dns\n' > "$WORK/aa/Makefile"
 build() { "$SCRIPT" "$WORK/src" "$WORK/nv" "$WORK/aa" "$@"; }
@@ -36,6 +36,10 @@ done
 check "replaces the distribution netavark" "netavark, aardvark-dns" "$(dpkg-deb -f "$deb" Conflicts 2>/dev/null)"
 check "provides what Debian packages depend on" "netavark, aardvark-dns" "$(dpkg-deb -f "$deb" Provides 2>/dev/null)"
 
+check "the shell completions are installed" ./usr/share/bash-completion/completions/podman \
+	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/bash-completion/completions/podman')"
+check "criu is recommended, as Debian's package does, for checkpoint and restore" 1 \
+	"$(dpkg-deb -f "$deb" Recommends 2>/dev/null | grep -c 'criu')"
 check "gpgme is replaced by Go's OpenPGP" containers_image_openpgp "$(cat "$WORK/tags" 2>/dev/null)"
 check "old crun falls back to runc" "conmon, crun (>= 1.21) | runc" \
 	"$(dpkg-deb -f "$deb" Depends 2>/dev/null | cut -d, -f1-2)"

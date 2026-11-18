@@ -33,6 +33,10 @@ export GOTOOLCHAIN=auto
 # whose gpgme and subid libraries have different names.
 make -C "$podman_src" PREFIX=/usr EXTRA_BUILDTAGS=containers_image_openpgp >&2
 make -C "$podman_src" install PREFIX=/usr DESTDIR="$stage" >&2
+# `install` does not put the shell completions in place; Debian's own package ships
+# them, so a customer who moves to this one would otherwise lose tab completion.
+# A shell tab completion is generated from the binary just built, so this runs after.
+make -C "$podman_src" install.completions PREFIX=/usr DESTDIR="$stage" >&2
 
 # The Rust components install into /usr/libexec/podman, a directory Podman
 # searches for its helpers.
@@ -78,7 +82,7 @@ Section: admin
 Priority: optional
 Homepage: https://podman.io
 Depends: conmon, crun (>= 1.21) | runc, golang-github-containers-common, init-system-helpers, nftables${libs:+, $libs}
-Recommends: ca-certificates, catatonit | tini | dumb-init, passt, uidmap, dbus-user-session
+Recommends: ca-certificates, catatonit | tini | dumb-init, passt, uidmap, dbus-user-session, criu
 Provides: netavark, aardvark-dns
 Conflicts: netavark, aardvark-dns
 Replaces: netavark, aardvark-dns
