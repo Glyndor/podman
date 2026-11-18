@@ -27,7 +27,7 @@ permissions: {}
 jobs:
   arm:
     name: arm auto-merge
-    if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]'
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -40,10 +40,35 @@ jobs:
           GH_REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.pull_request.number }}
           TITLE: ${{ github.event.pull_request.title }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          gh pr merge "$NUMBER" --auto --squash \
+          # Every commit must be Dependabot's own. The pull request's author stays
+          # Dependabot when somebody pushes to its branch, so the commits are what
+          # say whether a person added anything.
+          others="$(gh pr view "$NUMBER" --json commits --jq '[.commits[].authors[].login] | map(select(. != "dependabot[bot]" and . != "app/dependabot")) | length')"
+          if [ "$others" -ne 0 ]; then
+            echo "::error::this branch has a commit that is not Dependabot's; auto-merge is not armed"
+            exit 1
+          fi
+          # Merge only the commit that was just checked.
+          gh pr merge "$NUMBER" --auto --squash --match-head-commit "$HEAD_SHA" \
             --subject "$TITLE (#$NUMBER)" \
             --body "Signed-off-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>"
+
+  disarm:
+    name: disarm when a person pushes
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]' && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Turn auto-merge off
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$NUMBER" --disable-auto
 
   rebase:
     name: rebase what fell behind
