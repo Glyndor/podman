@@ -32,7 +32,7 @@ branch.
 
 - **An issue first.** Labels are the tracking system here. Apply `type:`,
   `prio:`, `effort:`, `status:` and `area:` where they fit.
-- **Sign every commit off** with `git commit -s`. The `dco` check is required.
+- **Sign every commit off** with `git commit -s`, using your GitHub noreply address (`git config user.email`). The `dco` check is required, and `commit hygiene` rejects any other address in the author, `Signed-off-by` or `Co-authored-by`.
 - **Commits are signed**, GPG or SSH, and rebase-merge is disabled because GitHub
   re-creates rebased commits without signatures.
 - **Conventional Commit title** on the pull request. It becomes the squashed
@@ -62,6 +62,7 @@ reason it names. Assert which failure fired, never that some failure did.
 |---|---|
 | `tests.yml` | the suite and shellcheck |
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
+| `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |
 | `release.yml` | the scheduled plan, build, smoke test, signing and publish |
 
 Job ids are load-bearing. A required status check is named
