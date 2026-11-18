@@ -19,6 +19,14 @@ set -euo pipefail
 
 fresh="${1:?fresh}"; released="${2:?released}"; tags="${3:?tags}"
 
+# Tags with nothing released means the components of the newest release could
+# not be read, not that nothing was ever released. Building on that guess is what
+# publishes a new revision on every run.
+if [ ! -s "$released" ] && [ -s "$tags" ]; then
+	echo "this repository has release tags but no released components to compare with" >&2
+	exit 1
+fi
+
 sort "$fresh" | cmp -s - <(sort "$released") && { echo "build=false"; exit 0; }
 
 podman="$(awk '$1 == "podman" {print $2}' "$fresh")"

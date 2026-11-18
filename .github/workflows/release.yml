@@ -58,11 +58,7 @@ jobs:
           # releases would one day miss the revision the planner has to step past.
           git ls-remote --tags "https://github.com/$GH_REPO.git" \
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
-          : > "$w/released"
-          latest="$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // empty')"
-          if [ -n "$latest" ]; then
-            gh release download "$latest" --pattern components.txt --output "$w/released" || : > "$w/released"
-          fi
+          scripts/upstream/read-released.sh "$w/released"
           scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
           for c in podman netavark aardvark-dns; do
             echo "${c%-dns}=$(awk -v c="$c" '$1 == c {print $2}' "$w/fresh")" >> "$GITHUB_OUTPUT"
