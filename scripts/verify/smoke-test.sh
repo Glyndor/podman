@@ -18,6 +18,20 @@ apt-get update -qq
 # a container init and dbus-user-session come with it.
 apt-get install -y -qq "$deb"
 
+# What a customer expects to find, and what Debian's own package installs: if a
+# change to the build stops shipping one of these, the package is still "working"
+# and nobody would notice until somebody asked why tab completion was gone.
+for f in /usr/bin/podman /usr/bin/podman-remote /usr/libexec/podman/quadlet /usr/libexec/podman/rootlessport \
+	/usr/lib/systemd/system/podman.socket /usr/lib/systemd/user/podman.socket \
+	/usr/lib/systemd/system-generators/podman-system-generator /usr/lib/systemd/user-generators/podman-user-generator \
+	/usr/lib/tmpfiles.d/podman.conf \
+	/usr/share/bash-completion/completions/podman /usr/share/zsh/site-functions/_podman /usr/share/fish/vendor_completions.d/podman.fish; do
+	[ -e "$f" ] || { echo "the package does not ship $f" >&2; exit 1; }
+done
+# The man pages are asked of dpkg, not of the disk: the minimal Ubuntu images
+# tell dpkg to leave /usr/share/man out, so the files are shipped and not there.
+dpkg -L podman | grep -q '^/usr/share/man/man1/podman-run\.1' || { echo "the package does not ship the man pages" >&2; exit 1; }
+
 got="$(podman --version)"
 [ "$got" = "podman version $version" ] || { echo "version mismatch: $got" >&2; exit 1; }
 
