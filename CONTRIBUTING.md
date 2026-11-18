@@ -65,6 +65,7 @@ reason it names. Assert which failure fired, never that some failure did.
 | `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |
 | `release.yml` | the scheduled plan, build, smoke test, signing and publish; also runs when `scripts/build`, `keyring` or the workflow itself changes, and only publishes from `main` |
 | `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it |
+| `dependabot-automerge.yml` | arms auto-merge on Dependabot's pull requests, which then merge when the required checks pass, and asks Dependabot to rebase the ones that fall behind |
 
 Job ids are load-bearing. A required status check is named
 `<caller job id> / <inner job name>`, so renaming a job renames its check and
