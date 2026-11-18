@@ -29,9 +29,10 @@ export GLYNDOR_MODULES_DIR="$WORK/mods"
 out="$("$SCRIPT" "$WORK/src" "$WORK/stage" "$WORK/short.conf" 2>/dev/null)"; rc=$?
 check "succeeds" 0 "$rc"
 check "prints the version of common the tag pins" 0.70.0 "$out"
-for f in containers.conf seccomp.json policy.json registries.conf registries.d/default.yaml registries.conf.d/000-shortnames.conf; do
+for f in containers.conf seccomp.json registries.conf registries.d/default.yaml registries.conf.d/000-shortnames.conf; do
 	check "installs $f under /usr/share/containers" 1 "$([ -s "$WORK/stage/usr/share/containers/$f" ] && echo 1 || echo 0)"
 done
+check "installs policy.json under /etc/containers, where buildah and skopeo read it" 1 "$([ -s "$WORK/stage/etc/containers/policy.json" ] && echo 1 || echo 0)"
 check "storage.conf stays with the package that owns it" 0 "$([ -e "$WORK/stage/usr/share/containers/storage.conf" ] && echo 1 || echo 0)"
 check "the seccomp profile is the module's, not another" 1 "$(grep -c futex_waitv "$WORK/stage/usr/share/containers/seccomp.json")"
 check "creates the directories the spec owns" 1 "$([ -d "$WORK/stage/etc/containers/oci/hooks.d" ] && echo 1 || echo 0)"

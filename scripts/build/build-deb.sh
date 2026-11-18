@@ -135,10 +135,10 @@ Priority: optional
 Homepage: https://podman.io
 Depends: conmon (>= 2.1.7), crun (>= 1.21) | runc, catatonit, init-system-helpers, nftables${libs:+, $libs}
 Recommends: ca-certificates, passt, uidmap, dbus-user-session, criu
-Provides: netavark (= $netavark_version), aardvark-dns (= $aardvark_version), golang-github-containers-common (= $common_version)
-Conflicts: netavark, aardvark-dns, golang-github-containers-common
+Provides: netavark (= $netavark_version), aardvark-dns (= $aardvark_version), golang-github-containers-common (= $common_version), podman-remote
+Conflicts: netavark, aardvark-dns, golang-github-containers-common, podman-remote
 Breaks: crun (<< 1.21)
-Replaces: netavark, aardvark-dns, golang-github-containers-common
+Replaces: netavark, aardvark-dns, golang-github-containers-common, podman-remote
 Description: Podman with its network stack, built from the upstream releases
  Daemonless container engine, packaged from the signed upstream tags of Podman,
  netavark and aardvark-dns, with the containers-common configuration it asks for.

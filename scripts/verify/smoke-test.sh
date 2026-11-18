@@ -5,19 +5,21 @@
 # Run as root inside a clean container started with --privileged. The same
 # package is tried on Debian 13 and Ubuntu 24.04 and 26.04.
 #
-# Usage: smoke-test.sh <deb> <version>
+# Usage: smoke-test.sh <deb> <version> [clean]
+#   clean: install the package on the image as it is, without the distribution's Podman first.
 
 set -euo pipefail
 
 deb="${1:?deb}"
 version="${2:?version}"
+mode="${3:-upgrade}"
 [ -f "$deb" ] || { echo "no such file: $deb" >&2; exit 2; }
 
 apt-get update -qq
 # A customer who already runs the distribution's Podman, with the tools that depend on
 # its containers-common, upgrades onto this package: that is the path to prove, not only
 # an install on a clean image. buildah and skopeo have to stay.
-apt-get install -y -qq podman buildah skopeo >/dev/null
+if [ "$mode" = clean ]; then :; else apt-get install -y -qq podman buildah skopeo podman-remote >/dev/null; fi
 # With the recommended packages, as a customer's apt installs them: passt, uidmap,
 # a container init and dbus-user-session come with it.
 apt-get install -y -qq "$deb"
@@ -40,11 +42,15 @@ dpkg -L podman | grep -q '^/usr/share/man/man1/podman-run\.1' || { echo "the pac
 # ships: the profile has the futex family, a pull has the policy it needs, and the
 # distribution's package is not what satisfies the dependency.
 grep -q '"futex_waitv"' /usr/share/containers/seccomp.json || { echo "the seccomp profile is not this release's" >&2; exit 1; }
-for f in policy.json registries.conf containers.conf registries.conf.d/000-shortnames.conf; do
+[ -s /etc/containers/policy.json ] || { echo "the package does not ship /etc/containers/policy.json" >&2; exit 1; }
+for f in registries.conf containers.conf registries.conf.d/000-shortnames.conf; do
 	[ -s "/usr/share/containers/$f" ] || { echo "the package does not ship /usr/share/containers/$f" >&2; exit 1; }
 done
 ! dpkg-query -W -f='${Status}' golang-github-containers-common 2>/dev/null | grep -q 'ok installed' \
 	|| { echo "the distribution's containers-common is installed next to this package" >&2; exit 1; }
+# On a clean image the tools are installed after the package, as a customer who adds
+# them later does; they must find their policy and registries under /etc/containers.
+[ "$mode" != clean ] || apt-get install -y -qq buildah skopeo >/dev/null
 for kept in buildah skopeo; do
 	dpkg-query -W -f='${Status}' "$kept" 2>/dev/null | grep -q 'ok installed' \
 		|| { echo "$kept was removed by the upgrade" >&2; exit 1; }
@@ -95,4 +101,13 @@ podman --storage-driver vfs run -d --name smoke-a --network smoke --rootfs "$roo
 found="$(podman --storage-driver vfs run --rm --network smoke --rootfs "$root" /usr/bin/getent hosts smoke-a || true)"
 podman --storage-driver vfs rm -f smoke-a >/dev/null 2>&1 || true
 [ -n "$found" ] || { echo "a container on the bridge network could not resolve another by name" >&2; exit 1; }
+# skopeo and buildah read the policy from /etc/containers; a copy and a pull are what
+# stop with "no policy.json file found" when it is not there.
+img="$(mktemp -d)"
+echo smoke > "$img/file"
+tar -C "$img" -cf - file | podman --storage-driver vfs import - smoke-img >/dev/null
+podman --storage-driver vfs save --format oci-dir -o "$img/oci" smoke-img
+skopeo copy "oci:$img/oci" "dir:$img/dir" >/dev/null || { echo "skopeo cannot copy: its policy is missing" >&2; exit 1; }
+buildah --storage-driver vfs pull "oci:$img/oci" >/dev/null || { echo "buildah cannot pull: its policy is missing" >&2; exit 1; }
+rm -rf "$img"
 echo "smoke test passed: podman $version"
