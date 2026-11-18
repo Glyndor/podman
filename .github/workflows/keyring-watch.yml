@@ -34,14 +34,32 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Fetch the keys upstream publishes
         run: |
           git clone --quiet --depth 1 https://github.com/containers/release-keys.git "$RUNNER_TEMP/release-keys"
-          ls "$RUNNER_TEMP"/release-keys/podman/*.asc >/dev/null
 
-      - name: Prepare an update when they differ
+      # What comes from upstream is data this job copies into a branch of a public
+      # repository, so it is checked before anything touches it: only plain files
+      # (a symlink would make the copy read something else on this runner, such as
+      # a file that holds a credential), small, and public key blocks.
+      - name: Refuse anything that is not a plain public key
+        run: |
+          dir="$RUNNER_TEMP/release-keys/podman"
+          [ -d "$dir" ] || { echo "::error::upstream has no podman/ directory"; exit 1; }
+          bad=0
+          for f in "$dir"/* ; do
+            [ -e "$f" ] || [ -L "$f" ] || continue
+            if [ -L "$f" ] || [ ! -f "$f" ]; then echo "::error::$(basename "$f") is not a plain file"; bad=1; continue; fi
+            case "$f" in *.asc) ;; *) echo "::error::$(basename "$f") is not a .asc file"; bad=1; continue ;; esac
+            [ "$(stat -c %s "$f")" -le 200000 ] || { echo "::error::$(basename "$f") is larger than a key should be"; bad=1; continue; }
+            [ "$(head -n 1 "$f")" = "-----BEGIN PGP PUBLIC KEY BLOCK-----" ] || { echo "::error::$(basename "$f") is not a public key block"; bad=1; continue; }
+            ! grep -q "PRIVATE" "$f" || { echo "::error::$(basename "$f") mentions a private key"; bad=1; }
+          done
+          [ "$bad" -eq 0 ]
+
+      - name: Compare with the copy here
         id: diff
         run: |
           set +e
@@ -52,23 +70,18 @@ jobs:
           echo "differs=$([ "$rc" -eq 1 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           cat "$RUNNER_TEMP/diff.txt"
 
-      - name: Push the update to a branch and open an issue
+      # No credential in this step's environment or on disk: it is the one that
+      # copies files that came from outside.
+      - name: Commit the update to a branch
         if: steps.diff.outputs.differs == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+        id: commit
         run: |
           branch="keyring/update-$(date -u +%Y%m%d)"
-          title="Upstream changed the keys that sign Podman"
-          if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
-            echo "an issue for this is already open"; exit 0
-          fi
-          bot="41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git config user.email "$bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -q -b "$branch"
           rm -f keyring/podman/*.asc
-          cp "$RUNNER_TEMP"/release-keys/podman/*.asc keyring/podman/
+          cp -P --no-dereference "$RUNNER_TEMP"/release-keys/podman/*.asc keyring/podman/
           git add -A keyring/podman
           {
             echo "chore: follow upstream's list of Podman signing keys"
@@ -76,13 +89,26 @@ jobs:
             sed 's/^/- /' "$RUNNER_TEMP/diff.txt"
           } > "$RUNNER_TEMP/message.txt"
           git commit -q -s -F "$RUNNER_TEMP/message.txt"
-          git push -q origin "$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Push the branch and open an issue
+        if: steps.diff.outputs.differs == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ steps.commit.outputs.branch }}
+        run: |
+          title="Upstream changed the keys that sign Podman"
+          if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
+            echo "an issue for this is already open"; exit 0
+          fi
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "$BRANCH"
           {
             echo "containers/release-keys no longer matches keyring/podman:"
             echo
             sed 's/^/- /' "$RUNNER_TEMP/diff.txt"
             echo
-            echo "Until the copy follows, a release signed by a key that is not here is refused. The update is ready on the branch \`$branch\`. Check that each key belongs to a Podman maintainer, then open the pull request: https://github.com/$GH_REPO/compare/main...$branch?expand=1"
+            echo "Until the copy follows, a release signed by a key that is not here is refused. The update is ready on the branch \`$BRANCH\`. Check that each key belongs to a Podman maintainer, then open the pull request: https://github.com/$GH_REPO/compare/main...$BRANCH?expand=1"
           } > "$RUNNER_TEMP/body.txt"
           gh issue create --title "$title" --label type:security --label prio:P1 --label area:upstream --body-file "$RUNNER_TEMP/body.txt"
 
