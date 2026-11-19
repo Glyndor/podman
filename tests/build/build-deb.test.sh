@@ -41,8 +41,8 @@ for helper in netavark aardvark-dns; do
 	check "$helper is installed under /usr/libexec/podman" "./usr/libexec/podman/$helper" \
 		"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "./usr/libexec/podman/$helper")"
 done
-check "replaces the distribution netavark, aardvark-dns and containers-common" "netavark, aardvark-dns, golang-github-containers-common" "$(dpkg-deb -f "$deb" Conflicts 2>/dev/null)"
-check "provides what Debian packages depend on, with the versions built" "netavark (= 2.1.0), aardvark-dns (= 2.1.3), golang-github-containers-common (= 0.70.0)" "$(dpkg-deb -f "$deb" Provides 2>/dev/null)"
+check "replaces the distribution netavark, aardvark-dns and containers-common" "netavark, aardvark-dns, golang-github-containers-common, podman-remote" "$(dpkg-deb -f "$deb" Conflicts 2>/dev/null)"
+check "provides what Debian packages depend on, with the versions built" "netavark (= 2.1.0), aardvark-dns (= 2.1.3), golang-github-containers-common (= 0.70.0), podman-remote" "$(dpkg-deb -f "$deb" Provides 2>/dev/null)"
 
 check "the shell completions are installed" ./usr/share/bash-completion/completions/podman \
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/bash-completion/completions/podman')"
@@ -50,6 +50,8 @@ check "criu is recommended, as Debian's package does, for checkpoint and restore
 	"$(dpkg-deb -f "$deb" Recommends 2>/dev/null | grep -c 'criu')"
 check "the seccomp profile of this release is installed" ./usr/share/containers/seccomp.json \
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/containers/seccomp.json')"
+check "policy.json is a conffile under /etc/containers" ./etc/containers/policy.json \
+	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './etc/containers/policy.json')"
 check "the distribution's containers-common is not depended on" 0 "$(dpkg-deb -f "$deb" Depends 2>/dev/null | grep -c 'golang-github-containers-common')"
 check "an old crun is removed rather than left to fail" "crun (<< 1.21)" "$(dpkg-deb -f "$deb" Breaks 2>/dev/null)"
 check "catatonit is required, as upstream does" 1 "$(dpkg-deb -f "$deb" Depends 2>/dev/null | grep -c 'catatonit')"

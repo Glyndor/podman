@@ -150,6 +150,9 @@ jobs:
             docker run --rm --privileged \
               -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \
               bash /scripts/verify/smoke-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb" "${PODMAN#v}"
+            docker run --rm --privileged \
+              -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \
+              bash /scripts/verify/smoke-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb" "${PODMAN#v}" clean
           done
       - name: Check an older release refuses the package
         run: |
