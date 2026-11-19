@@ -51,6 +51,12 @@ done
 # On a clean image the tools are installed after the package, as a customer who adds
 # them later does; they must find their policy and registries under /etc/containers.
 [ "$mode" != clean ] || apt-get install -y -qq buildah skopeo >/dev/null
+# passt comes with the package: Podman 6.2.0 always passes pasta --map-guest-addr, which the
+# passt of Ubuntu 24.04 (and of the other releases) predates, and the distribution's package is replaced.
+! dpkg-query -W -f='${Status}' passt 2>/dev/null | grep -q 'ok installed' \
+	|| { echo "the distribution's passt is installed next to this package" >&2; exit 1; }
+dpkg -L podman | grep -q '^/usr/bin/pasta$' || { echo "the package does not ship pasta" >&2; exit 1; }
+pasta --help 2>&1 | grep -q -- '--map-guest-addr' || { echo "pasta lacks --map-guest-addr, which Podman passes" >&2; exit 1; }
 for kept in buildah skopeo; do
 	dpkg-query -W -f='${Status}' "$kept" 2>/dev/null | grep -q 'ok installed' \
 		|| { echo "$kept was removed by the upgrade" >&2; exit 1; }
@@ -110,4 +116,22 @@ podman --storage-driver vfs save --format oci-dir -o "$img/oci" smoke-img
 skopeo copy "oci:$img/oci" "dir:$img/dir" >/dev/null || { echo "skopeo cannot copy: its policy is missing" >&2; exit 1; }
 buildah --storage-driver vfs pull "oci:$img/oci" >/dev/null || { echo "buildah cannot pull: its policy is missing" >&2; exit 1; }
 rm -rf "$img"
+# Rootless networking is what the old passt broke. Where an unprivileged user cannot create
+# a user namespace (some nested containers) the check cannot run; say so instead of passing silently.
+id smoke >/dev/null 2>&1 || useradd -m smoke
+grep -q '^smoke:' /etc/subuid || echo 'smoke:100000:65536' >> /etc/subuid
+grep -q '^smoke:' /etc/subgid || echo 'smoke:100000:65536' >> /etc/subgid
+chmod -R a+rX "$root"
+# pasta itself, with the option Podman passes, as an unprivileged user: needs no helper binaries.
+if su smoke -c 'unshare -Un true' 2>/dev/null; then
+	su smoke -c 'pasta --config-net --map-guest-addr 169.254.1.2 -- true' >/dev/null 2>&1 \
+		|| { echo "pasta did not start with --map-guest-addr as an unprivileged user" >&2; exit 1; }
+fi
+rootless() { su smoke -c "mkdir -p /tmp/xdg-smoke && HOME=/home/smoke XDG_RUNTIME_DIR=/tmp/xdg-smoke $*" 2>&1; }
+if rootless podman unshare true >/dev/null; then
+	out="$(rootless podman --storage-driver vfs run --rm --network pasta --rootfs "$root" /usr/bin/echo rootless-ok || true)"
+	case "$out" in *rootless-ok) ;; *) echo "a rootless container with pasta did not run: $out" >&2; exit 1 ;; esac
+else
+	echo "rootless check skipped: Podman cannot create its user namespace for an unprivileged user here"
+fi
 echo "smoke test passed: podman $version"

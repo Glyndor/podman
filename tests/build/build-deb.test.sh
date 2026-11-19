@@ -16,12 +16,16 @@ check() { # <desc> <want> <got>
 }
 
 mkdir "$WORK/src" "$WORK/nv" "$WORK/aa"
+mkdir -p "$WORK/passt/debian" "$WORK/passt/contrib/apparmor/abstractions"
+printf 'passt (0.0~git20260728.f8df3f1-1~bpo13+1) trixie-backports; urgency=medium\n\n  * x\n\n -- X <x@example.org>  Tue, 28 Jul 2026 00:00:00 +0000\n' > "$WORK/passt/debian/changelog"
+printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(prefix)/bin/passt\n' > "$WORK/passt/Makefile"
+echo p > "$WORK/passt/contrib/apparmor/usr.bin.passt"; echo p > "$WORK/passt/contrib/apparmor/abstractions/passt"
 mkdir -p "$WORK/mods/common/pkg/config" "$WORK/mods/common/pkg/seccomp" "$WORK/mods/common/rpm" "$WORK/mods/image" "$WORK/mods/storage"
 printf 'module x\nrequire (\n\tgo.podman.io/common v0.70.0\n\tgo.podman.io/image/v5 v5.42.1\n\tgo.podman.io/storage v1.65.1\n)\n' > "$WORK/src/go.mod"
 for f in common/pkg/config/containers.conf common/rpm/policy.json image/registries.conf image/default.yaml storage/storage.conf; do echo x > "$WORK/mods/$f"; done
 echo '{"syscalls":[{"names":["futex_waitv"]}]}' > "$WORK/mods/common/pkg/seccomp/seccomp.json"
 echo '[aliases]' > "$WORK/short.conf"
-export GLYNDOR_MODULES_DIR="$WORK/mods" GLYNDOR_SHORTNAMES="$WORK/short.conf"
+export GLYNDOR_PASST_SRC="$WORK/passt" GLYNDOR_MODULES_DIR="$WORK/mods" GLYNDOR_SHORTNAMES="$WORK/short.conf"
 printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags; echo "$$CGO_CFLAGS" > %s/cflags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" "$WORK" > "$WORK/src/Makefile"
 printf 'all:\n\t@echo "$(CARGO)" > %s/cargo-nv\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/netavark\n' "$WORK" > "$WORK/nv/Makefile"; touch "$WORK/nv/Cargo.lock" "$WORK/aa/Cargo.lock"
 printf '[package]\nname = "netavark"\nversion = "2.1.0"\n' > "$WORK/nv/Cargo.toml"
@@ -41,8 +45,8 @@ for helper in netavark aardvark-dns; do
 	check "$helper is installed under /usr/libexec/podman" "./usr/libexec/podman/$helper" \
 		"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "./usr/libexec/podman/$helper")"
 done
-check "replaces the distribution netavark, aardvark-dns and containers-common" "netavark, aardvark-dns, golang-github-containers-common, podman-remote" "$(dpkg-deb -f "$deb" Conflicts 2>/dev/null)"
-check "provides what Debian packages depend on, with the versions built" "netavark (= 2.1.0), aardvark-dns (= 2.1.3), golang-github-containers-common (= 0.70.0), podman-remote" "$(dpkg-deb -f "$deb" Provides 2>/dev/null)"
+check "replaces the distribution netavark, aardvark-dns and containers-common" "netavark, aardvark-dns, golang-github-containers-common, podman-remote, passt" "$(dpkg-deb -f "$deb" Conflicts 2>/dev/null)"
+check "provides what Debian packages depend on, with the versions built" "netavark (= 2.1.0), aardvark-dns (= 2.1.3), golang-github-containers-common (= 0.70.0), podman-remote, passt (= 0.0~git20260728.f8df3f1-1~bpo13+1)" "$(dpkg-deb -f "$deb" Provides 2>/dev/null)"
 
 check "the shell completions are installed" ./usr/share/bash-completion/completions/podman \
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/bash-completion/completions/podman')"
@@ -52,6 +56,11 @@ check "the seccomp profile of this release is installed" ./usr/share/containers/
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/containers/seccomp.json')"
 check "policy.json is a conffile under /etc/containers" ./etc/containers/policy.json \
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './etc/containers/policy.json')"
+for f in ./usr/bin/passt ./usr/bin/pasta ./etc/apparmor.d/usr.bin.passt ./etc/apparmor.d/abstractions/passt; do
+	check "passt ships $f" "$f" "$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "$f")"
+done
+check "passt is no longer only recommended" 0 "$(dpkg-deb -f "$deb" Recommends 2>/dev/null | grep -c passt)"
+check "the AppArmor profiles are loaded on configure" 1 "$(dpkg-deb -I "$deb" postinst 2>/dev/null | grep -c 'apparmor_parser -r')"
 check "the distribution's containers-common is not depended on" 0 "$(dpkg-deb -f "$deb" Depends 2>/dev/null | grep -c 'golang-github-containers-common')"
 check "an old crun is removed rather than left to fail" "crun (<< 1.21)" "$(dpkg-deb -f "$deb" Breaks 2>/dev/null)"
 check "catatonit is required, as upstream does" 1 "$(dpkg-deb -f "$deb" Depends 2>/dev/null | grep -c 'catatonit')"
