@@ -68,6 +68,19 @@ put "$image/registries.conf" usr/share/containers/registries.conf
 put "$image/default.yaml" usr/share/containers/registries.d/default.yaml
 put "$shortnames" usr/share/containers/registries.conf.d/000-shortnames.conf
 
+# Debian's containers-storage ships /usr/share/containers/storage.conf with runroot and
+# graphroot set to the system paths, which the storage library of the old layout ignored
+# for a rootless user. The one this Podman is built with does not: a rootless Podman then
+# tries /var/lib/containers/storage and stops with "permission denied". The file belongs to
+# that package, so the rootless paths go in a drop-in, which is read after it and only
+# when the user is not root. A user's own ~/.config/containers still wins.
+install -D -m 0644 /dev/stdin "$stage/usr/share/containers/storage.rootless.conf.d/10-glyndor-rootless-paths.conf" <<'DROPIN'
+# Paths of a rootless user, whatever the system storage.conf says (see the Glyndor package).
+[storage]
+runroot = "/run/user/$UID/containers"
+graphroot = "$HOME/.local/share/containers/storage"
+DROPIN
+
 # The directories the spec owns; Podman and its users drop their own files in them.
 for d in etc/containers/certs.d etc/containers/networks etc/containers/oci/hooks.d \
 	etc/containers/registries.conf.d etc/containers/registries.d etc/containers/systemd \

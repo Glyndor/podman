@@ -33,6 +33,10 @@ for f in containers.conf seccomp.json registries.conf registries.d/default.yaml 
 	check "installs $f under /usr/share/containers" 1 "$([ -s "$WORK/stage/usr/share/containers/$f" ] && echo 1 || echo 0)"
 done
 check "installs policy.json under /etc/containers, where buildah and skopeo read it" 1 "$([ -s "$WORK/stage/etc/containers/policy.json" ] && echo 1 || echo 0)"
+check "a rootless user gets its own runroot even if the system storage.conf sets one" 1 \
+	"$(grep -c 'runroot = "/run/user/$UID/containers"' "$WORK/stage/usr/share/containers/storage.rootless.conf.d/10-glyndor-rootless-paths.conf")"
+check "and its own graphroot" 1 \
+	"$(grep -c 'graphroot = "$HOME/.local/share/containers/storage"' "$WORK/stage/usr/share/containers/storage.rootless.conf.d/10-glyndor-rootless-paths.conf")"
 check "storage.conf stays with the package that owns it" 0 "$([ -e "$WORK/stage/usr/share/containers/storage.conf" ] && echo 1 || echo 0)"
 check "the seccomp profile is the module's, not another" 1 "$(grep -c futex_waitv "$WORK/stage/usr/share/containers/seccomp.json")"
 check "creates the directories the spec owns" 1 "$([ -d "$WORK/stage/etc/containers/oci/hooks.d" ] && echo 1 || echo 0)"
