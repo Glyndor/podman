@@ -27,7 +27,7 @@ RUN echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sou
 	&& apt-get update -qq \
 	&& apt-get install -y -qq --no-install-recommends -t trixie-backports cargo rustc \
 	&& apt-get install -y -qq --no-install-recommends \
-		ca-certificates git make gcc golang-go go-md2man pkg-config dpkg-dev xz-utils \
+		ca-certificates git make gcc golang-go go-md2man pkg-config dpkg-dev xz-utils file \
 		protobuf-compiler python3 \
 		libseccomp-dev libsystemd-dev libapparmor-dev libbtrfs-dev \
 	&& rm -rf /var/lib/apt/lists/*
@@ -37,4 +37,14 @@ RUN apt-get update -qq && cd "$(mktemp -d)" \
 	&& apt-get download golang-github-containers-common \
 	&& dpkg-deb -x golang-github-containers-common_*.deb x \
 	&& install -D -m 0644 x/etc/containers/registries.conf.d/shortnames.conf /usr/share/glyndor-build/shortnames.conf \
+	&& rm -rf /var/lib/apt/lists/*
+# passt: Podman 6.2.0 passes pasta an option (--map-guest-addr) that the passt of Ubuntu
+# 24.04 does not have, and upstream's spec asks for 20260716 or newer, which no supported
+# release ships. passt's own tags carry no signature, so the source comes from Debian's
+# signed archive instead: trixie-backports has a release newer than that floor, and
+# apt checks the source package against the signed Release file.
+RUN echo "deb-src http://deb.debian.org/debian trixie-backports main" >> /etc/apt/sources.list.d/backports.list \
+	&& apt-get update -qq && mkdir -p /usr/share/glyndor-build && cd /usr/share/glyndor-build \
+	&& apt-get source -qq -t trixie-backports passt \
+	&& ln -s "$(ls -d passt-*/ | head -n 1)" passt \
 	&& rm -rf /var/lib/apt/lists/*

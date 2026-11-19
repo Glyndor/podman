@@ -85,8 +85,39 @@ for src in "$netavark_src" "$aardvark_src"; do
 	make -C "$src" install PREFIX=/usr DESTDIR="$stage" >&2
 done
 
+# passt and pasta, from Debian's signed source of a release newer than the 20260716 that
+# upstream's spec asks for: the passt of the supported releases is older and lacks an
+# option Podman 6.2.0 always passes, so rootless networking would not start on Ubuntu
+# 24.04. Built with the hardening flags Debian builds it with, and installed with
+# its AppArmor profiles, as Debian's package does.
+passt_src="${GLYNDOR_PASST_SRC:-/usr/share/glyndor-build/passt}"
+[ -f "$passt_src/Makefile" ] || { echo "no passt source at $passt_src" >&2; exit 1; }
+passt_version="$(dpkg-parsechangelog -l "$passt_src/debian/changelog" -S Version)"
+case "$arch" in amd64) passt_target=x86_64 ;; arm64) passt_target=aarch64 ;; *) passt_target="$(uname -m)" ;; esac
+(
+	eval "$(DEB_BUILD_MAINT_OPTIONS=hardening=+all dpkg-buildflags --export=sh)"
+	export VERSION="$passt_version"
+	make -C "$passt_src" prefix=/usr TARGET="$passt_target" >&2
+	make -C "$passt_src" install prefix=/usr TARGET="$passt_target" DESTDIR="$stage" >&2
+)
+ln -f "$stage/usr/bin/passt" "$stage/usr/bin/pasta"
+[ ! -e "$stage/usr/bin/passt.avx2" ] || ln -f "$stage/usr/bin/passt.avx2" "$stage/usr/bin/pasta.avx2"
+if [ -d "$passt_src/contrib/apparmor" ]; then
+	for f in "$passt_src"/contrib/apparmor/usr.bin.*; do
+		[ -f "$f" ] && install -D -m 0644 "$f" "$stage/etc/apparmor.d/$(basename "$f")"
+	done
+	for f in "$passt_src"/contrib/apparmor/abstractions/*; do
+		[ -f "$f" ] && install -D -m 0644 "$f" "$stage/etc/apparmor.d/abstractions/$(basename "$f")"
+	done
+fi
+
 # Release artifacts ship stripped (releases standard): drop debug symbols from every ELF.
-find "$stage" -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && strip --strip-unneeded "$1"' _ {} \; 2>/dev/null || true
+find "$stage" -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && strip --strip-unneeded "$1"' _ {} \;
+# A binary that still has debug sections means strip did not run: say so rather than ship 75 MB.
+while IFS= read -r -d '' f; do
+	file -b "$f" | grep -q '^ELF' || continue
+	! readelf -S "$f" 2>/dev/null | grep -q '\.debug_' || { echo "$f still has debug sections" >&2; exit 1; }
+done < <(find "$stage" -type f -perm -u+x -print0)
 
 # The newest glibc symbol any binary asks for. libc6 has to be declared with it:
 # without a version apt installs the package on a release whose glibc is older
@@ -134,17 +165,31 @@ Section: admin
 Priority: optional
 Homepage: https://podman.io
 Depends: conmon (>= 2.1.7), crun (>= 1.21) | runc, catatonit, init-system-helpers, nftables${libs:+, $libs}
-Recommends: ca-certificates, passt, uidmap, dbus-user-session, criu
-Provides: netavark (= $netavark_version), aardvark-dns (= $aardvark_version), golang-github-containers-common (= $common_version), podman-remote
-Conflicts: netavark, aardvark-dns, golang-github-containers-common, podman-remote
+Recommends: ca-certificates, uidmap, dbus-user-session, criu
+Provides: netavark (= $netavark_version), aardvark-dns (= $aardvark_version), golang-github-containers-common (= $common_version), podman-remote, passt (= $passt_version)
+Conflicts: netavark, aardvark-dns, golang-github-containers-common, podman-remote, passt
 Breaks: crun (<< 1.21)
-Replaces: netavark, aardvark-dns, golang-github-containers-common, podman-remote
+Replaces: netavark, aardvark-dns, golang-github-containers-common, podman-remote, passt
 Description: Podman with its network stack, built from the upstream releases
  Daemonless container engine, packaged from the signed upstream tags of Podman,
  netavark and aardvark-dns, with the containers-common configuration it asks for.
  The network components and that configuration replace the older copies the
  distributions ship.
 CONTROL
+
+# The AppArmor profiles of passt are loaded when the package is configured, as Debian's
+# package does; without it they would only apply after the next boot.
+cat > "$stage/DEBIAN/postinst" <<'POSTINST'
+#!/bin/sh
+set -e
+if [ "$1" = configure ] && command -v apparmor_parser >/dev/null 2>&1 && aa-enabled >/dev/null 2>&1; then
+	for p in usr.bin.passt usr.bin.pasta usr.bin.passt-repair usr.bin.pesto; do
+		[ ! -f "/etc/apparmor.d/$p" ] || apparmor_parser -r -T -W "/etc/apparmor.d/$p" || true
+	done
+fi
+exit 0
+POSTINST
+chmod 0755 "$stage/DEBIAN/postinst"
 
 dpkg-deb --root-owner-group -Zxz --build "$stage" "$out/podman_${version}_${arch}.deb" >/dev/null
 echo "$out/podman_${version}_${arch}.deb"
