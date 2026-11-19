@@ -114,10 +114,10 @@ fi
 # Release artifacts ship stripped (releases standard): drop debug symbols from every ELF.
 find "$stage" -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && strip --strip-unneeded "$1"' _ {} \;
 # A binary that still has debug sections means strip did not run: say so rather than ship 75 MB.
-for f in $(find "$stage" -type f -perm -u+x); do
+while IFS= read -r -d '' f; do
 	file -b "$f" | grep -q '^ELF' || continue
 	! readelf -S "$f" 2>/dev/null | grep -q '\.debug_' || { echo "$f still has debug sections" >&2; exit 1; }
-done
+done < <(find "$stage" -type f -perm -u+x -print0)
 
 # The newest glibc symbol any binary asks for. libc6 has to be declared with it:
 # without a version apt installs the package on a release whose glibc is older
