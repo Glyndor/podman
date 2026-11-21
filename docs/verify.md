@@ -6,14 +6,14 @@ Each release publishes `podman_<version>_<arch>.deb` and `podman_<version>_<arch
 
 ## Check the signature with OpenSSL
 
-You need OpenSSL 3 and `curl`. The key file holds a raw 32-byte Ed25519 public key in base64. OpenSSL reads a PEM key, so the steps below wrap the raw key in the standard 12-byte DER header (`302a300506032b6570032100`, which is `MCowBQYDK2VwAyEA` in base64). Set `version` and `arch` to the release you downloaded, for example `6.2.0+r8` and `amd64`:
+You need OpenSSL 3 and `curl`. The key file holds one raw 32-byte Ed25519 public key per line, in base64: one line today, two while a key is being replaced. The steps take the first line; during a replacement a package is good when either key verifies it, so repeat them with the second line if the first refuses. OpenSSL reads a PEM key, so the steps below wrap the raw key in the standard 12-byte DER header (`302a300506032b6570032100`, which is `MCowBQYDK2VwAyEA` in base64). Set `version` and `arch` to the release you downloaded, for example `6.2.0+r8` and `amd64`:
 
 ```bash
 version='6.2.0+r8'; arch=amd64
 deb="podman_${version}_${arch}.deb"
 
 # the key from this repository, as a PEM file
-key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-ed25519.b64)"
+key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-ed25519.b64 | grep -v '^#' | head -n 1)"
 { echo '-----BEGIN PUBLIC KEY-----'
   printf 'MCowBQYDK2VwAyEA%s=\n' "$key"
   echo '-----END PUBLIC KEY-----'; } > glyndor-release.pem
