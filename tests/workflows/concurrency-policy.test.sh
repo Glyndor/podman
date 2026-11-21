@@ -141,7 +141,9 @@ for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
         # would race for the same tag, and a pending one that is replaced loses nothing,
         # since the run after it plans from upstream and the releases again.
         exempt = {("release.yml", "workflow")}
-        if "push" not in events_of(doc, name):
+        # A reusable workflow is written for callers this repository does not hold, so a
+        # push is within reach of every one of them, whatever the callers here run on.
+        if "push" not in events_of(doc, name) and "workflow_call" not in triggers(doc):
             continue
         blocks = [("workflow", doc.get("concurrency"))]
         blocks += [(job, cfg.get("concurrency")) for job, cfg in (doc.get("jobs") or {}).items() if not only_pr(cfg)]
@@ -212,6 +214,9 @@ check "and is named once a caller can run it on a push" \
 	"reusable-line-limit.yml: workflow cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
 cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 rm "$BAD/dco.yml"
+check "a reusable that nothing calls, cancelling only on a pull request, is accepted" "" "$(violations cancel-outside-pr "$BAD")"
+sed -i "s/^  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\$/  cancel-in-progress: true/" "$BAD/reusable-dco.yml"
+check "the fixture did go back to cancelling always" "1" "$(grep -c '^  cancel-in-progress: true$' "$BAD/reusable-dco.yml")"
 check "a reusable that nothing calls is read as able to run on anything" \
 	"reusable-dco.yml: workflow cancels a run whatever the event, and the workflow also runs on unknown caller" "$(violations cancel-outside-pr "$BAD")"
 cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
@@ -236,6 +241,14 @@ sed -i "s/^  group: workflow-lint-\${{ github.workflow }}-.*\$/  group: workflow
 check "and so is one in a reusable workflow that a push caller runs" \
 	"reusable-workflow-lint.yml: workflow groups push runs by 'workflow-lint-\${{ github.workflow }}-\${{ github.ref }}', so a push can cancel the one queued before it" \
 	"$(violations push-group "$BAD")"
+for reusable in reusable-dco reusable-line-limit; do
+	cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
+	sed -i "s/^  group: \(.*\)-\${{ github.event_name == 'pull_request' && github.ref || github.run_id }}\$/  group: \1-\${{ github.ref }}/" "$BAD/$reusable.yml"
+	check "the fixture did group the runs of $reusable.yml by ref" 1 "$(grep -c '^  group: .*-\${{ github.ref }}$' "$BAD/$reusable.yml")"
+	check "$reusable.yml, which only pull request callers use here, is named for it" \
+		"$reusable.yml: workflow groups push runs by '$(sed -n 's/^  group: //p' "$BAD/$reusable.yml")', so a push can cancel the one queued before it" \
+		"$(violations push-group "$BAD")"
+done
 cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^  group: release$/  group: release-${{ github.ref }}/' "$BAD/release.yml"
 check "release.yml, serialised on purpose, is the one group left out" "" "$(violations push-group "$BAD")"
