@@ -188,3 +188,70 @@ jobs:
           else
             gh issue create --title "$title" --label type:bug --label prio:P1 --label area:upstream --body "$body"
           fi
+
+  # mutation.yml sweeps every catalogued guard once a week, and nothing else runs the
+  # whole catalogue: a pull request runs only the entries it can affect. If the cron
+  # stops firing, a guard whose suite stopped noticing it is found by nobody. Nine
+  # days is a week and GitHub's usual lateness; until the workflow has had that long
+  # to fire once, counted from the commit that added it, no run yet is not a miss.
+  mutation-freshness:
+    name: mutation sweep freshness
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    # Ceiling, not measured: one gh call, one git log and a script that reads them.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The history, for the commit that added mutation.yml.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Has the mutation sweep run in the last nine days
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MAX_HOURS: "216"
+        run: |
+          runs="$RUNNER_TEMP/mutation-runs.json"
+          if ! gh run list --workflow mutation.yml --event schedule --limit 20 \
+            --json createdAt,conclusion > "$runs"; then
+            echo "code=2" >> "$GITHUB_OUTPUT"
+            echo "::error::could not list the runs of mutation.yml"
+            exit 2
+          fi
+          # When the schedule began: the commit that added the workflow. Not found is
+          # left empty, and the script then reads it as a start it cannot decide on.
+          since="$(git log -1 --format=%ct --diff-filter=A -- .github/workflows/mutation.yml)"
+          set +e
+          bash scripts/monitoring/schedule-freshness.sh "$runs" "$(date +%s)" "$MAX_HOURS" "${since:-unknown}"
+          rc=$?
+          set -e
+          echo "code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: Open an issue, or add to the one that is open
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CODE: ${{ steps.fresh.outputs.code }}
+        run: |
+          if [ "$CODE" = "1" ]; then
+            title="The mutation sweep has stopped running"
+            body="mutation.yml has not finished a scheduled run in the last nine days, so a guard whose suite no longer notices it would go unnoticed. Check that the workflow is enabled and that scheduled workflows are running in this repository. Run: $RUN_URL"
+          else
+            title="The mutation sweep's freshness check could not decide"
+            body="The check that mutation.yml still runs could not read its runs, a date in them, or when the workflow was added. Read the run: $RUN_URL"
+          fi
+          open="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --label type:bug --label prio:P2 --label area:ci --body "$body"
+          fi

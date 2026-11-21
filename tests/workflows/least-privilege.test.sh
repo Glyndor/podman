@@ -59,6 +59,7 @@ ALLOWED = {
     ("keyring-watch.yml", "health", "issues"): "opens the issue when too few keys stay valid",
     ("watchdog.yml", "alert", "issues"): "opens the issue when the release is behind upstream",
     ("watchdog.yml", "keyring-watch-freshness", "issues"): "opens the issue when the keyring watch stopped",
+    ("watchdog.yml", "mutation-freshness", "issues"): "opens the issue when the mutation sweep stopped",
 }
 LEVELS = {"read", "write", "none"}
 
