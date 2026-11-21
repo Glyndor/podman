@@ -21,7 +21,7 @@ on:
       extensions:
         description: Space-separated source file extensions to check
         type: string
-        default: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte"
+        default: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte yml yaml"
       exclude-pattern:
         description: Optional extended regex; matching paths are skipped
         type: string
@@ -37,7 +37,10 @@ concurrency:
 jobs:
   line-limit:
     name: line limit
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in this repository's runs on 2026-11-20,
+    # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
+    # commit; the arm64 build keeps its own label, so the rootless test covers both.
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

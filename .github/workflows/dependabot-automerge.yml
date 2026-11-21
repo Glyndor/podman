@@ -28,6 +28,7 @@ jobs:
   arm:
     name: arm auto-merge
     if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -86,6 +87,7 @@ jobs:
   disarm:
     name: disarm when a person pushes
     if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]' && github.actor != 'dependabot[bot]'
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -106,8 +108,10 @@ jobs:
   rebase:
     name: rebase what fell behind
     if: github.event_name == 'push'
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
     timeout-minutes: 5
     steps:
@@ -118,8 +122,20 @@ jobs:
         run: |
           # Every open one, whatever its state: a pull request that is behind and
           # also blocked by the up-to-date rule is reported as BLOCKED, not BEHIND,
-          # so filtering on the state would skip exactly the ones that need this.
-          # Dependabot does nothing for a branch that is already current.
-          numbers="$(gh pr list --state open --author "app/dependabot" --json number --jq '.[].number')" \
+          # so the state cannot say which ones need this. The commits can: how many
+          # of main's the branch does not have. Dependabot answers a request on a
+          # branch that is already current with a comment of its own, so asking only
+          # where there is something to do keeps the pull requests quiet. When the
+          # count cannot be read the branch is asked anyway: a comment too many is
+          # noise, one too few leaves it stuck behind the up-to-date rule.
+          pulls="$(gh pr list --state open --author "app/dependabot" --json number,headRefOid --jq '.[] | "\(.number) \(.headRefOid)"')" \
             || { echo "::error::could not list the open pull requests"; exit 1; }
-          for n in $numbers; do gh pr comment "$n" --body "@dependabot rebase"; done
+          while read -r n sha; do
+            [ -n "$n" ] || continue
+            behind="$(gh api "repos/$GH_REPO/compare/main...$sha" --jq .behind_by 2> /dev/null)" || behind=""
+            if [ "$behind" = 0 ]; then
+              echo "#$n has every commit of main"
+            else
+              gh pr comment "$n" --body "@dependabot rebase"
+            fi
+          done <<< "$pulls"

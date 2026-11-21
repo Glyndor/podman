@@ -73,7 +73,7 @@ reason it names. Assert which failure fired, never that some failure did.
 | `release.yml` | the scheduled plan, build, smoke test, signing and publish; also runs when `scripts/build`, `keyring` or the workflow itself changes, and only publishes from `main`; opens an issue when a scheduled or push run fails |
 | `reusable-build.yml` | the build, the smoke test on Debian 13 and Ubuntu 24.04 and 26.04, the check that Ubuntu 22.04 refuses the package, and a rootless container on the runner itself, for one architecture; called by `release.yml` and `build-check.yml` |
 | `build-check.yml` | `package builds`: a pull request that touches `scripts/build/`, `scripts/verify/`, `scripts/upstream/`, `keyring/podman/`, the build workflows or `scripts/ci/decide-build.sh` compiles the package on both architectures; any other pull request skips the build and passes |
-| `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it |
+| `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it; also fails when `keyring-watch.yml` has not finished a scheduled run in two days, and opens an issue for that too |
 | `dependabot-automerge.yml` | arms auto-merge on Dependabot's pull requests, which then merge when the required checks pass, and asks Dependabot to rebase the ones that fall behind |
 
 Job ids are load-bearing. A required status check is named

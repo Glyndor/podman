@@ -18,7 +18,10 @@ concurrency:
 jobs:
   test:
     name: test
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in this repository's runs on 2026-11-20,
+    # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
+    # commit; the arm64 build keeps its own label, so the rootless test covers both.
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     # Under two minutes locally; the suite builds a fake .deb and a few tags.
@@ -50,7 +53,7 @@ jobs:
           shellcheck --version
           shellcheck -S warning scripts/*/*.sh tests/*/*.sh
       - name: every script has a test
-        run: scripts/quality/check-test-coverage.sh
+        run: bash scripts/quality/check-test-coverage.sh
       - name: Install the pinned cryptography wheel for the ML-DSA-65 suite
         run: |
           set -euo pipefail

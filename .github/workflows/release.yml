@@ -37,7 +37,10 @@ jobs:
     # Only main publishes. A dispatch from a branch would otherwise tag an
     # unreviewed commit as the release apt serves.
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in this repository's runs on 2026-11-20,
+    # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
+    # commit; the arm64 build keeps its own label, so the rootless test covers both.
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     timeout-minutes: 10
@@ -64,18 +67,18 @@ jobs:
         run: |
           w="$RUNNER_TEMP/plan"; mkdir -p "$w"
           for c in podman netavark aardvark-dns; do
-            echo "$c $(scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")" >> "$w/fresh"
+            echo "$c $(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")" >> "$w/fresh"
           done
           # How the package is built counts as a component: upstream tags cannot
           # see a packaging fix, so without this one never produces a release.
-          echo "recipe $(scripts/build/recipe-id.sh)" >> "$w/fresh"
+          echo "recipe $(bash scripts/build/recipe-id.sh)" >> "$w/fresh"
           # Every tag the repository has, from git rather than from the release
           # list: a tag can exist without a release, and a window of the newest
           # releases would one day miss the revision the planner has to step past.
           git ls-remote --tags "https://github.com/$GH_REPO.git" \
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
-          scripts/upstream/read-released.sh "$w/released"
-          scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
+          bash scripts/upstream/read-released.sh "$w/released"
+          bash scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
           # The package version is the tag without its leading v; the build
           # workflow takes it as given, since an expression cannot strip it.
           tag="$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT")"
@@ -109,7 +112,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: amd64, runner: ubuntu-latest }
+          - { arch: amd64, runner: ubuntu-26.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
     uses: ./.github/workflows/reusable-build.yml
     with:
@@ -127,7 +130,7 @@ jobs:
   publish:
     name: Sign and publish
     needs: [plan, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       id-token: write
@@ -209,6 +212,7 @@ jobs:
     name: alert
     needs: [plan, build, publish]
     if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
       issues: write
