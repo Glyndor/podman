@@ -77,6 +77,8 @@ schedule-freshness-start-is-not-before-now	scripts/monitoring/schedule-freshness
 schedule-freshness-no-run-finished	scripts/monitoring/schedule-freshness.sh	if [ "$newest" = none ]; then	if false; then	tests/monitoring/schedule-freshness.test.sh,tests/workflows/watchdog-freshness.test.sh
 check-commit-identity-personal-address	scripts/quality/check-commit-identity.sh	[ "$bad" -eq 0 ] || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }	[ "$bad" -eq 0 ] || true	tests/quality/check-commit-identity.test.sh
 check-mutation-coverage-a-finding-fails	scripts/quality/check-mutation-coverage.sh	if errors:	if False:	tests/quality/check-mutation-coverage.test.sh
+mutation-refusals-a-condition-on-the-line-guards-the-refusal	scripts/quality/mutation_refusals.py	if "||" in before or "&&" in before:	if False:	tests/quality/check-mutation-coverage.test.sh
+mutation-refusals-an-exit-in-shell-is-a-refusal	scripts/quality/mutation_refusals.py	hit = EXIT.search(code) or PY_EXIT.search(code_of(line, STRING)) \	hit = PY_EXIT.search(code_of(line, STRING)) \	tests/quality/check-mutation-coverage.test.sh
 check-secrets-a-credential-found	scripts/quality/check-secrets.sh	if [ "$bad" -ne 0 ]; then	if false; then	tests/quality/check-secrets.test.sh
 check-secrets-a-moved-file-is-not-rescanned	scripts/quality/check-secrets.sh	git diff --no-color -U0 --no-renames "$base...$head"	git diff --no-color -U0 "$base...$head"	tests/quality/check-secrets.test.sh
 check-test-coverage-no-scripts-directory	scripts/quality/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true	tests/quality/check-test-coverage.test.sh

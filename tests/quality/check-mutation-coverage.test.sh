@@ -8,6 +8,9 @@
 # to be named. Then the checker runs over this repository, which has to pass,
 # and over a copy with one entry taken out, which must not.
 #
+# The detector of refusals is scripts/quality/mutation_refusals.py, which the check imports;
+# it has no entry point of its own, so this suite reaches it through the check.
+#
 # Requires: bash, python3.
 # shellcheck disable=SC2016,SC1003 # the fixtures are literal shell code, quotes and $ included
 set -uo pipefail
