@@ -187,6 +187,12 @@ check "a mutation of a Dockerfile that its suite notices passes the runner" "0" 
 printf '%s\t%s\t%s\t%s\t%s\n' image-syntax scripts/Dockerfile 'FROM debian' 'FORM debian' tests/image.test.sh >"$CATALOG"
 check "a mutation that leaves a Dockerfile with an instruction no build knows fails the runner" "1" "$(run)"
 check "and says the Dockerfile has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
+# Each of the two things it is held to, alone: an unknown instruction after a good first
+# line, and a file of known instructions that does not begin with FROM.
+printf '%s\t%s\t%s\t%s\t%s\n' image-later scripts/Dockerfile 'RUN apt-get update' 'RUM apt-get update' tests/image.test.sh >"$CATALOG"
+check "an unknown instruction further down fails the runner as a syntax error" "1 1" "$(run) $(has 'syntax error' "$WORK/out")"
+printf '%s\t%s\t%s\t%s\t%s\n' image-start scripts/Dockerfile 'FROM debian:13@sha256:aaaa AS base' 'ENV image=debian:13@sha256:aaaa' tests/image.test.sh >"$CATALOG"
+check "a Dockerfile that no longer begins with FROM fails the runner as a syntax error" "1 1" "$(run) $(has 'syntax error' "$WORK/out")"
 # The shell of a step is what GitHub runs, and YAML takes a broken command as a string.
 printf '%s\t%s\t%s\t%s\t%s\n' yml-shell .github/workflows/w.yml 'echo "ran a"' 'echo "ran a' tests/w.test.sh >"$CATALOG"
 check "a mutation that breaks the shell of a step, and not its YAML, fails the runner" "1" "$(run)"
