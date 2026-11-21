@@ -29,7 +29,10 @@ case "$1 $2" in
 		done
 		[ "${FAKE_NO_ASSET:-0}" = 0 ] || { echo "no assets match" >&2; exit 1; }
 		if [ -e "$out" ] && [ "$clobber" = 0 ]; then echo "$out already exists (use --clobber)" >&2; exit 1; fi
-		printf '%b' "${FAKE_COMPONENTS:-}" > "$out" ;;
+		printf '%b' "${FAKE_COMPONENTS:-}" > "$out"
+		# Anything a client prints on success must not reach the caller's stdout, which
+		# carries the tag and nothing else.
+		echo "downloaded components.txt" ;;
 	"release view")
 		[ "${FAKE_VIEW_FAILS:-0}" = 0 ] || { echo "HTTP 502" >&2; exit 1; }
 		[ "$3" = "${FAKE_LATEST:-}" ] || { echo "asked about $3" >&2; exit 1; }

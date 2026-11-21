@@ -13,7 +13,7 @@ version='6.2.0+r8'; arch=amd64
 deb="podman_${version}_${arch}.deb"
 
 # the key from this repository, as a PEM file
-key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-ed25519.b64 | grep -v '^#' | head -n 1)"
+key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-ed25519.b64 | grep -v -e '^#' -e '^[[:space:]]*$' | head -n 1)"
 { echo '-----BEGIN PUBLIC KEY-----'
   printf 'MCowBQYDK2VwAyEA%s=\n' "$key"
   echo '-----END PUBLIC KEY-----'; } > glyndor-release.pem
@@ -36,7 +36,7 @@ Releases do not carry it yet. When they do, each package has a third file, `podm
 Checking it needs OpenSSL 3.5 or later. The key file holds a raw 1952-byte ML-DSA-65 public key in base64, and the steps below put the standard 22-byte DER header in front of it to get a key OpenSSL reads. The file has one key per line, and two during a key rotation; the steps take the first, and a package is good when either verifies it. With `deb` and `base` set as above:
 
 ```bash
-key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-mldsa65.b64 | grep -v '^#' | head -n 1)"
+key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-mldsa65.b64 | grep -v -e '^#' -e '^[[:space:]]*$' | head -n 1)"
 { printf '\x30\x82\x07\xb2\x30\x0b\x06\x09\x60\x86\x48\x01\x65\x03\x04\x03\x12\x03\x82\x07\xa1\x00'
   printf '%s' "$key" | base64 -d; } | openssl pkey -pubin -inform DER -out glyndor-release-mldsa65.pem
 
