@@ -2,7 +2,7 @@
 #
 # Tests for scripts/build/build-deb.sh against a fake source tree: the .deb must
 # be named for the package and version, a malformed version is refused, and so is
-# a build whose flags cannot be read.
+# a build whose flags or glibc floor cannot be read.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -123,6 +123,17 @@ FAKE_GO_FAILS=1 refused "$WORK/out-gofails"
 check "a build info that cannot be read is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'cannot read the build info')"
 FAKE_NO_BIN=1 refused "$WORK/out-nobin"
 check "a make that leaves no bin/podman is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'left no bin/podman')"
+
+# The glibc floor is read from the binaries or the build stops: a fallback would
+# declare libc6 (>= 2.0) and the package would install where it cannot run.
+mkdir "$WORK/objdump-fails" "$WORK/objdump-empty"
+printf '#!/bin/sh\necho "0000000000000000      DF *UND*  0000000000000000 (GLIBC_2.34) __libc_start_main"\nexit 1\n' > "$WORK/objdump-fails/objdump"
+printf '#!/bin/sh\nexit 0\n' > "$WORK/objdump-empty/objdump"
+chmod +x "$WORK/objdump-fails/objdump" "$WORK/objdump-empty/objdump"
+PATH="$WORK/objdump-fails:$PATH" refused "$WORK/out-objdump-fails"
+check "an objdump that fails is refused, even after printing a version" "1 1" "$rc $(printf '%s' "$err" | grep -c 'could not read the glibc symbols')"
+PATH="$WORK/objdump-empty:$PATH" refused "$WORK/out-objdump-empty"
+check "binaries that show no glibc symbol are refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'could not read the glibc symbols')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
