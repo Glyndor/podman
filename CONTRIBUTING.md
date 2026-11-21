@@ -48,9 +48,10 @@ for t in tests/*/*.test.sh; do bash "$t"; done
 
 Every script in `scripts/` needs a test; `check-test-coverage.sh` fails when one
 does not. The scripts that need root inside a container of a given release
-(`scripts/verify/smoke-test.sh`, `scripts/verify/refuse-test.sh`) have their
-argument contract tested here and their real run in `release.yml`, before
-anything is signed.
+(`scripts/verify/smoke-test.sh`, `scripts/verify/refuse-test.sh`, `scripts/verify/rootless-test.sh`) have their
+argument contract tested here and their real run in `reusable-build.yml`, which
+`release.yml` runs before anything is signed and `build-check.yml` runs on a pull
+request that changes how the package is built.
 
 **A test you have not watched fail is not a test.** Before claiming a check
 works, remove the control it covers, run it, and confirm it goes red for the
@@ -63,7 +64,9 @@ reason it names. Assert which failure fired, never that some failure did.
 | `tests.yml` | the suite and shellcheck |
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
 | `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |
-| `release.yml` | the scheduled plan, build, smoke test, signing and publish; also runs when `scripts/build`, `keyring` or the workflow itself changes, and only publishes from `main` |
+| `release.yml` | the scheduled plan, build, smoke test, signing and publish; also runs when `scripts/build`, `keyring` or the workflow itself changes, and only publishes from `main`; opens an issue when a scheduled or push run fails |
+| `reusable-build.yml` | the build, the smoke test on Debian 13 and Ubuntu 24.04 and 26.04, the check that Ubuntu 22.04 refuses the package, and a rootless container on the runner itself, for one architecture; called by `release.yml` and `build-check.yml` |
+| `build-check.yml` | `package builds`: a pull request that touches `scripts/build/`, `scripts/verify/`, `scripts/upstream/`, `keyring/podman/` or the build workflows compiles the package on both architectures; any other pull request skips the build and passes |
 | `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it |
 | `dependabot-automerge.yml` | arms auto-merge on Dependabot's pull requests, which then merge when the required checks pass, and asks Dependabot to rebase the ones that fall behind |
 

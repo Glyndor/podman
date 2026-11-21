@@ -116,16 +116,24 @@ podman --storage-driver vfs save --format oci-dir -o "$img/oci" smoke-img
 skopeo copy "oci:$img/oci" "dir:$img/dir" >/dev/null || { echo "skopeo cannot copy: its policy is missing" >&2; exit 1; }
 buildah --storage-driver vfs pull "oci:$img/oci" >/dev/null || { echo "buildah cannot pull: its policy is missing" >&2; exit 1; }
 rm -rf "$img"
-# Rootless networking is what the old passt broke. Where an unprivileged user cannot create
-# a user namespace (some nested containers) the check cannot run; say so instead of passing silently.
+# Rootless networking is what the old passt broke. Inside a container an unprivileged user
+# often cannot map ids, and then neither check below can run. Each one says so when it is
+# skipped, and rootless-test.sh runs the same thing on a machine where it can: this script
+# passing does not mean a rootless container was seen to work.
 id smoke >/dev/null 2>&1 || useradd -m smoke
 grep -q '^smoke:' /etc/subuid || echo 'smoke:100000:65536' >> /etc/subuid
 grep -q '^smoke:' /etc/subgid || echo 'smoke:100000:65536' >> /etc/subgid
 chmod -R a+rX "$root"
 # pasta itself, with the option Podman passes, as an unprivileged user: needs no helper binaries.
-if su smoke -c 'unshare -Un true' 2>/dev/null; then
-	su smoke -c 'pasta --config-net --map-guest-addr 169.254.1.2 -- true' >/dev/null 2>&1 \
-		|| { echo "pasta did not start with --map-guest-addr as an unprivileged user" >&2; exit 1; }
+# The probe maps an id (-r) because that is what pasta does first. Creating the namespace
+# alone can be allowed where writing its uid_map is not (measured on the arm64 runners:
+# "Couldn't write to /proc/self/uid_map: Operation not permitted").
+if su smoke -c 'unshare -Ur true' 2>/dev/null; then
+	# What pasta says goes into the message: without it the run only shows that it failed.
+	pasta_out="$(su smoke -c 'pasta --config-net --map-guest-addr 169.254.1.2 -- true' 2>&1)" \
+		|| { echo "pasta did not start with --map-guest-addr as an unprivileged user: $pasta_out" >&2; exit 1; }
+else
+	echo "pasta check skipped: an unprivileged user cannot map ids in a user namespace here"
 fi
 rootless() { su smoke -c "mkdir -p /tmp/xdg-smoke && HOME=/home/smoke XDG_RUNTIME_DIR=/tmp/xdg-smoke $*" 2>&1; }
 if rootless podman unshare true >/dev/null; then

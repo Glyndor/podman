@@ -22,6 +22,7 @@ on:
       - "scripts/build/**"
       - "keyring/**"
       - ".github/workflows/release.yml"
+      - ".github/workflows/reusable-build.yml"
   workflow_dispatch:
 
 permissions: {}
@@ -42,6 +43,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       tag: ${{ steps.p.outputs.tag }}
+      version: ${{ steps.p.outputs.version }}
       build: ${{ steps.p.outputs.build }}
       podman: ${{ steps.p.outputs.podman }}
       netavark: ${{ steps.p.outputs.netavark }}
@@ -74,6 +76,10 @@ jobs:
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
           scripts/upstream/read-released.sh "$w/released"
           scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
+          # The package version is the tag without its leading v; the build
+          # workflow takes it as given, since an expression cannot strip it.
+          tag="$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT")"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           for c in podman netavark aardvark-dns; do
             echo "${c%-dns}=$(awk -v c="$c" '$1 == c {print $2}' "$w/fresh")" >> "$GITHUB_OUTPUT"
           done
@@ -89,83 +95,34 @@ jobs:
           done
           cat "$w/fresh"
 
-  # This job installs a compiler and fetches the Go toolchain: third-party code
-  # runs here, so it holds contents: read and no secrets. What it hands forward
-  # is an artifact; the signing job never executes anything from this workspace.
+  # The build itself lives in reusable-build.yml so that build-check.yml can run
+  # the same steps on a pull request. Third-party code runs there, with
+  # contents: read and no secrets; what it hands forward is the artifact
+  # deb-<arch>, and the signing job never executes anything from it.
   build:
     name: Build ${{ matrix.arch }}
     needs: plan
     if: needs.plan.outputs.build == 'true'
-    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
-    # Estimate, not yet measured on a runner: a local amd64 build of 6.2.0 took
-    # a few minutes. Tighten after the first scheduled runs.
-    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
           - { arch: amd64, runner: ubuntu-latest }
           - { arch: arm64, runner: ubuntu-24.04-arm }
-    env:
-      TAG: ${{ needs.plan.outputs.tag }}
-      PODMAN: ${{ needs.plan.outputs.podman }}
-      NETAVARK: ${{ needs.plan.outputs.netavark }}
-      AARDVARK: ${{ needs.plan.outputs.aardvark }}
-      PODMAN_SHA: ${{ needs.plan.outputs.podman_sha }}
-      NETAVARK_SHA: ${{ needs.plan.outputs.netavark_sha }}
-      AARDVARK_SHA: ${{ needs.plan.outputs.aardvark_sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Fetch the upstream tags and verify their signatures
-        run: |
-          fetch() { # <directory> <repository> <tag> <commit the plan resolved>
-            git clone --quiet --branch "$3" "https://github.com/containers/$2.git" "$RUNNER_TEMP/$1"
-            commit="$(scripts/upstream/verify-tag.sh "$RUNNER_TEMP/$1" "$3")"
-            [ "$(git -C "$RUNNER_TEMP/$1" rev-parse HEAD)" = "$commit" ]
-            # Both architectures check out the commit the plan saw, so an upstream
-            # tag moved in between cannot give them different sources.
-            [ "$commit" = "$4" ] || { echo "$2 $3 is at $commit, the plan saw $4" >&2; exit 1; }
-            echo "verified $2 $3 at $commit"
-          }
-          fetch podman podman "$PODMAN" "$PODMAN_SHA"
-          fetch netavark netavark "$NETAVARK" "$NETAVARK_SHA"
-          fetch aardvark aardvark-dns "$AARDVARK" "$AARDVARK_SHA"
-      - name: Build the package
-        run: |
-          docker build --quiet --target build -t podman-deb-build scripts/build
-          docker run --rm \
-            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
-            -v "$RUNNER_TEMP/podman:/src/podman" -v "$RUNNER_TEMP/netavark:/src/netavark" \
-            -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
-            -v "$RUNNER_TEMP/out:/out" podman-deb-build \
-            bash /scripts/build/build-deb.sh /src/podman /src/netavark /src/aardvark "${TAG#v}" /out
-      - name: Smoke-test the package on Debian 13 and Ubuntu 24.04 and 26.04
-        run: |
-          for target in base ubuntu2404 ubuntu2604; do
-            docker build --quiet --target "$target" -t "podman-deb-$target" scripts/build
-            docker run --rm --privileged \
-              -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \
-              bash /scripts/verify/smoke-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb" "${PODMAN#v}"
-            docker run --rm --privileged \
-              -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \
-              bash /scripts/verify/smoke-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb" "${PODMAN#v}" clean
-          done
-      - name: Check an older release refuses the package
-        run: |
-          docker build --quiet --target ubuntu2204 -t podman-deb-ubuntu2204 scripts/build
-          docker run --rm \
-            -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" podman-deb-ubuntu2204 \
-            bash /scripts/verify/refuse-test.sh "/out/podman_${TAG#v}_${{ matrix.arch }}.deb"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: deb-${{ matrix.arch }}
-          path: ${{ runner.temp }}/out/*.deb
-          retention-days: 1
-          if-no-files-found: error
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
+      version: ${{ needs.plan.outputs.version }}
+      podman: ${{ needs.plan.outputs.podman }}
+      netavark: ${{ needs.plan.outputs.netavark }}
+      aardvark: ${{ needs.plan.outputs.aardvark }}
+      podman_sha: ${{ needs.plan.outputs.podman_sha }}
+      netavark_sha: ${{ needs.plan.outputs.netavark_sha }}
+      aardvark_sha: ${{ needs.plan.outputs.aardvark_sha }}
+      upload: true
 
   publish:
     name: Sign and publish
@@ -222,3 +179,30 @@ jobs:
           gh release create "$TAG" --target "$GITHUB_SHA" --title "Podman ${TAG#v}" \
             --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \
             podman_*.deb podman_*.deb.sig components.txt
+
+  # A failed release leaves no other trace until the watchdog notices a day
+  # later, so this opens the issue at once. A manual dispatch is somebody
+  # watching the run, so it does not open one.
+  alert:
+    name: alert
+    needs: [plan, build, publish]
+    if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    timeout-minutes: 5
+    steps:
+      - name: Open an issue, or add to the one that is open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Release run failed"
+          body="A release run failed. Read the run: $RUN_URL"
+          open="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --label type:bug --label prio:P1 --label area:release --body "$body"
+          fi
