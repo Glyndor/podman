@@ -3,8 +3,9 @@
 # Tests for scripts/verify/smoke-test.sh. Only the argument contract runs here:
 # the install and the container run need root on Debian 13 and are exercised by
 # the release workflow, not by this suite. What the script asks of the installed
-# package (the seccomp profile, the distribution's copies gone, buildah and skopeo
-# kept, the option pasta must have, two containers that find each other by name) is
+# package (the files it ships and the ones dpkg lists, what it provides, its version,
+# the seccomp profile, the distribution's copies gone, buildah and skopeo kept, the
+# option pasta must have, two containers that find each other by name) is
 # run by package-state.sh, whose own suite runs each check; this one reads
 # smoke-test.sh and fails when a call to it is gone, since a call replaced by `:`
 # leaves that suite green and the check unmade.
@@ -25,7 +26,11 @@ check "no arguments fails" 1 "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
 
 # calls <file> <line>: how many times the file runs exactly this line, comments left out.
 calls() { grep -v '^[[:space:]]*#' "$1" | grep -c -x -F -- "$2"; }
-for line in 'bash "$here/package-state.sh" seccomp' \
+for line in 'bash "$here/package-state.sh" ships' \
+	'bash "$here/package-state.sh" listed' \
+	'bash "$here/package-state.sh" provides' \
+	'bash "$here/package-state.sh" version "$version"' \
+	'bash "$here/package-state.sh" seccomp' \
 	'bash "$here/package-state.sh" replaced golang-github-containers-common' \
 	'bash "$here/package-state.sh" replaced passt' \
 	'bash "$here/package-state.sh" kept buildah skopeo' \

@@ -62,11 +62,12 @@ other folders of `tests/` are named for what they test: `tests/workflows` reads
 `.github/workflows`, `tests/release` exercises the signing tools in
 `.github/scripts/release` with its vectors in `tests/release/fixtures`, `tests/docs`
 holds the documents that make a claim about the repository, and `tests/lib` holds
-helpers that suites source. `tests.yml` runs every `*.test.sh` under `tests/` at any depth. The scripts that need root inside a container of a given release
-(`scripts/verify/smoke-test.sh`, `scripts/verify/refuse-test.sh`, `scripts/verify/rootless-test.sh`) have their
-argument contract tested here and their real run in `reusable-build.yml`, which
-`release.yml` runs before anything is signed and `build-check.yml` runs on a pull
-request that changes how the package is built.
+helpers that suites source. `tests.yml` runs every `*.test.sh` under `tests/` at any depth. The scripts that install the package
+(`scripts/verify/smoke-test.sh` and `scripts/verify/refuse-test.sh` as root inside a container of a given release,
+`scripts/verify/rootless-test.sh` on the runner) are tested here as far as stand-ins reach: their argument contract,
+the checks `smoke-test.sh` hands to `scripts/verify/package-state.sh`, and the body of `rootless-test.sh` against a
+faked machine. Their real run is in `reusable-build.yml`, which `release.yml` runs before anything is signed and
+`build-check.yml` runs on a pull request that changes how the package is built.
 
 One suite needs a library the distributions do not carry: `tests/release/release-signing-mldsa.test.sh`
 makes and verifies real ML-DSA-65 signatures, and the `python3-cryptography` of Debian and
