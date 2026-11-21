@@ -39,7 +39,7 @@ Each release carries one `.deb` and one detached `.sig` per architecture, and a 
 
 ## Scope
 
-The package replaces Debian's `netavark` and `aardvark-dns`. It also ships `passt` and `pasta`, built from Debian's signed source of a release newer than the one Podman 6.2.0 asks for, and the containers-common configuration of the release. Other dependencies such as `conmon` and `crun` come from Debian. Release versions follow Podman's (`6.2.0`), with a `+rN` suffix when netavark, aardvark-dns or the way the package is built (everything under `scripts/build/`) changes under the same Podman. A packaging fix is the most common reason for one. Report Podman bugs to [containers/podman](https://github.com/containers/podman).
+The package replaces Debian's `netavark` and `aardvark-dns`. It also ships `passt` and `pasta`, built from Debian's signed source of a release newer than the one Podman 6.2.0 asks for, and the containers-common configuration of the release. Other dependencies such as `conmon` and `crun` come from Debian. Release versions follow Podman's (`6.2.0`), with a `+rN` suffix when netavark, aardvark-dns or the way the package is built (everything under `scripts/build/`) changes under the same Podman. The first build of a version is revision 1 and carries no suffix, so the second one is `+r2` and there is no `+r1`. A packaging fix is the most common reason for one. Report Podman bugs to [containers/podman](https://github.com/containers/podman).
 
 ## License
 
