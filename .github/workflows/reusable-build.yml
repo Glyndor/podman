@@ -9,8 +9,9 @@ name: Build the package (reusable)
 #
 # Third-party code runs here (a compiler, the Go toolchain, upstream sources),
 # so it holds contents: read and no secrets, and the checkout keeps no
-# credentials. What it hands forward is an artifact; the signing job never
-# executes anything from this workspace.
+# credentials. What it hands forward is an artifact; the signing job runs the
+# signing tools from a checkout of its own and executes nothing this job built
+# or checked out.
 
 on:
   workflow_call:
@@ -64,9 +65,10 @@ jobs:
     runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
-    # Estimate, not yet measured on a runner: a local amd64 build of 6.2.0 took
-    # a few minutes. Tighten after the first scheduled runs.
-    timeout-minutes: 60
+    # Measured on 2026-11-21 with the rootless test included: 11 min 42 s on
+    # amd64 and 11 min 4 s on arm64. Three times that, so a slow runner is not a
+    # red and a hang does not hold the release group for six hours.
+    timeout-minutes: 35
     env:
       ARCH: ${{ inputs.arch }}
       VERSION: ${{ inputs.version }}

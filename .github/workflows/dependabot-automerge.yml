@@ -49,6 +49,14 @@ jobs:
           ONLY_DEPENDABOT: >-
             [.commits[] | (.authors // []) | length > 0 and (map(.login) - ["dependabot[bot]", "app/dependabot"] | length == 0)]
             | if length > 0 and all then "only-dependabot" else "not-only-dependabot" end
+          # A bump of the tools that sign a release is left for a person. The reason
+          # auto-merge is safe here is that the next release builds with the bump and
+          # has to pass its smoke tests before anything is signed; that covers an
+          # image digest or an action, and it does not cover the library that makes
+          # the signature, which no build and no smoke test runs.
+          SIGNING_TOOLS: >-
+            [.files[].path | select(startswith(".github/scripts/release/"))]
+            | if length == 0 then "untouched" else "touched" end
         run: |
           # Every commit must be Dependabot's own. The pull request's author stays
           # Dependabot when somebody pushes to its branch, so the commits are what
@@ -62,6 +70,15 @@ jobs:
             exit 1
           fi
           # Merge only the commit that was just checked.
+          signing="$(gh pr view "$NUMBER" --json files --jq "$SIGNING_TOOLS")" \
+            || { echo "::error::could not read the files of this pull request"; exit 1; }
+          case "$signing" in
+            untouched) ;;
+            touched)
+              echo "this pull request changes the signing tools; auto-merge is not armed and a person merges it"
+              exit 0 ;;
+            *) echo "::error::unexpected answer reading the files: '$signing'"; exit 1 ;;
+          esac
           gh pr merge "$NUMBER" --auto --squash --match-head-commit "$HEAD_SHA" \
             --subject "$TITLE (#$NUMBER)" \
             --body "Signed-off-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>"
