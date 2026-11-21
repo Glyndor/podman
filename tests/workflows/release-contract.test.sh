@@ -197,6 +197,11 @@ PY
 	done
 	sign keyed AAAA-a-seed
 	check "a committed key and the secret: the packages go through" "0" "$rc"
+	# The only install in the job that holds the signing keys: pinned by hash and binary
+	# only, so no sdist builds and no tree is resolved beside the keys.
+	check "and first the signing library is installed by hash, binary only, from sign-requirements.txt" "1 -m pip install" \
+		"$(calls "-m pip install --quiet --require-hashes --only-binary=:all: -r $REL/sign-requirements.txt") $(head -n 1 "$S/calls" | cut -d' ' -f1-3)"
+	check "and nothing else is installed" 1 "$(grep -c 'pip install' "$S/calls")"
 	check "and each package is verified against the anchor with the second signature required" \
 		"1 1" "$(calls "$(verify_line podman_6.2.0_arch1.deb --require-mldsa)") $(calls "$(verify_line podman_6.2.0_arch2.deb --require-mldsa)")"
 	check "and the release is told it is required" 1 "$(grep -c -x require_mldsa=true "$S/out")"
