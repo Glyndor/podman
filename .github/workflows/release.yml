@@ -43,6 +43,9 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+    # Measured in this repository's runs: 6 to 8 seconds, with the six ls-remote calls
+    # to upstream. The ten minutes is a ceiling, and it matters: this job holds the
+    # release group, so a hang here holds every later run behind it.
     timeout-minutes: 10
     outputs:
       tag: ${{ steps.p.outputs.tag }}
@@ -135,6 +138,8 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+    # Ceiling, not measured: a download of two packages, signing, the attestation and the
+    # release. Like the plan it holds the release group while it runs.
     timeout-minutes: 15
     env:
       TAG: ${{ needs.plan.outputs.tag }}
@@ -216,6 +221,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+    # Ceiling, not measured: two gh calls.
     timeout-minutes: 5
     steps:
       - name: Open an issue, or add to the one that is open

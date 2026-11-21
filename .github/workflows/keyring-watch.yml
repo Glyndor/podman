@@ -33,6 +33,8 @@ jobs:
     permissions:
       contents: write
       issues: write
+    # Ceiling, not measured: a clone of the upstream keys, a comparison, and at most a
+    # push and an issue.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,6 +146,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+    # Ceiling, not measured: a checkout and one pass of gpg over a handful of keys.
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

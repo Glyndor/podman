@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+    # Ceiling, not measured: a checkout of the history and a loop over its commits.
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,6 +51,7 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+    # Ceiling, not measured: a checkout of the history and a scan of the added lines.
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

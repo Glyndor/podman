@@ -110,6 +110,20 @@ for path in sorted(glob.glob(f"{root}/*.yml")):
         if name in ("watchdog.yml", "keyring-watch.yml"):
             for event in sorted(set(triggers(doc)) & {"pull_request", "pull_request_target"}):
                 print(f"{name}: triggers on {event}, and a pull request cannot change what it reads")
+    elif rule == "timeouts":
+        # The number says how long the job is allowed; the line above says why: what was
+        # measured, or that nothing was and the number is a ceiling.
+        lines = open(path).read().split("\n")
+        for i, line in enumerate(lines):
+            if not re.match(r"\s+timeout-minutes:\s*\d+\s*$", line):
+                continue
+            above = []
+            j = i - 1
+            while j >= 0 and lines[j].lstrip().startswith("#"):
+                above.append(lines[j])
+                j -= 1
+            if not re.search(r"\bMeasured\b|\bCeiling, not measured\b", " ".join(above)):
+                print(f"{name}:{i + 1}: timeout-minutes has no 'Measured' or 'Ceiling, not measured' comment above it")
     elif rule == "runners":
         # ubuntu-latest moves when GitHub moves it, and it moved to 26.04 while the
         # arm64 label stayed on 24.04. A job that runs this repository's scripts or
@@ -203,6 +217,17 @@ check "the watchdog and the keyring watch do not trigger on a pull request" "" "
 cp "$HERE"/.github/workflows/*.yml "$BAD/"
 sed -i 's/^  push:$/  pull_request:\n    branches: ["main"]\n  push:/' "$BAD/watchdog.yml"
 check "a pull_request trigger on the watchdog is named" "watchdog.yml: triggers on pull_request, and a pull request cannot change what it reads" "$(violations watchers "$BAD")"
+
+# --- a timeout says what it was measured from ------------------------------------
+check "every timeout-minutes has its measurement, or says it is a ceiling" "" "$(violations timeouts)"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i '/Ceiling, not measured: two gh calls\./d' "$BAD/release.yml"
+check "a timeout with no comment above it is named, with its line" "release.yml:N: timeout-minutes has no 'Measured' or 'Ceiling, not measured' comment above it" \
+	"$(violations timeouts "$BAD" | sed 's/^\([a-z.-]*\):[0-9]*:/\1:N:/')"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^    # Measured in this repository.s runs: 6 to 8 seconds, with the six ls-remote calls$/    # The plan is quick, with the six ls-remote calls/' "$BAD/release.yml"
+check "a comment that says neither is named" "release.yml:N: timeout-minutes has no 'Measured' or 'Ceiling, not measured' comment above it" \
+	"$(violations timeouts "$BAD" | sed 's/^\([a-z.-]*\):[0-9]*:/\1:N:/')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

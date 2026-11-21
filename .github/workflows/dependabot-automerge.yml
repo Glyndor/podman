@@ -51,6 +51,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    # Ceiling, not measured: three gh calls.
     timeout-minutes: 5
     steps:
       - name: Merge when the required checks pass
@@ -109,6 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+    # Ceiling, not measured: two gh calls.
     timeout-minutes: 5
     steps:
       - name: Turn auto-merge off
@@ -131,6 +133,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    # Ceiling, not measured: one gh call to list and two for each open pull request.
     timeout-minutes: 5
     steps:
       - name: Ask Dependabot to rebase its open pull requests

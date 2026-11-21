@@ -45,6 +45,8 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+    # Measured in this repository's runs: 8 to 10 seconds, nine calls to GitHub.
+    # The ten minutes is a ceiling for a slow network, not a measurement.
     timeout-minutes: 10
     outputs:
       code: ${{ steps.lag.outputs.code }}
@@ -94,6 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+    # Ceiling, not measured: two gh calls.
     timeout-minutes: 5
     steps:
       - name: Open an issue, or add to the one that is open
@@ -129,6 +132,7 @@ jobs:
       actions: read
       contents: read
       issues: write
+    # Ceiling, not measured: one gh call and a script that reads its answer.
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
