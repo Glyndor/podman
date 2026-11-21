@@ -36,6 +36,11 @@ gpg --batch --quiet --import "${files[@]}" 2>/dev/null
 
 status="$(git -C "$src" verify-tag --raw "refs/tags/$tag" 2>&1)" || true
 
+# Both rules are needed. For one signature gpg reports exactly one of GOODSIG, BADSIG,
+# EXPSIG, EXPKEYSIG, REVKEYSIG or ERRSIG, so the GOODSIG rule alone refuses an
+# expired or revoked key. A tag can carry more than one signature, and gpg then
+# reports each: one by an allowed key and one by any other gives a GOODSIG and an
+# ERRSIG together, and only this list refuses that.
 for bad in BADSIG EXPSIG EXPKEYSIG REVKEYSIG ERRSIG NO_PUBKEY; do
 	if grep -q "\[GNUPG:\] $bad" <<<"$status"; then
 		echo "tag $tag rejected: $bad" >&2
