@@ -69,9 +69,12 @@ for _ in $(seq 1 50); do
 done
 [ -n "$ready" ] || { echo "the listener for the network check did not come up on port $port" >&2; exit 1; }
 
+# Only what the container printed is compared. What Podman writes beside it (a warning
+# about cgroups on a machine with no user session, say) goes to a file and into the
+# message, so a healthy package is not refused for a line of log.
 got="$(podman run --rm --network pasta --rootfs "$root" \
-	/bin/busybox wget -q -T 20 -O - "http://host.containers.internal:$port/probe" 2>&1)" \
-	|| { echo "a rootless container could not reach the host through pasta: $got" >&2; exit 1; }
-[ "$got" = pasta-ok ] || { echo "the answer through pasta was not the expected one: $got" >&2; exit 1; }
+	/bin/busybox wget -q -T 20 -O - "http://host.containers.internal:$port/probe" 2>"$work/wget.err")" \
+	|| { echo "a rootless container could not reach the host through pasta: $got $(cat "$work/wget.err")" >&2; exit 1; }
+[ "$got" = pasta-ok ] || { echo "the answer through pasta was not the expected one: $got $(cat "$work/wget.err")" >&2; exit 1; }
 
 echo "rootless test passed: podman $version on $(. /etc/os-release && echo "$PRETTY_NAME"), $(uname -m)"
