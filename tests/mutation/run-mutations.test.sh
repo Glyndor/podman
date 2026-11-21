@@ -120,6 +120,9 @@ printf 'hello\n' > "$TOY/scripts/notes.txt"
 mkdir -p "$TOY/.github/workflows"
 printf 'suites: [a, b]\njobs:\n  j:\n    steps:\n      - run: echo "ran a"\n' > "$TOY/.github/workflows/w.yml"
 printf '#!/usr/bin/env bash\ngrep -qF "[a, b]" "$(dirname "$0")/../.github/workflows/w.yml"\n' > "$TOY/tests/w.test.sh"
+# A Dockerfile, and a suite that reads the image it starts from.
+printf 'FROM debian:13@sha256:aaaa AS base\nRUN apt-get update \\\n  && true\n' > "$TOY/scripts/Dockerfile"
+printf '#!/usr/bin/env bash\ngrep -qF "@sha256:aaaa" "$(dirname "$0")/../scripts/Dockerfile"\n' > "$TOY/tests/image.test.sh"
 g() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$TOY" -c user.name=t -c user.email=t@example.invalid -c commit.gpgSign=false "$@"; }
 g init -q .
 g add -A
@@ -178,6 +181,12 @@ check "a mutation of a workflow that its suite notices passes the runner" "0" "$
 printf '%s\t%s\t%s\t%s\t%s\n' yml-syntax .github/workflows/w.yml "[a, b]" "[a, b" tests/w.test.sh >"$CATALOG"
 check "a mutation that breaks a workflow's YAML fails the runner" "1" "$(run)"
 check "and says the workflow has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
+# A Dockerfile is mutated like a script, and held to the instructions a build knows.
+printf '%s\t%s\t%s\t%s\t%s\n' image-dies scripts/Dockerfile 'debian:13@sha256:aaaa' 'debian:13' tests/image.test.sh >"$CATALOG"
+check "a mutation of a Dockerfile that its suite notices passes the runner" "0" "$(run)"
+printf '%s\t%s\t%s\t%s\t%s\n' image-syntax scripts/Dockerfile 'FROM debian' 'FORM debian' tests/image.test.sh >"$CATALOG"
+check "a mutation that leaves a Dockerfile with an instruction no build knows fails the runner" "1" "$(run)"
+check "and says the Dockerfile has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
 # The shell of a step is what GitHub runs, and YAML takes a broken command as a string.
 printf '%s\t%s\t%s\t%s\t%s\n' yml-shell .github/workflows/w.yml 'echo "ran a"' 'echo "ran a' tests/w.test.sh >"$CATALOG"
 check "a mutation that breaks the shell of a step, and not its YAML, fails the runner" "1" "$(run)"
