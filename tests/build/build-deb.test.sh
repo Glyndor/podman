@@ -135,6 +135,25 @@ check "an objdump that fails is refused, even after printing a version" "1 1" "$
 PATH="$WORK/objdump-empty:$PATH" refused "$WORK/out-objdump-empty"
 check "binaries that show no glibc symbol are refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'could not read the glibc symbols')"
 
+# Release artifacts ship stripped. strip runs on every ELF, and a binary that still
+# has a debug section afterwards stops the build: the fixtures here have none, so a
+# readelf that reports one for a single file stands in for a strip that did nothing.
+mkdir "$WORK/debug-left"
+real_readelf="$(command -v readelf)"
+cat > "$WORK/debug-left/readelf" <<READELF
+#!/bin/sh
+if [ "\$1" = -S ] && [ "\${2##*/}" = netavark ]; then
+	printf '  [27] .debug_info       PROGBITS         0000000000000000  000a1b2c\n'
+	exit 0
+fi
+exec "$real_readelf" "\$@"
+READELF
+chmod +x "$WORK/debug-left/readelf"
+PATH="$WORK/debug-left:$PATH" refused "$WORK/out-debug-left"
+check "a binary that keeps a debug section after strip is refused, and named" "1 1" \
+	"$rc $(printf '%s' "$err" | grep -c -- '/usr/libexec/podman/netavark still has debug sections')"
+check "and no package is written" 0 "$(find "$WORK/out-debug-left" -name '*.deb' 2>/dev/null | wc -l)"
+
 # One package has to serve Debian 13 and Ubuntu 24.04 and 26.04, so a build that links
 # a library renamed between them is refused, and the libraries it may link are the ones
 # that stay. ldd names what the binaries link, and dpkg -S the package that owns each

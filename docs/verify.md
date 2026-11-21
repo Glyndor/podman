@@ -6,14 +6,14 @@ Each release publishes `podman_<version>_<arch>.deb` and `podman_<version>_<arch
 
 ## Check the signature with OpenSSL
 
-You need OpenSSL 3 and `curl`. The key file holds one raw 32-byte Ed25519 public key per line, in base64: one line today, two while a key is being replaced. The steps take the first line; during a replacement a package is good when either key verifies it, so repeat them with the second line if the first refuses. OpenSSL reads a PEM key, so the steps below wrap the raw key in the standard 12-byte DER header (`302a300506032b6570032100`, which is `MCowBQYDK2VwAyEA` in base64). Set `version` and `arch` to the release you downloaded, for example `6.2.0+r8` and `amd64`:
+You need OpenSSL 3 and `curl`. The key file holds one raw 32-byte Ed25519 public key per line, in base64: one line today, two while a key is being replaced. It is printable ASCII with line feeds and nothing else, which every verifier of this repository and of the apt archive requires: a copy that picked up a carriage return or a byte-order mark on the way is not the published file, so fetch it again rather than edit it. The steps take the first line; during a replacement a package is good when either key verifies it, so repeat them with the second line if the first refuses. OpenSSL reads a PEM key, so the steps below wrap the raw key in the standard 12-byte DER header (`302a300506032b6570032100`, which is `MCowBQYDK2VwAyEA` in base64). Set `version` and `arch` to the release you downloaded, for example `6.2.0+r8` and `amd64`:
 
 ```bash
 version='6.2.0+r8'; arch=amd64
 deb="podman_${version}_${arch}.deb"
 
 # the key from this repository, as a PEM file
-key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-ed25519.b64 | grep -v '^#' | head -n 1)"
+key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-ed25519.b64 | grep -v -e '^#' -e '^[[:space:]]*$' | head -n 1)"
 { echo '-----BEGIN PUBLIC KEY-----'
   printf 'MCowBQYDK2VwAyEA%s=\n' "$key"
   echo '-----END PUBLIC KEY-----'; } > glyndor-release.pem
@@ -31,12 +31,12 @@ The key is read from this repository, so this proves the package was signed by w
 
 ## The second signature, when a release has one
 
-Releases do not carry it yet. When they do, each package has a third file, `podman_<version>_<arch>.deb.mldsa65.sig`: an ML-DSA-65 (FIPS 204) signature over the same bytes, made with a second key whose public half will be in [`keyring/glyndor-release-mldsa65.b64`](../keyring/glyndor-release-mldsa65.b64). It is added beside the Ed25519 signature and never replaces it, so a package is good only when both verify. The second signature is not required yet. Whether it is required is recorded in [`keyring/second-signature-required`](../keyring/second-signature-required): once that file holds the line `required`, the release workflow refuses to publish a package without a second signature that verifies.
+Releases do not carry it yet. When they do, each package has a third file, `podman_<version>_<arch>.deb.mldsa65.sig`: an ML-DSA-65 (FIPS 204) signature over the same bytes, made with a second key whose public half will be in [`keyring/glyndor-release-mldsa65.b64`](../keyring/glyndor-release-mldsa65.b64). It is added beside the Ed25519 signature and never replaces it: a package that has it is good only when both verify. The second signature is not required yet. Until it is, a package without it is judged by its Ed25519 signature alone. Whether it is required is recorded in [`keyring/second-signature-required`](../keyring/second-signature-required): once that file holds the line `required`, the release workflow refuses to publish a package without a second signature that verifies.
 
 Checking it needs OpenSSL 3.5 or later. The key file holds a raw 1952-byte ML-DSA-65 public key in base64, and the steps below put the standard 22-byte DER header in front of it to get a key OpenSSL reads. The file has one key per line, and two during a key rotation; the steps take the first, and a package is good when either verifies it. With `deb` and `base` set as above:
 
 ```bash
-key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-mldsa65.b64 | grep -v '^#' | head -n 1)"
+key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-mldsa65.b64 | grep -v -e '^#' -e '^[[:space:]]*$' | head -n 1)"
 { printf '\x30\x82\x07\xb2\x30\x0b\x06\x09\x60\x86\x48\x01\x65\x03\x04\x03\x12\x03\x82\x07\xa1\x00'
   printf '%s' "$key" | base64 -d; } | openssl pkey -pubin -inform DER -out glyndor-release-mldsa65.pem
 

@@ -66,6 +66,7 @@ PY
 			keyed) printf '# keys\nAAAAAAAAAAAAAAAA\n' > "$WS/keyring/glyndor-release-mldsa65.b64" ;;
 			empty) printf '# keys\n' > "$WS/keyring/glyndor-release-mldsa65.b64" ;;
 		esac
+		cp "$HERE/keyring/glyndor-release-ed25519.b64" "$WS/keyring/"
 		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$WS" \
 			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" FAKE_PYTHON="$S/venv-python" \
 			GLYNDOR_RELEASE_ED25519_KEY=an-ed25519-seed GLYNDOR_RELEASE_MLDSA65_KEY="$3" PREVIOUS_MLDSA=false

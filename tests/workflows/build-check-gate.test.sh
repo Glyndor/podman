@@ -5,7 +5,8 @@
 # hold the gate up and each is run here from the workflow: the gate step passes only
 # for a skip that was decided or a build that succeeded, whatever its needs ended as;
 # the decide step reads decide-build.sh from the base commit the event names, so a
-# pull request that rewrites the script cannot skip its own build; and the plan step
+# pull request that rewrites the script cannot skip its own build, and it lists a moved
+# file under its old path too, so moving a build script out cannot skip it either; and the plan step
 # refuses an upstream tag that is not annotated. The decide step runs against a
 # throwaway repository with the real decide-build.sh in it.
 set -u
@@ -113,6 +114,14 @@ if step build-check.yml decide "name=Does this change touch what the package is 
 	echo changed > "$R/scripts/build/b"
 	g commit -q -am "a build change that also tells the gate to skip it"
 	rewrite="$(g rev-parse HEAD)"
+	# A build script moved out of the build: with rename detection git names only the
+	# new path, docs/b, and the decision would be to skip.
+	g checkout -q "$base"
+	g mv scripts/build/b docs/b
+	g commit -q -m "a build script moved into docs/"
+	moved="$(g rev-parse HEAD)"
+	check "the fixture is a rename git detects" "R100 scripts/build/b docs/b" \
+		"$(g diff --find-renames --name-status "$base" "$moved" | paste -sd' ' | tr '\t' ' ')"
 	decide() { # <base> <head>: the repository is checked out at <head>, as the pull request is
 		g checkout -q "$2"; rm -rf "$D/rt"; mkdir "$D/rt"; : > "$D/out"
 		run_step "$D" "$R" RUNNER_TEMP="$D/rt" GITHUB_OUTPUT="$D/out" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 BASE="$1" HEAD="$2"
@@ -122,6 +131,8 @@ if step build-check.yml decide "name=Does this change touch what the package is 
 	check "a pull request that changes only docs skips the build" "0 false" "$rc $answer"
 	decide "$base" "$rewrite"
 	check "one that rewrites the gate script to skip still builds: the script is the base's" "0 true" "$rc $answer"
+	decide "$base" "$moved"
+	check "one that moves a build script out of scripts/build still builds: the old path is listed" "0 true" "$rc $answer"
 	decide "$nogate" "$docs"
 	check "a base that does not have the script builds" "0 true" "$rc $answer"
 	decide 0000000000000000000000000000000000000000 "$docs"

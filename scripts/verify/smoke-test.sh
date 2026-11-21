@@ -25,28 +25,15 @@ if [ "$mode" = clean ]; then :; else apt-get install -y -qq podman buildah skope
 # a container init and dbus-user-session come with it.
 apt-get install -y -qq "$deb"
 
-# What a customer expects to find, and what Debian's own package installs: if a
-# change to the build stops shipping one of these, the package is still "working"
-# and nobody would notice until somebody asked why tab completion was gone.
-for f in /usr/bin/podman /usr/bin/podman-remote /usr/libexec/podman/quadlet /usr/libexec/podman/rootlessport \
-	/usr/lib/systemd/system/podman.socket /usr/lib/systemd/user/podman.socket \
-	/usr/lib/systemd/system-generators/podman-system-generator /usr/lib/systemd/user-generators/podman-user-generator \
-	/usr/lib/tmpfiles.d/podman.conf \
-	/usr/share/bash-completion/completions/podman /usr/share/zsh/site-functions/_podman /usr/share/fish/vendor_completions.d/podman.fish; do
-	[ -e "$f" ] || { echo "the package does not ship $f" >&2; exit 1; }
-done
-# The man pages are asked of dpkg, not of the disk: the minimal Ubuntu images
-# tell dpkg to leave /usr/share/man out, so the files are shipped and not there.
-dpkg -L podman | grep -q '^/usr/share/man/man1/podman-run\.1' || { echo "the package does not ship the man pages" >&2; exit 1; }
+# What a customer expects to find, on disk and in the list dpkg keeps (the man pages
+# are asked of dpkg: the minimal Ubuntu images leave /usr/share/man out of the disk).
+bash "$here/package-state.sh" ships
+bash "$here/package-state.sh" listed
 
 # The containers-common configuration of this release, not the older one a distribution
 # ships: the profile has the futex family, a pull has the policy it needs, and the
 # distribution's package is not what satisfies the dependency.
 bash "$here/package-state.sh" seccomp
-[ -s /etc/containers/policy.json ] || { echo "the package does not ship /etc/containers/policy.json" >&2; exit 1; }
-for f in registries.conf containers.conf registries.conf.d/000-shortnames.conf; do
-	[ -s "/usr/share/containers/$f" ] || { echo "the package does not ship /usr/share/containers/$f" >&2; exit 1; }
-done
 bash "$here/package-state.sh" replaced golang-github-containers-common
 # On a clean image the tools are installed after the package, as a customer who adds
 # them later does; they must find their policy and registries under /etc/containers.
@@ -54,20 +41,15 @@ bash "$here/package-state.sh" replaced golang-github-containers-common
 # passt comes with the package: Podman 6.2.0 always passes pasta --map-guest-addr, which the
 # passt of Ubuntu 24.04 (and of the other releases) predates, and the distribution's package is replaced.
 bash "$here/package-state.sh" replaced passt
-dpkg -L podman | grep -q '^/usr/bin/pasta$' || { echo "the package does not ship pasta" >&2; exit 1; }
 bash "$here/package-state.sh" pasta-option
 bash "$here/package-state.sh" kept buildah skopeo
-dpkg -s podman | grep -q '^Provides:.*golang-github-containers-common (= 0\.[6-9][0-9]' \
-	|| { echo "the package does not provide containers-common" >&2; exit 1; }
-
-got="$(podman --version)"
-[ "$got" = "podman version $version" ] || { echo "version mismatch: $got" >&2; exit 1; }
+bash "$here/package-state.sh" provides
+bash "$here/package-state.sh" version "$version"
 
 podman --storage-driver vfs info >/dev/null
 
-# The network stack must be the one shipped in the package, not Debian's.
+# The network stack shipped in the package (ships checked it is there) starts.
 for helper in netavark aardvark-dns; do
-	[ -x "/usr/libexec/podman/$helper" ] || { echo "missing $helper in the package" >&2; exit 1; }
 	"/usr/libexec/podman/$helper" --version
 done
 

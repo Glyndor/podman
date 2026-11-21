@@ -101,7 +101,7 @@ template, guide = (open(p).read() for p in sys.argv[1:3])
 lines = set()
 for block in re.findall(r"^```sh\n(.*?)^```", guide, re.S | re.M):
     lines.update(l.strip() for l in block.split("\n") if l.strip())
-spans = [s for s in re.findall(r"`([^`]+)`", template) if re.search(r"\.test\.sh|shellcheck|check-test-coverage", s)]
+spans = [s for s in re.findall(r"`([^`]+)`", template) if re.search(r"\.test\.sh|shellcheck|check-test-coverage|sign-requirements", s)]
 if not spans:
     print("the template gives no command to run")
 for s in spans:
@@ -116,6 +116,15 @@ check "the old command, which misses a suite one folder deeper, is named" \
 	"$(stale "$WORK/template.md" "$HERE/CONTRIBUTING.md")"
 printf -- '- [ ] `bash scripts/quality/check-test-coverage.sh` and `find scripts tests -name '"'"'*.sh'"'"' -print0 | xargs -0 shellcheck -S warning`\n' > "$WORK/template.md"
 check "a template whose commands are the guide's passes" "" "$(stale "$WORK/template.md" "$HERE/CONTRIBUTING.md")"
+printf -- '- [ ] `python3 -m venv v && v/bin/pip install -r .github/scripts/release/sign-requirements.txt`\n' > "$WORK/template.md"
+check "a way of building the ML-DSA-65 environment the guide does not give is named" \
+	"the template gives 'python3 -m venv v && v/bin/pip install -r .github/scripts/release/sign-requirements.txt', which the guide does not" \
+	"$(stale "$WORK/template.md" "$HERE/CONTRIBUTING.md")"
+# The loop the guide gives runs the ML-DSA-65 suite in that environment and fails when
+# a suite fails: a for loop alone exits with the status of the last suite it ran.
+loop="$(sed -n '/^```sh$/,/^```$/p' "$HERE/CONTRIBUTING.md" | grep "find tests -name '\*.test.sh'")"
+check "the guide's loop puts the environment first on PATH for the ML-DSA-65 suite, and exits with the status of every suite" "1 1" \
+	"$(printf '%s' "$loop" | grep -c 'PATH="/tmp/podman-mldsa/bin:$PATH"') $(printf '%s' "$loop" | grep -c '\[ "$status" -eq 0 \]$')"
 printf -- '- [ ] Tests pass\n' > "$WORK/template.md"
 check "a template that gives no command at all is named" "the template gives no command to run" "$(stale "$WORK/template.md" "$HERE/CONTRIBUTING.md")"
 
