@@ -42,8 +42,21 @@ cat "$WORK/pub2" "$WORK/pub" > "$WORK/both"
 python3 "$VERIFY" "$WORK/file" "$WORK/file.sig" "$WORK/both" >/dev/null 2>&1; check "any listed key may verify" 0 "$?"
 echo changed > "$WORK/file"
 python3 "$VERIFY" "$WORK/file" "$WORK/file.sig" "$WORK/pub" >/dev/null 2>&1; check "a changed file does not verify" 1 "$?"
-env -u GLYNDOR_RELEASE_ED25519_KEY python3 "$SIGN" "$WORK/file" "$WORK/x.sig" >/dev/null 2>&1; check "signing without a key fails" 1 "$?"
-[ ! -e "$WORK/x.sig" ]; check "and writes no signature" 0 "$?"
+err="$(env -u GLYNDOR_RELEASE_ED25519_KEY python3 "$SIGN" "$WORK/file" "$WORK/x.sig" 2>&1 >/dev/null)"; check "signing without a key fails" 1 "$?"
+check "and writes no signature" 0 "$([ -e "$WORK/x.sig" ] && echo 1 || echo 0)"
+printf '%s\n' "$err" | grep -q -x 'GLYNDOR_RELEASE_ED25519_KEY is not set; refusing to publish an unsigned artifact'
+check "and says the key is not set, not that it is malformed" 0 "$?"
+err="$(GLYNDOR_RELEASE_ED25519_KEY="$(cat "$WORK/seed")" python3 "$SIGN" 2>&1 >/dev/null)"; check "signing with no file to sign fails" 1 "$?"
+printf '%s\n' "$err" | grep -q -x '  sign.py <input-file> \[<output-sig-file>\]'
+check "and prints its usage, not a traceback" "0 0" "$? $(printf '%s\n' "$err" | grep -c Traceback)"
+
+# What the verifier cannot read is a refusal, and says which file.
+echo payload > "$WORK/file"
+GLYNDOR_RELEASE_ED25519_KEY="$(cat "$WORK/seed")" python3 "$SIGN" "$WORK/file" >/dev/null 2>&1
+err="$(python3 "$VERIFY" "$WORK/file" "$WORK/absent.sig" "$WORK/pub" 2>&1)"; check "a signature that is not there is refused" 1 "$?"
+printf '%s\n' "$err" | grep -q "^no Ed25519 signature for $WORK/file: "; check "and it says the signature is missing" 0 "$?"
+err="$(python3 "$VERIFY" "$WORK/absent" "$WORK/file.sig" "$WORK/pub" 2>&1)"; check "a file that is not there is refused" 1 "$?"
+printf '%s\n' "$err" | grep -q "^cannot read $WORK/absent: "; check "and it says which file it could not read" 0 "$?"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
