@@ -9,6 +9,14 @@
 #                token is not written to .git/config beside the code the job runs. The
 #                job that pushes (keyring-watch.yml) hands git the token in a header
 #                for that one command instead.
+#   pins         every action and reusable workflow of another repository is pinned to
+#                a full commit SHA with its version in a comment beside it, as in
+#                `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`. A
+#                tag is whatever its owner points it at tomorrow, and the code it names
+#                runs with the job's token, in release.yml beside the signing keys. A
+#                reusable of this repository (./.github/workflows/) is the same commit.
+#                A value the rule cannot find on a line of its own is named too, since
+#                its comment cannot be read.
 # The build job compiles third-party code, and either rule loosened there (contents:
 # write, or the token left on disk) passed every suite until this one. Each rule runs
 # on the real files and on copies that break it one way each.
@@ -29,9 +37,12 @@ check() { # <desc> <want> <got>
 # A rule that cannot run prints "rule failed", so a crash is never read as none.
 violations() {
 	python3 - "$1" "${2:-$HERE/.github/workflows}" 2>&1 <<'PY' || echo "rule failed"
-import glob, sys, yaml
+import glob, re, sys, yaml
 
 rule, root = sys.argv[1:3]
+PINNED = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$")
+USES_LINE = re.compile(r"""^\s*(?:-\s+)?uses:\s*(['"]?)([^'"\s#]+)\1\s*(?:#\s*(\S.*?))?\s*$""")
+VERSION = re.compile(r"^v\d+(\.\d+)*$")
 
 # Every write a job holds, and why. Read from what each job does on 2026-11-21.
 ALLOWED = {
@@ -55,7 +66,8 @@ used = set()
 for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
     name = path.rsplit("/", 1)[1]
     with open(path) as fh:
-        doc = yaml.safe_load(fh)
+        text = fh.read()
+    doc = yaml.safe_load(text) or {}
     jobs = doc.get("jobs") or {}
     if rule == "permissions":
         top = doc.get("permissions")
@@ -84,11 +96,34 @@ for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
     elif rule == "credentials":
         for job, cfg in jobs.items():
             for step in cfg.get("steps") or []:
-                if not str(step.get("uses", "")).startswith("actions/checkout@"):
+                # Every spelling GitHub runs as the checkout action: pinned or not, and
+                # in any case, since owner and repository names are not case sensitive.
+                action = str(step.get("uses", "")).split("@", 1)[0].strip().rstrip("/").lower()
+                if action != "actions/checkout":
                     continue
                 keep = (step.get("with") or {}).get("persist-credentials")
                 if str(keep).strip().lower() != "false":
                     print(f"{name}: {job} checks out without persist-credentials: false")
+    elif rule == "pins":
+        used = []
+        for job, cfg in jobs.items():
+            if "uses" in cfg:
+                used.append((job, str(cfg["uses"])))
+            used += [(job, str(step["uses"])) for step in cfg.get("steps") or [] if "uses" in step]
+        comments = {}
+        for line in text.split("\n"):
+            m = USES_LINE.match(line)
+            if m:
+                comments.setdefault(m.group(2), []).append(m.group(3) or "")
+        for job, value in used:
+            if value.startswith("./"):
+                continue
+            if not PINNED.match(value):
+                print(f"{name}: {job} uses {value}, which is not pinned to a full commit SHA")
+            elif not comments.get(value):
+                print(f"{name}: {job} uses {value} on no line of its own, so its version comment cannot be read")
+            elif not all(VERSION.match(c) for c in comments[value]):
+                print(f"{name}: {job} uses {value} with no version comment beside it")
 if rule == "permissions":
     for name, job, scope in sorted(set(ALLOWED) - used):
         print(f"{name}: {job} is allowed {scope}: write and does not ask for it; remove the entry")
@@ -138,6 +173,35 @@ check "so is the job that pushes, which hands git the token in a header instead"
 	"keyring-watch.yml: compare checks out without persist-credentials: false" "$(violations credentials "$BAD")"
 fixture tests.yml '/^          persist-credentials: false$/d'
 check "and a checkout left with no options at all" "tests.yml: test checks out without persist-credentials: false" "$(violations credentials "$BAD")"
+fixture tests.yml '/^          persist-credentials: false$/d; s/^      - uses: actions\/checkout@.*$/      - uses: actions\/checkout/'
+check "and one that is not pinned, which the pins rule refuses for the pin" \
+	"tests.yml: test checks out without persist-credentials: false" "$(violations credentials "$BAD")"
+fixture tests.yml '/^          persist-credentials: false$/d; s/^      - uses: actions\/checkout@/      - uses: Actions\/Checkout@/'
+check "and one that spells the action with capitals, which GitHub runs all the same" \
+	"tests.yml: test checks out without persist-credentials: false" "$(violations credentials "$BAD")"
+
+# --- pins -------------------------------------------------------------------------
+check "every action from another repository is pinned to a SHA, with its version" "" "$(violations pins)"
+fixture tests.yml 's/^      - uses: actions\/checkout@.*$/      - uses: actions\/checkout/'
+check "an action with no ref at all is named" \
+	"tests.yml: test uses actions/checkout, which is not pinned to a full commit SHA" "$(violations pins "$BAD")"
+fixture tests.yml 's/^      - uses: actions\/checkout@.*$/      - uses: actions\/checkout@v7.0.1/'
+check "an action pinned to a tag is named" \
+	"tests.yml: test uses actions/checkout@v7.0.1, which is not pinned to a full commit SHA" "$(violations pins "$BAD")"
+fixture tests.yml 's/@3d3c42e5aac5ba805825da76410c181273ba90b1/@3d3c42e/'
+check "an action pinned to a short SHA is named" \
+	"tests.yml: test uses actions/checkout@3d3c42e, which is not pinned to a full commit SHA" "$(violations pins "$BAD")"
+upload='actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
+fixture reusable-build.yml 's/^\(        uses: actions\/upload-artifact@[0-9a-f]*\) # v7.0.2$/\1/'
+check "a pinned action with no version comment is named" \
+	"reusable-build.yml: build uses $upload with no version comment beside it" "$(violations pins "$BAD")"
+fixture reusable-build.yml 's/ # v7.0.2$/ # the upload/'
+check "and so is one whose comment is not a version" \
+	"reusable-build.yml: build uses $upload with no version comment beside it" "$(violations pins "$BAD")"
+fixture line-limit.yml 's#^    uses: ./.github/workflows/reusable-line-limit.yml$#    uses: Glyndor/.github/.github/workflows/line-limit.yml@main#'
+check "a reusable workflow of another repository is held to the same" \
+	"line-limit.yml: line-limit uses Glyndor/.github/.github/workflows/line-limit.yml@main, which is not pinned to a full commit SHA" \
+	"$(violations pins "$BAD")"
 
 # --- a workflow named .yaml is a workflow too ---------------------------------------
 rm -f "$BAD"/*; cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
@@ -155,6 +219,19 @@ jobs:
 YAML
 check "a .yaml workflow that writes is named" "extra.yaml: sneak holds contents: write, which no entry of the list allows" "$(violations permissions "$BAD")"
 check "and so is its checkout that keeps the token" "extra.yaml: sneak checks out without persist-credentials: false" "$(violations credentials "$BAD")"
+cat > "$BAD/extra.yaml" <<'YAML'
+on: push
+permissions: {}
+jobs:
+  sneak:
+    runs-on: ubuntu-26.04
+    steps:
+      - {uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1}
+      - uses: "actions/upload-artifact@v7"
+YAML
+check "and its pins: a flow mapping is named, and so is a quoted tag" \
+	"extra.yaml: sneak uses actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 on no line of its own, so its version comment cannot be read|extra.yaml: sneak uses actions/upload-artifact@v7, which is not pinned to a full commit SHA" \
+	"$(violations pins "$BAD" | paste -sd'|')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
