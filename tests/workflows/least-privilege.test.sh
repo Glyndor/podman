@@ -52,7 +52,7 @@ ALLOWED = {
 LEVELS = {"read", "write", "none"}
 
 used = set()
-for path in sorted(glob.glob(f"{root}/*.yml")):
+for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
     name = path.rsplit("/", 1)[1]
     with open(path) as fh:
         doc = yaml.safe_load(fh)
@@ -101,7 +101,7 @@ trap 'rm -rf "$BAD"' EXIT
 # change that does nothing is reported, so a rule is never judged against a copy that
 # still holds.
 fixture() {
-	rm -f "$BAD"/*.yml; cp "$HERE"/.github/workflows/*.yml "$BAD/"
+	rm -f "$BAD"/*; cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 	sed -i "$2" "$BAD/$1"
 	cmp -s "$BAD/$1" "$HERE/.github/workflows/$1" && echo "FIXTURE INERT: $1 $2"
 }
@@ -138,6 +138,23 @@ check "so is the job that pushes, which hands git the token in a header instead"
 	"keyring-watch.yml: compare checks out without persist-credentials: false" "$(violations credentials "$BAD")"
 fixture tests.yml '/^          persist-credentials: false$/d'
 check "and a checkout left with no options at all" "tests.yml: test checks out without persist-credentials: false" "$(violations credentials "$BAD")"
+
+# --- a workflow named .yaml is a workflow too ---------------------------------------
+rm -f "$BAD"/*; cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
+cat > "$BAD/extra.yaml" <<'YAML'
+on: push
+permissions:
+  contents: read
+jobs:
+  sneak:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+YAML
+check "a .yaml workflow that writes is named" "extra.yaml: sneak holds contents: write, which no entry of the list allows" "$(violations permissions "$BAD")"
+check "and so is its checkout that keeps the token" "extra.yaml: sneak checks out without persist-credentials: false" "$(violations credentials "$BAD")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
