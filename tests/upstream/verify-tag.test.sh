@@ -2,6 +2,8 @@
 #
 # Tests for scripts/upstream/verify-tag.sh against throwaway keys: a tag is
 # accepted only when it is annotated, signed, and the key is in the allowed set.
+# Each refusal is asserted by the reason the script gives, since several of its
+# checks would refuse the same tag.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -10,9 +12,9 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0
 
-check() { # <desc> <want-exit> <got-exit>
+check() { # <desc> <want> <got>
 	if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "ok    $1"
-	else fail=$((fail + 1)); echo "FAIL  $1 (want exit $2, got $3)"; fi
+	else fail=$((fail + 1)); echo "FAIL  $1 (want '$2', got '$3')"; fi
 }
 
 newkey() { # <name> -> prints fingerprint, exports public key to $WORK/<name>.asc
@@ -44,9 +46,20 @@ out="$("$SCRIPT" "$repo" v1.0.0 "$WORK/keys" 2>/dev/null)"; rc=$?
 check "signed by an allowed key passes" 0 "$rc"
 check "prints the commit it points to" "$commit" "$out"
 
-"$SCRIPT" "$repo" v1.0.1 "$WORK/keys" >/dev/null 2>&1; check "signed by an unknown key fails" 1 "$?"
-"$SCRIPT" "$repo" v1.0.2 "$WORK/keys" >/dev/null 2>&1; check "annotated but unsigned fails" 1 "$?"
-"$SCRIPT" "$repo" v1.0.3 "$WORK/keys" >/dev/null 2>&1; check "lightweight tag fails" 1 "$?"
+refused() { # <desc> <tag> <keys-dir> <reason the script must give>
+	local err rc
+	err="$("$SCRIPT" "$repo" "$2" "$3" 2>&1 >/dev/null)"; rc=$?
+	check "$1 fails" 1 "$rc"
+	check "$1 fails for the reason: $4" 1 "$(printf '%s\n' "$err" | grep -c -F -- "$4")"
+}
+refused "signed by an unknown key" v1.0.1 "$WORK/keys" "rejected: ERRSIG"
+refused "annotated but unsigned" v1.0.2 "$WORK/keys" "has no good signature"
+refused "lightweight tag" v1.0.3 "$WORK/keys" "is not an annotated tag"
+# A lightweight tag on a commit whose message has a "tag v1.0.4" line would get past
+# the check of the name inside the object, so the reason has to be the tag's type.
+git -C "$repo" -c user.name=t -c user.email=t@x commit -q --allow-empty -m "c" -m "tag v1.0.4"
+git -C "$repo" -c tag.gpgSign=false tag v1.0.4
+refused "lightweight tag whose commit names it" v1.0.4 "$WORK/keys" "is not an annotated tag"
 
 # A ref renamed onto an older signed tag object: the signature is genuine, the
 # name is not the one the object was signed under.
