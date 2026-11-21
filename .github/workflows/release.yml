@@ -81,15 +81,16 @@ jobs:
           # releases would one day miss the revision the planner has to step past.
           git ls-remote --tags "https://github.com/$GH_REPO.git" \
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
-          bash scripts/upstream/read-released.sh "$w/released"
+          latest="$(bash scripts/upstream/read-released.sh "$w/released")"
           bash scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
           # Whether the newest release carries the second signature, which the signing
           # step reads as an alarm (see there). Asked only when this run builds: most
           # runs build nothing, and an asset list that could not be read would turn
           # each of them red and open an issue over an answer nobody uses. When it
-          # builds, a list that cannot be read stops the run.
+          # builds, a list that cannot be read stops the run. It is the release read
+          # above, so it is not looked up nor its components.txt downloaded again.
           if [ "$(sed -n 's/^build=//p' "$GITHUB_OUTPUT")" = true ]; then
-            bash scripts/upstream/read-released.sh "$w/released-again" "$w/assets"
+            bash scripts/upstream/read-released.sh --assets "$latest" "$w/assets"
             previous_mldsa=false
             if grep -q '\.mldsa65\.sig$' "$w/assets"; then previous_mldsa=true; fi
             echo "previous_mldsa=$previous_mldsa" >> "$GITHUB_OUTPUT"

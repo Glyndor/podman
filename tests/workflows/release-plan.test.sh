@@ -54,7 +54,7 @@ GIT
 	# assets are $ASSETS; ASSETS_FAIL makes listing them fail.
 	cat > "$P/bin/gh" <<'GH'
 #!/usr/bin/env bash
-echo "$1 $2" >> "$GH_LOG"
+case "$1 $2" in "release view") echo "$1 $2 $3" ;; *) echo "$1 $2" ;; esac >> "$GH_LOG"
 case "$1 $2" in
 	"release list") printf '%s\n' "${LATEST:-}" ;;
 	"release download")
@@ -81,6 +81,8 @@ GH
 	check "the newest release signed with Ed25519 alone: previous_mldsa=false" "0 false" "$rc $(said previous_mldsa)"
 	plan LATEST=v6.1.0 TAGS=v6.1.0 COMPONENTS="$old" ASSETS="${ed}podman_6.1.0_amd64.deb.mldsa65.sig\n"
 	check "the newest release signed twice: previous_mldsa=true" "0 true" "$rc $(said previous_mldsa)"
+	check "and the release is listed and its components fetched once, then its assets asked of that tag" \
+		"release list|release download|release view v6.1.0" "$(paste -sd'|' "$P/gh.log")"
 	check "and the rest of the plan is unchanged" "true v6.2.0 v6.2.0 c0ffee-podman" "$(said build) $(said tag) $(said podman) $(said podman_sha)"
 	plan LATEST=v6.1.0 TAGS=v6.1.0 COMPONENTS="$old" ASSETS_FAIL=1
 	check "an asset list that cannot be read stops the plan, and says nothing about the signature" "1 " \

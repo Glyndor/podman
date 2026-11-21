@@ -41,42 +41,43 @@ export PATH="$WORK/bin:$PATH"
 # gh prints the tag name through --jq; the fake prints it directly.
 
 out="$WORK/released"
-FAKE_LATEST="" "$SCRIPT" "$out" >/dev/null 2>&1; rc=$?
-check "no release yet: succeeds" 0 "$rc"
+tag="$(FAKE_LATEST="" "$SCRIPT" "$out" 2>/dev/null)"; rc=$?
+check "no release yet: succeeds, and names no tag" "0 " "$rc $tag"
 check "and leaves the file empty" 0 "$(wc -c < "$out")"
 
 printf 'stale\n' > "$out"
-FAKE_LATEST="v6.2.0+r2" FAKE_COMPONENTS='podman v6.2.0\nrecipe abc\n' "$SCRIPT" "$out" >/dev/null 2>&1; rc=$?
+tag="$(FAKE_LATEST="v6.2.0+r2" FAKE_COMPONENTS='podman v6.2.0\nrecipe abc\n' "$SCRIPT" "$out" 2>/dev/null)"; rc=$?
 check "a release with components: succeeds even if the file already exists" 0 "$rc"
 check "and holds the components of that release" "podman v6.2.0 recipe abc" "$(paste -sd' ' "$out")"
+check "and prints its tag, and nothing else" "v6.2.0+r2" "$tag"
 
-FAKE_LATEST="v6.2.0" FAKE_NO_ASSET=1 "$SCRIPT" "$out" >/dev/null 2>&1; rc=$?
-check "a release whose components cannot be read fails" 1 "$rc"
+FAKE_LATEST="v6.2.0" FAKE_NO_ASSET=1 "$SCRIPT" "$out" >/dev/null 2>"$WORK/err"; rc=$?
+check "a release whose components cannot be read fails, and says so" "1 1" "$rc $(grep -c 'release v6.2.0 has no readable components.txt' "$WORK/err")"
 
-FAKE_LATEST="v6.2.0" FAKE_COMPONENTS='recipe abc\n' "$SCRIPT" "$out" >/dev/null 2>&1; rc=$?
-check "a components.txt without podman fails" 1 "$rc"
+FAKE_LATEST="v6.2.0" FAKE_COMPONENTS='recipe abc\n' "$SCRIPT" "$out" >/dev/null 2>"$WORK/err"; rc=$?
+check "a components.txt without podman fails, and says so" "1 1" "$rc $(grep -c 'components.txt of v6.2.0 names no podman version' "$WORK/err")"
 
 # --- the asset list, for whether the newest release carries a second signature -----
 assets="$WORK/assets"
-two='podman v6.2.0\nrecipe abc\n'
-FAKE_LATEST="" "$SCRIPT" "$out" "$assets" >/dev/null 2>&1; rc=$?
-check "no release yet, with an asset file: succeeds and leaves it empty" "0 0" "$rc $(wc -c < "$assets")"
 printf 'stale.mldsa65.sig\n' > "$assets"
-FAKE_LATEST="v6.2.0+r3" FAKE_COMPONENTS="$two" \
-	FAKE_ASSETS='components.txt\npodman_6.2.0+r3_amd64.deb\npodman_6.2.0+r3_amd64.deb.mldsa65.sig\n' \
-	"$SCRIPT" "$out" "$assets" >/dev/null 2>&1; rc=$?
+FAKE_VIEW_FAILS=1 "$SCRIPT" --assets "" "$assets" >/dev/null 2>&1; rc=$?
+check "no release yet: succeeds without asking, and leaves the asset file empty" "0 0" "$rc $(wc -c < "$assets")"
+printf 'stale.mldsa65.sig\n' > "$assets"
+FAKE_LATEST="v6.2.0+r3" FAKE_ASSETS='components.txt\npodman_6.2.0+r3_amd64.deb\npodman_6.2.0+r3_amd64.deb.mldsa65.sig\n' \
+	"$SCRIPT" --assets v6.2.0+r3 "$assets" >/dev/null 2>&1; rc=$?
 check "a release: the asset file holds the names of its assets, and nothing older" \
 	"0 components.txt podman_6.2.0+r3_amd64.deb podman_6.2.0+r3_amd64.deb.mldsa65.sig" "$rc $(paste -sd' ' "$assets")"
-check "and the components are still written" "podman v6.2.0 recipe abc" "$(paste -sd' ' "$out")"
-FAKE_LATEST="v6.2.0+r3" FAKE_COMPONENTS="$two" FAKE_VIEW_FAILS=1 "$SCRIPT" "$out" "$assets" 2>"$WORK/err" >/dev/null; rc=$?
+FAKE_LATEST="v6.2.0+r3" FAKE_VIEW_FAILS=1 "$SCRIPT" --assets v6.2.0+r3 "$assets" 2>"$WORK/err" >/dev/null; rc=$?
 check "an asset list that cannot be read fails, and says so" "1 1" "$rc $(grep -c 'cannot list the assets of release v6.2.0+r3' "$WORK/err")"
-FAKE_LATEST="v6.2.0+r3" FAKE_COMPONENTS="$two" FAKE_ASSETS='' "$SCRIPT" "$out" "$assets" 2>"$WORK/err" >/dev/null; rc=$?
+FAKE_LATEST="v6.2.0+r3" FAKE_ASSETS='' "$SCRIPT" --assets v6.2.0+r3 "$assets" 2>"$WORK/err" >/dev/null; rc=$?
 check "an empty asset list fails: it is not read as a release with no second signature" "1 1" \
 	"$rc $(grep -c 'does not name components.txt' "$WORK/err")"
-FAKE_LATEST="v6.2.0+r3" FAKE_COMPONENTS="$two" FAKE_VIEW_FAILS=1 "$SCRIPT" "$out" >/dev/null 2>&1; rc=$?
-check "without an asset file, the assets are not asked for, as for the watchdog" 0 "$rc"
+FAKE_LATEST="v6.2.0+r3" FAKE_COMPONENTS='podman v6.2.0\n' FAKE_VIEW_FAILS=1 "$SCRIPT" "$out" >/dev/null 2>&1; rc=$?
+check "the first form does not ask for the assets, as for the watchdog" 0 "$rc"
 
 "$SCRIPT" >/dev/null 2>&1; check "no argument fails" 1 "$?"
+"$SCRIPT" "$out" "$assets" >/dev/null 2>&1; check "the old two-file form is a usage error, not a silent half" 2 "$?"
+"$SCRIPT" --assets v6.2.0 >/dev/null 2>&1; check "--assets without its file is a usage error" 2 "$?"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
