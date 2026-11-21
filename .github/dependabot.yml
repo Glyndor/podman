@@ -8,7 +8,27 @@ updates:
     labels:
       - "type:deps"
       - "type:ci"
+      - "area:ci"
     open-pull-requests-limit: 10
+    # One pull request for every action that moved that day: each of them reruns
+    # the same checks, and several open at once only wait on each other to rebase.
+    groups:
+      actions:
+        patterns: ["*"]
+  # The library that signs and verifies a release. It is pinned by hash, so
+  # nothing moves it unless something proposes the move: a fix in it would
+  # otherwise wait for somebody to remember this file exists.
+  - package-ecosystem: "pip"
+    directory: "/.github/scripts/release"
+    schedule:
+      interval: "daily"
+    labels:
+      - "type:deps"
+      - "area:release"
+    open-pull-requests-limit: 5
+    groups:
+      signing:
+        patterns: ["*"]
   - package-ecosystem: "docker"
     directory: "/scripts/build"
     # The Dockerfile pins each release on purpose: Debian 13 builds the package,
@@ -26,4 +46,5 @@ updates:
     labels:
       - "type:deps"
       - "type:ci"
+      - "area:build"
     open-pull-requests-limit: 5
