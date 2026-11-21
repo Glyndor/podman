@@ -88,9 +88,13 @@ PASTA_HELP='Usage: pasta [OPTION]...\n  --map-host-loopback ADDR\n  --map-guest-
 check "a pasta that lists --map-guest-addr passes" "0 0" "$rc $(printf '%s' "$err" | wc -c)"
 PASTA_HELP='Usage: pasta [OPTION]...\n  --map-host-loopback ADDR\n  --map-gw\n' run pasta-option
 check "the pasta of an older passt, without it, is refused and the option named" "1 1" "$rc $(said 'pasta lacks --map-guest-addr, which Podman passes')"
-PASTA_HELP='--map-guest-addr\n' PASTA_RC=127 run pasta-option
-check "a pasta that cannot run is refused for that, not for the option" "1 1 0" \
-	"$rc $(printf '%s\n' "$err" | grep -c '^pasta --help failed') $(said 'pasta lacks --map-guest-addr, which Podman passes')"
+PASTA_HELP='Usage: pasta\n  --map-guest-addr ADDR\n' PASTA_RC=1 run pasta-option
+check "a pasta that lists it and exits non-zero passes: the text is the verdict, not the status" "0 0" "$rc $(printf '%s' "$err" | wc -c)"
+PASTA_HELP='Usage: pasta\n  --map-gw\n' PASTA_RC=1 run pasta-option
+check "one that does not list it is refused whatever its status" "1 1" "$rc $(said 'pasta lacks --map-guest-addr, which Podman passes')"
+PASTA_HELP='' PASTA_RC=127 run pasta-option
+check "a pasta that prints nothing is refused for that, not for the option" "1 1 0" \
+	"$rc $(said 'pasta --help printed nothing') $(said 'pasta lacks --map-guest-addr, which Podman passes')"
 
 # --- two containers find each other by name ----------------------------------------
 # A podman that records each call and answers the name lookup with $HOSTS. Starting

@@ -43,7 +43,11 @@ case "$check" in
 		done ;;
 	pasta-option)
 		[ "$#" -eq 0 ] || { echo "pasta-option takes no argument" >&2; exit 2; }
-		help="$(pasta --help 2>&1)" || { echo "pasta --help failed: $help" >&2; exit 1; }
+		# The text is the verdict, as it was in the smoke test: the exit status of --help
+		# is not, since nobody has measured it on every release. Capturing it whole also
+		# spares pasta the SIGPIPE a pipe into grep -q could send it.
+		help="$(pasta --help 2>&1)" || true
+		[ -n "$help" ] || { echo "pasta --help printed nothing" >&2; exit 1; }
 		grep -q -F -- '--map-guest-addr' <<< "$help" \
 			|| { echo "pasta lacks --map-guest-addr, which Podman passes" >&2; exit 1; } ;;
 	dns)
