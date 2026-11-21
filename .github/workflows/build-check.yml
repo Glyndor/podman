@@ -66,7 +66,10 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           # Any step that fails leaves the answer at true. The script is the one
-          # on the base commit; a base that does not have it yet builds.
+          # on the base commit; a base that does not have it yet builds. The base is
+          # the one the event names, not HEAD^1 of a checkout the pull request shapes.
+          # This workflow file is still the pull request's own, which no script can
+          # close: a change to it is a change a reviewer reads.
           # --no-renames lists a moved file under both its old and its new path.
           # With rename detection a build script moved into docs/ would show only
           # the new path, and the decision would be to skip.
