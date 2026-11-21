@@ -102,14 +102,27 @@ for path in sorted(glob.glob(f"{root}/*.yml")):
             print(f"{name}: a workflow-level concurrency can cancel the disarm job")
         for job in ("disarm", "rebase"):
             block = ((doc.get("jobs") or {}).get(job) or {}).get("concurrency")
-            if block is not None and str(block.get("cancel-in-progress", False)).strip().lower() != "false":
-                print(f"{name}: {job} is in a group that cancels")
+            # Whatever cancel-in-progress says: a pending run of a group is cancelled by
+            # the next one queued behind it, and the setting that cancels a run in
+            # progress belongs to the run that arrives, not to the one it finds.
+            if block is not None:
+                print(f"{name}: {job} is in a concurrency group, and a group can cancel it")
     elif rule == "watchers":
         # These only read upstream, the releases and the runs: a pull request cannot change
         # what they find, and each run on one is network calls for nothing.
+        events = set(triggers(doc))
         if name in ("watchdog.yml", "keyring-watch.yml"):
-            for event in sorted(set(triggers(doc)) & {"pull_request", "pull_request_target"}):
+            for event in sorted(events & {"pull_request", "pull_request_target"}):
                 print(f"{name}: triggers on {event}, and a pull request cannot change what it reads")
+            if "schedule" not in events:
+                print(f"{name}: has no schedule, so nothing runs it when nobody pushes")
+        # A condition on an event the workflow never receives is a step that never runs:
+        # an alarm that waits for the schedule in a workflow without one stays silent.
+        # A reusable workflow sees the caller's event, so it is not read.
+        if "workflow_call" not in events:
+            waited = set(re.findall(r"github\.event_name\s*==\s*'([a-z_]+)'", open(path).read()))
+            for event in sorted(waited - events):
+                print(f"{name}: a condition waits for the event {event}, which the workflow does not trigger on")
     elif rule == "timeouts":
         # The number says how long the job is allowed; the line above says why: what was
         # measured, or that nothing was and the number is a ceiling.
@@ -207,16 +220,27 @@ sed -i 's/^permissions: {}$/permissions: {}\n\nconcurrency:\n  group: all\n  can
 check "a group over the whole workflow is named" "dependabot-automerge.yml: a workflow-level concurrency can cancel the disarm job" "$(violations never-cancelled "$BAD")"
 cp "$HERE"/.github/workflows/*.yml "$BAD/"
 sed -i 's/^    name: disarm when a person pushes$/    name: disarm when a person pushes\n    concurrency:\n      group: d\n      cancel-in-progress: true/' "$BAD/dependabot-automerge.yml"
-check "a cancelling group on the disarm job is named" "dependabot-automerge.yml: disarm is in a group that cancels" "$(violations never-cancelled "$BAD")"
+check "a cancelling group on the disarm job is named" "dependabot-automerge.yml: disarm is in a concurrency group, and a group can cancel it" "$(violations never-cancelled "$BAD")"
 cp "$HERE"/.github/workflows/*.yml "$BAD/"
 sed -i 's/^    name: disarm when a person pushes$/    name: disarm when a person pushes\n    concurrency:\n      group: d\n      cancel-in-progress: false/' "$BAD/dependabot-automerge.yml"
-check "a group that queues and never cancels is accepted" "" "$(violations never-cancelled "$BAD")"
+check "and so is one that says it never cancels: a pending run of it is still cancelled by the next" \
+	"dependabot-automerge.yml: disarm is in a concurrency group, and a group can cancel it" "$(violations never-cancelled "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^    name: rebase what fell behind$/    name: rebase what fell behind\n    concurrency:\n      group: r\n      cancel-in-progress: false/' "$BAD/dependabot-automerge.yml"
+check "and the rebase job is held to the same" \
+	"dependabot-automerge.yml: rebase is in a concurrency group, and a group can cancel it" "$(violations never-cancelled "$BAD")"
 
 # --- a watcher does not run on a pull request ------------------------------------
 check "the watchdog and the keyring watch do not trigger on a pull request" "" "$(violations watchers)"
 cp "$HERE"/.github/workflows/*.yml "$BAD/"
 sed -i 's/^  push:$/  pull_request:\n    branches: ["main"]\n  push:/' "$BAD/watchdog.yml"
 check "a pull_request trigger on the watchdog is named" "watchdog.yml: triggers on pull_request, and a pull request cannot change what it reads" "$(violations watchers "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i '/^  schedule:$/,/^    - cron: /d' "$BAD/watchdog.yml"
+check "the fixture did lose its schedule" "0" "$(grep -c '^  schedule:$' "$BAD/watchdog.yml")"
+check "a watchdog without its schedule is named, and so is the alarm that waits for it" \
+	"watchdog.yml: has no schedule, so nothing runs it when nobody pushes|watchdog.yml: a condition waits for the event schedule, which the workflow does not trigger on" \
+	"$(violations watchers "$BAD" | paste -sd'|')"
 
 # --- a timeout says what it was measured from ------------------------------------
 check "every timeout-minutes has its measurement, or says it is a ceiling" "" "$(violations timeouts)"

@@ -11,9 +11,11 @@ name: watchdog
 # asks whether it has run in the last two days.
 #
 # Events. The schedule, twice a day, is what reads the answer: on it a failure opens
-# an issue, which GitHub turns into a notification. A push to main asks once more
-# after a change lands, which is how an edit to this file is exercised the moment it
-# merges (release.yml does the same). A dispatch asks on demand. Not a pull request:
+# an issue, which GitHub turns into a notification. A push to main that changes this
+# file or scripts/monitoring/ asks once more, which is how an edit to either is
+# exercised the moment it merges; any other push would ask a question its change
+# cannot have altered, and nobody reads a failed run on a push. A dispatch asks on
+# demand. Not a pull request:
 # both jobs only read the state of upstream, of the releases and of the runs, so
 # the answer is the same whatever the pull request holds, it cannot change it, and
 # each run costs the network calls of the jobs below (nine ls-remote and gh calls,
@@ -32,6 +34,9 @@ on:
     - cron: "43 8,20 * * *"
   push:
     branches: ["main"]
+    paths:
+      - .github/workflows/watchdog.yml
+      - scripts/monitoring/**
   workflow_dispatch:
 
 permissions: {}
