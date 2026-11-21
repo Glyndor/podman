@@ -58,6 +58,7 @@ jobs:
       podman_sha: ${{ steps.p.outputs.podman_sha }}
       netavark_sha: ${{ steps.p.outputs.netavark_sha }}
       aardvark_sha: ${{ steps.p.outputs.aardvark_sha }}
+      previous_mldsa: ${{ steps.p.outputs.previous_mldsa }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,6 +83,17 @@ jobs:
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
           bash scripts/upstream/read-released.sh "$w/released"
           bash scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
+          # Whether the newest release carries the second signature, which the signing
+          # step reads as an alarm (see there). Asked only when this run builds: most
+          # runs build nothing, and an asset list that could not be read would turn
+          # each of them red and open an issue over an answer nobody uses. When it
+          # builds, a list that cannot be read stops the run.
+          if [ "$(sed -n 's/^build=//p' "$GITHUB_OUTPUT")" = true ]; then
+            bash scripts/upstream/read-released.sh "$w/released-again" "$w/assets"
+            previous_mldsa=false
+            if grep -q '\.mldsa65\.sig$' "$w/assets"; then previous_mldsa=true; fi
+            echo "previous_mldsa=$previous_mldsa" >> "$GITHUB_OUTPUT"
+          fi
           # The package version is the tag without its leading v; the build
           # workflow takes it as given, since an expression cannot strip it.
           tag="$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT")"
@@ -152,6 +164,7 @@ jobs:
       NETAVARK: ${{ needs.plan.outputs.netavark }}
       AARDVARK: ${{ needs.plan.outputs.aardvark }}
       RECIPE: ${{ needs.plan.outputs.recipe }}
+      PREVIOUS_MLDSA: ${{ needs.plan.outputs.previous_mldsa }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -180,36 +193,76 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/signvenv"
           py="$RUNNER_TEMP/signvenv/bin/python"
           "$py" -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
-          # The second signature is required by what the repository commits, not by a
-          # setting nobody can read from here: once keyring/glyndor-release-mldsa65.b64
-          # holds a public key, every package must leave with an ML-DSA-65 signature
-          # that verifies against it. A secret that was lost, renamed or never set then
-          # stops the run instead of publishing Ed25519 alone under an anchor that
-          # promises both. A secret set with no public key committed is required too:
-          # a signature nobody can check is refused. With neither, the check is the
-          # Ed25519 one the release always had. Set the secret and merge the key one
-          # after the other: a release built between the two stops, whichever came first.
+          # Three things require the second signature, and any one of them is enough:
+          # - keyring/second-signature-required holds the line "required". That is the
+          #   switch. It is committed, so turning it on or off is a change of its own
+          #   in a reviewed pull request, and while it is on, an anchor with no key, a
+          #   missing secret, or a second signature that is missing or does not verify
+          #   stops the run.
+          # - keyring/glyndor-release-mldsa65.b64 holds a public key: every package then
+          #   leaves with an ML-DSA-65 signature that verifies against it, and a secret
+          #   that was lost, renamed or never set stops the run.
+          # - the secret is set: a signature nobody can check is refused, so the key has
+          #   to be committed too.
+          # With none of them, the check is the Ed25519 one the release always had. Set
+          # the secret and merge the key one after the other: a release built between
+          # the two stops, whichever came first.
+          #
+          # One more check is an alarm, not a switch: the newest release carries an
+          # ML-DSA-65 signature and the anchor holds no key. It reads only the newest
+          # release, so a release published without the signature, or the deletion of
+          # the one that had it, silences it. The switch above does not move with them.
+          case "$PREVIOUS_MLDSA" in
+            true | false) ;;
+            *) echo "::error::the plan did not say whether the newest release carries the second signature ('$PREVIOUS_MLDSA'); refusing to guess."; exit 1 ;;
+          esac
           anchor="$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64"
-          [ -f "$anchor" ] || { echo "::error::$anchor is missing; refusing to publish without knowing whether the second signature is required."; exit 1; }
-          # This step and verify-sig.py both decide what a line of that file is. The
+          switch="$GITHUB_WORKSPACE/keyring/second-signature-required"
+          for f in "$anchor" "$switch"; do
+            [ -f "$f" ] || { echo "::error::$f is missing; refusing to publish without knowing whether the second signature is required."; exit 1; }
+          done
+          # This step and verify-sig.py both decide what a line of the anchor is. The
           # verifier splits on every line break Python knows and this step on the line
           # feed alone, so a key behind a carriage return would be part of a comment
           # here and a key there, and the run would publish one signature under an
-          # anchor that holds a key. The file is printable ASCII with line feeds, where
-          # the two readers agree, or the run stops.
-          if LC_ALL=C grep -q '[^ -~]' "$anchor"; then
-            echo "::error::keyring/glyndor-release-mldsa65.b64 holds a byte that is neither printable ASCII nor a line feed; refusing to guess whether it holds a key."
-            exit 1
-          fi
+          # anchor that holds a key. Both files are printable ASCII with line feeds, or
+          # the run stops. The bytes are counted, not matched line by line: GNU grep
+          # reads a file with a NUL in it as binary and reports no match.
+          for f in "$anchor" "$switch"; do
+            outside="$(LC_ALL=C tr -d ' -~\n' < "$f" | wc -c)"
+            if [ "$outside" -ne 0 ]; then
+              echo "::error::${f#"$GITHUB_WORKSPACE"/} holds a byte that is neither printable ASCII nor a line feed; refusing to guess what it says."
+              exit 1
+            fi
+          done
+          # A line of the switch is a comment, blank, or exactly "required". Anything
+          # else stops the run: a switch that was not understood is not read as off.
+          switched=false
+          while IFS= read -r line || [ -n "$line" ]; do
+            if [ "$line" = required ]; then
+              switched=true
+            elif ! [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]]; then
+              echo "::error::keyring/second-signature-required holds the line '$line', which is neither a comment nor 'required'; refusing to guess whether the second signature is required."
+              exit 1
+            fi
+          done < "$switch"
           anchored=false
           if grep -q -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$anchor"; then anchored=true; fi
+          if [ "$switched" = true ] && [ "$anchored" = false ]; then
+            echo "::error::keyring/second-signature-required requires the second signature and keyring/glyndor-release-mldsa65.b64 holds no key; refusing to publish with Ed25519 alone."
+            exit 1
+          fi
+          if [ "$PREVIOUS_MLDSA" = true ] && [ "$anchored" = false ]; then
+            echo "::error::the newest release carries an ML-DSA-65 signature and keyring/glyndor-release-mldsa65.b64 holds no key; refusing to publish this one with Ed25519 alone. This reads only the newest release; what requires the second signature for good is the line 'required' in keyring/second-signature-required."
+            exit 1
+          fi
           if [ "$anchored" = true ] && [ -z "$GLYNDOR_RELEASE_MLDSA65_KEY" ]; then
             echo "::error::keyring/glyndor-release-mldsa65.b64 holds a public key and GLYNDOR_RELEASE_MLDSA65_KEY is not configured; refusing to publish with one signature."
             exit 1
           fi
           required=false
           require=()
-          if [ -n "$GLYNDOR_RELEASE_MLDSA65_KEY" ]; then
+          if [ -n "$GLYNDOR_RELEASE_MLDSA65_KEY" ] || [ "$PREVIOUS_MLDSA" = true ] || [ "$switched" = true ]; then
             required=true
             require=(--require-mldsa)
           fi

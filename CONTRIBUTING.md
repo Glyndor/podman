@@ -20,6 +20,14 @@ Nothing is released by hand. A change to how the package is built, anything unde
 workflows call that content the recipe: its id is a hash of those files, and a
 release records the id it was built with in `components.txt`.
 
+Two files in `keyring/` decide the second, ML-DSA-65 signature of a release:
+`glyndor-release-mldsa65.b64` holds its public key, and the line `required` in
+`second-signature-required` makes it mandatory for every release. Each one changes
+in a pull request of its own. While that line is there, a key file left without a
+key stops the release instead of publishing Ed25519 alone, and taking the line out
+is what retires the second signature. `docs/verify.md` and the README say whether
+it is required, and a test holds them to the file.
+
 ## Branch flow
 
 ```

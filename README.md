@@ -35,7 +35,7 @@ flowchart LR
 - Last, the package replaces Podman on the build runner itself, an Ubuntu virtual machine, and runs a rootless container on `pasta`, which the containers above cannot do.
 - If any step fails nothing is published, and the previous release remains the latest. A failed scheduled run also opens an issue in this repository.
 
-Each release carries one `.deb` and one detached `.sig` per architecture, and a build provenance attestation. [docs/verify.md](docs/verify.md) shows how to check the signature with OpenSSL and the attestation with `gh`.
+Each release carries one `.deb` and one detached `.sig` per architecture, and a build provenance attestation. A second, post-quantum (ML-DSA-65) signature can sit beside the Ed25519 one. The second signature is not required yet. [docs/verify.md](docs/verify.md) shows how to check the signature with OpenSSL and the attestation with `gh`.
 
 ## Scope
 
