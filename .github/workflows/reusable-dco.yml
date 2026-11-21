@@ -11,8 +11,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: dco-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request supersedes its own earlier run. A push is a distinct commit
+  # that has to be judged on its own, and a reusable workflow runs on the events of
+  # the workflow that calls it, which may be a push. So a push run has a group of its
+  # own: in a group shared by pushes, the next one queued cancels the one still
+  # waiting, whatever cancel-in-progress says.
+  group: dco-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   dco:

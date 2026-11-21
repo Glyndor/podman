@@ -6,7 +6,7 @@
 # run here with a gh that answers from a fixture and records what it is asked.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WF="$HERE/.github/workflows/watchdog.yml"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -69,9 +69,19 @@ esac
 GH
 chmod +x "$WORK/bin/gh"
 
+# The start of the schedule is read from git: a git that answers $ADDED for the commit
+# that added mutation.yml, or nothing.
+cat > "$WORK/bin/git" <<'GIT'
+#!/usr/bin/env bash
+[ "$1 $2" = "log -1" ] || exit 1
+echo "$*" >> "$LOG_DIR/gitlog"
+printf '%s\n' "${ADDED:-}"
+GIT
+chmod +x "$WORK/bin/git"
+
 run_step() { # <step-dir> [VAR=value]...: sets $rc and $out; the working directory is $STEP_CWD, the repository by default
 	local dir="$1"; shift
-	: > "$WORK/gh"; rm -rf "$WORK/rt"; mkdir "$WORK/rt"; : > "$WORK/output"
+	: > "$WORK/gh"; : > "$WORK/gitlog"; rm -rf "$WORK/rt"; mkdir "$WORK/rt"; : > "$WORK/output"
 	rc=0
 	out="$(
 		cd "${STEP_CWD:-$HERE}" || exit 99
@@ -87,25 +97,38 @@ runs_at() { # <hours ago> <conclusion>
 }
 
 runs_at 5 success
-run_step "$CHECK" RUNS="$WORK/runs.json"
+run_step "$CHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '30 days ago' +%s)"
 check "a run from five hours ago passes" "0 code=0" "$rc $(cat "$WORK/output")"
 check "and it asks for the scheduled runs of keyring-watch.yml" 1 \
 	"$(grep -c -- 'run-list run list --workflow keyring-watch.yml --event schedule' "$WORK/gh")"
 
 runs_at 60 success
-run_step "$CHECK" RUNS="$WORK/runs.json"
+run_step "$CHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '30 days ago' +%s)"
 check "a newest run from sixty hours ago fails" "1 code=1" "$rc $(cat "$WORK/output")"
 check "and says how old it is" 1 "$(says '60 hours old')"
 
 printf '[]' > "$WORK/runs.json"
-run_step "$CHECK" RUNS="$WORK/runs.json"
+run_step "$CHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '30 days ago' +%s)"
 check "a workflow with no scheduled runs fails" "1 code=1" "$rc $(cat "$WORK/output")"
 
-run_step "$CHECK" RUNS="$WORK/runs.json" RUNS_FAIL=1
+run_step "$CHECK" RUNS="$WORK/runs.json" RUNS_FAIL=1 ADDED="$(date -d '30 days ago' +%s)"
 check "a gh call that fails is a failure with its own code" "2 code=2" "$rc $(cat "$WORK/output")"
 printf 'not json' > "$WORK/runs.json"
-run_step "$CHECK" RUNS="$WORK/runs.json"
+run_step "$CHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '30 days ago' +%s)"
 check "an answer that is not JSON is a failure with its own code" "2 code=2" "$rc $(cat "$WORK/output")"
+
+# A cron added a moment ago has not had its chance to fire: no run yet is a miss only
+# once the two days have passed since the commit that added keyring-watch.yml.
+printf '[]' > "$WORK/runs.json"
+run_step "$CHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '1 day ago' +%s)"
+check "no run yet, a day after the workflow was added: inside the grace" "0 code=0 1" \
+	"$rc $(cat "$WORK/output") $(says 'no scheduled run has finished yet')"
+run_step "$CHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '3 days ago' +%s)"
+check "no run yet, three days after: a miss" "1 code=1" "$rc $(cat "$WORK/output")"
+run_step "$CHECK" RUNS="$WORK/runs.json" ADDED=""
+check "no commit that added the workflow: it cannot decide" "2 code=2" "$rc $(cat "$WORK/output")"
+check "and it asks git for the commit that added keyring-watch.yml" 1 \
+	"$(grep -c -- '--diff-filter=A -- .github/workflows/keyring-watch.yml' "$WORK/gitlog")"
 
 # The alarm: an issue for a miss, a comment when one is already open.
 run_step "$ALARM" CODE=1 RUN_URL=https://example.test/run/1
@@ -119,6 +142,21 @@ run_step "$ALARM" CODE=2 RUN_URL=https://example.test/run/3
 check "a check that could not decide opens its own issue" "0 1" \
 	"$rc $(grep -c "create issue create --title The keyring watch's freshness check could not decide" "$WORK/gh")"
 
+# The start of the schedule is read from the history, so the job needs all of it: in a
+# shallow clone the commit that added the workflow is not there and the step cannot decide.
+depth() { # <job>: the fetch-depth the job's checkout asks for
+	python3 - "$WF" "$1" <<'PY'
+import sys, yaml
+with open(sys.argv[1]) as fh:
+    doc = yaml.safe_load(fh)
+for s in doc["jobs"][sys.argv[2]]["steps"]:
+    if str(s.get("uses", "")).startswith("actions/checkout@"):
+        print((s.get("with") or {}).get("fetch-depth", "default"))
+PY
+}
+check "the keyring job checks out the whole history" 0 "$(depth keyring-watch-freshness)"
+check "and so does the mutation job" 0 "$(depth mutation-freshness)"
+
 # --- the mutation sweep --------------------------------------------------------------
 MCHECK="$WORK/mcheck"; MALARM="$WORK/malarm"
 step "Has the mutation sweep run in the last nine days" "$MCHECK" mutation-freshness || { echo "FAIL  cannot read the sweep's check step"; exit 1; }
@@ -127,14 +165,6 @@ check "the sweep's check and alarm have no expression in their run blocks" "0 0"
 	"$(grep -c '\${{' "$MCHECK/run.sh") $(grep -c '\${{' "$MALARM/run.sh")"
 check "its alarm opens only on a scheduled run that failed" "failure() && github.event_name == 'schedule'" "$(cat "$MALARM/if.txt")"
 check "the workflow it watches is a scheduled one that exists" 1 "$(grep -c '^    - cron: ' "$HERE/.github/workflows/mutation.yml")"
-# The start of the schedule is read from git: a git that answers $ADDED for the commit
-# that added mutation.yml, or nothing.
-cat > "$WORK/bin/git" <<'GIT'
-#!/usr/bin/env bash
-[ "$1 $2" = "log -1" ] || exit 1
-printf '%s\n' "${ADDED:-}"
-GIT
-chmod +x "$WORK/bin/git"
 runs_at 30 success
 run_step "$MCHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '30 days ago' +%s)"
 check "a sweep that ran thirty hours ago passes" "0 code=0" "$rc $(cat "$WORK/output")"

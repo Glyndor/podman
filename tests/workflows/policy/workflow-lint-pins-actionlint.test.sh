@@ -8,7 +8,7 @@
 # a workspace of fixture workflows and over this repository's own.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WF="$HERE/.github/workflows/reusable-workflow-lint.yml"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

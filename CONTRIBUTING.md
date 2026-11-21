@@ -54,6 +54,7 @@ branch.
 find scripts tests -name '*.sh' -print0 | xargs -0 shellcheck -S warning
 bash scripts/quality/check-test-coverage.sh
 bash scripts/quality/check-mutation-coverage.sh
+bash scripts/quality/check-folder-size.sh
 python3 -m venv /tmp/podman-mldsa && /tmp/podman-mldsa/bin/python -m pip install --quiet --require-hashes --only-binary=:all: -r .github/scripts/release/sign-requirements.txt
 status=0; for t in $(find tests -name '*.test.sh' | sort); do case "$t" in *-mldsa.test.sh) PATH="/tmp/podman-mldsa/bin:$PATH" bash "$t" ;; *) bash "$t" ;; esac </dev/null || { echo "FAILED $t"; status=1; }; done; [ "$status" -eq 0 ]
 ```
@@ -64,10 +65,15 @@ shellcheck 0.11.0 (the version CI pins), and `python3` with `python3-yaml`,
 fetch the pinned wheel; the last one runs every suite, says which failed, and exits
 non-zero when one did.
 
+A folder holds at most twenty tracked files directly, and `check-folder-size.sh` fails when one
+holds more: split it into subfolders by what each file is for. `.github/workflows` is left out, because
+GitHub only reads it flat, and so is any `testdata` folder.
+
 Every script in `scripts/` needs a test; `check-test-coverage.sh` fails when one
 does not. A script `scripts/<area>/x.sh` is tested by `tests/<area>/x.test.sh`. The
 other folders of `tests/` are named for what they test: `tests/workflows` reads
-`.github/workflows`, `tests/release` exercises the signing tools in
+`.github/workflows`, in one folder for each thing it holds (`release`, `build`, `dependabot`, `keyring`, `watchdog`,
+`pr-checks`, `policy`, `mounts`, `pins`), `tests/release` exercises the signing tools in
 `.github/scripts/release` with its vectors in `tests/release/fixtures`, `tests/docs`
 holds the documents that make a claim about the repository, and `tests/lib` holds
 helpers that suites source. `tests.yml` runs every `*.test.sh` under `tests/` at any depth. The scripts that install the package

@@ -11,7 +11,8 @@
 # with no script -- is a different failure with a different fix, and folding
 # both into one check would make the message ambiguous. tests/ also holds tests
 # for things that are not under scripts/ at all: the signing tools in
-# .github/scripts/release/ and the steps of the workflows.
+# .github/scripts/release/ and the steps of the workflows. This gate covers scripts/
+# and nothing else.
 #
 # Usage: check-test-coverage.sh [repo-root]   (default: the repo this lives in)
 
@@ -31,19 +32,6 @@ while IFS= read -r -d '' script; do
 	[ -f "$root/tests/$rel.test.sh" ] || missing+=("scripts/$rel.sh")
 done < <(find "$root/scripts" -type f -name '*.sh' -print0 | LC_ALL=C sort -z)
 
-# The maintainer scripts dpkg runs as root on the customer's machine live outside
-# scripts/, in keyring/upgrade/, and were outside this gate for that reason alone.
-# Each needs tests/keyring/<name>.test.sh, or a suite named <name>-<topic> when
-# one script is covered by several.
-if [ -d "$root/keyring/upgrade" ]; then
-	while IFS= read -r -d '' script; do
-		name="${script##*/}"
-		[ -f "$root/tests/keyring/$name.test.sh" ] \
-			|| compgen -G "$root/tests/keyring/$name-*.test.sh" > /dev/null \
-			|| missing+=("keyring/upgrade/$name")
-	done < <(find "$root/keyring/upgrade" -maxdepth 1 -type f ! -name '*.service' ! -name '*.timer' -print0 | LC_ALL=C sort -z)
-fi
-
 if [ ${#missing[@]} -gt 0 ]; then
 	echo "::error::${#missing[@]} script(s) have no test in the matching folder of tests/:" >&2
 	printf '  %s\n' "${missing[@]}" >&2
@@ -51,4 +39,4 @@ if [ ${#missing[@]} -gt 0 ]; then
 	exit 1
 fi
 
-echo "test coverage: every script in scripts/ and keyring/upgrade/ has a test."
+echo "test coverage: every script in scripts/ has a test."

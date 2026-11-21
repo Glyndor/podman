@@ -6,7 +6,7 @@
 # and a git that record what they were asked, so what is tested is what runs.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WF="$HERE/.github/workflows/keyring-watch.yml"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

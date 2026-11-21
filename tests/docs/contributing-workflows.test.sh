@@ -2,8 +2,8 @@
 #
 # Tests that the table of workflows in CONTRIBUTING.md names every workflow file the
 # repository has and no file it does not, that the commands it gives run scripts
-# through an interpreter, as the workflows must (workflow-policy.test.sh), and that the
-# pull request template gives the same commands. The table is
+# through an interpreter, as the workflows must (tests/workflows/policy/workflow-policy.test.sh),
+# and that the pull request template gives the same commands. The table is
 # what a contributor reads to learn what can fail and why, and three of the files that
 # hold the logic of three of its rows were missing from it, with nothing to say so.
 set -u

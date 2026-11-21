@@ -7,7 +7,7 @@
 # and pins in least-privilege.test.sh.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 pass=0; fail=0
 
 check() { # <desc> <want> <got>

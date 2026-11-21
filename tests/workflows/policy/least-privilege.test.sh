@@ -25,7 +25,7 @@
 # suite of its own so neither grows past the soft limit of line-limit.yml.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 pass=0; fail=0
 
 check() { # <desc> <want> <got>

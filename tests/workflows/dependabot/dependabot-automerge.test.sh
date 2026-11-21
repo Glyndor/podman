@@ -8,7 +8,7 @@
 # and who pushed: a person's push must disarm, and must never arm.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WF="$HERE/.github/workflows/dependabot-automerge.yml"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

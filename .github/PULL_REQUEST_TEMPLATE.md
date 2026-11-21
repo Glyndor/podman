@@ -29,6 +29,7 @@ check, say which control you removed to make it go red, and what it reported.
 - [ ] Labels applied (`type:`, `prio:`, `effort:`, `area:` where applicable)
 - [ ] Every script under `scripts/` still has a test (`bash scripts/quality/check-test-coverage.sh`)
 - [ ] Every refusal has a mutation entry or an exemption (`bash scripts/quality/check-mutation-coverage.sh`)
+- [ ] No folder holds more than twenty files directly (`bash scripts/quality/check-folder-size.sh`)
 - [ ] No secrets, keys or credentials in code, logs or fixtures
 - [ ] Docs updated if behaviour changed
 

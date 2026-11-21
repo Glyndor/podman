@@ -57,6 +57,10 @@ jobs:
           find scripts tests -name '*.sh' -print0 | xargs -0 shellcheck -S warning
       - name: every script has a test
         run: bash scripts/quality/check-test-coverage.sh
+      # A folder past twenty files is split by what each file is for. Counting the
+      # tracked files takes a fraction of a second.
+      - name: no folder holds more than twenty files
+        run: bash scripts/quality/check-folder-size.sh
       # The sweep itself is mutation.yml; this is the second it costs to know that
       # every refusal is in the catalogue the sweep runs, or exempted with a reason.
       - name: every refusal has a mutation entry or an exemption
@@ -77,7 +81,7 @@ jobs:
           count=0
           # Every file named *.test.sh under tests/, at any depth: a suite in a new
           # subfolder runs without anyone editing this step, and one that is named
-          # otherwise is refused by tests/workflows/tests-run-every-suite.test.sh.
+          # otherwise is refused by tests/workflows/policy/tests-run-every-suite.test.sh.
           while IFS= read -r t; do
             echo "== $t"
             count=$((count + 1))

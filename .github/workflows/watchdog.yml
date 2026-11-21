@@ -22,9 +22,9 @@ name: watchdog
 # one of them a download, for delivery lag; one gh call for the freshness of the
 # keyring watch) on every push to every pull request, with a failure that is not
 # that pull request's. What the scripts decide is tested, with fixtures, by tests/monitoring/,
-# and the steps that run them by watchdog-delivery-lag.test.sh and
-# watchdog-keyring-freshness.test.sh, which do run on a pull request.
-# A rule in workflow-policy.test.sh keeps the trigger off.
+# and the steps that run them by tests/workflows/watchdog/watchdog-delivery-lag.test.sh and
+# tests/workflows/watchdog/watchdog-freshness.test.sh, which do run on a pull request.
+# A rule in tests/workflows/policy/workflow-policy.test.sh keeps the trigger off.
 #
 # Nothing here is cancelled: a run on a schedule or a push is never superseded, and
 # there is no pull request run left to supersede. None of it is a required check: it
@@ -130,7 +130,8 @@ jobs:
   # this repository notices, and the first sign is a release refused because
   # upstream changed a key and the copy here did not follow. It fires once a day,
   # so two days without a finished scheduled run is a miss GitHub's usual lateness
-  # does not explain.
+  # does not explain. Until the workflow has had that long to fire once, counted from
+  # the commit that added it, no run yet is not a miss.
   keyring-watch-freshness:
     name: keyring watch freshness
     runs-on: ubuntu-26.04
@@ -143,6 +144,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The history, for the commit that added keyring-watch.yml.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Has the keyring watch run in the last two days
@@ -160,8 +163,12 @@ jobs:
             exit 2
           fi
           # 1 means it has not run for too long; 2 means it could not tell.
+          # When the schedule began: the commit that added the workflow. A cron added a
+          # moment ago has not had its chance to fire, and that is not a miss. Not found
+          # is left empty, and the script then reads it as a start it cannot decide on.
+          since="$(git log -1 --format=%ct --diff-filter=A -- .github/workflows/keyring-watch.yml)"
           set +e
-          bash scripts/monitoring/schedule-freshness.sh "$runs" "$(date +%s)" "$MAX_HOURS"
+          bash scripts/monitoring/schedule-freshness.sh "$runs" "$(date +%s)" "$MAX_HOURS" "${since:-unknown}"
           rc=$?
           set -e
           echo "code=$rc" >> "$GITHUB_OUTPUT"
