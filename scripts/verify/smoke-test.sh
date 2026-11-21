@@ -124,8 +124,10 @@ grep -q '^smoke:' /etc/subgid || echo 'smoke:100000:65536' >> /etc/subgid
 chmod -R a+rX "$root"
 # pasta itself, with the option Podman passes, as an unprivileged user: needs no helper binaries.
 if su smoke -c 'unshare -Un true' 2>/dev/null; then
-	su smoke -c 'pasta --config-net --map-guest-addr 169.254.1.2 -- true' >/dev/null 2>&1 \
-		|| { echo "pasta did not start with --map-guest-addr as an unprivileged user" >&2; exit 1; }
+	# What pasta says goes into the message: without it the run only shows that it failed,
+	# and the cause differs per architecture and per kernel.
+	pasta_out="$(su smoke -c 'pasta --config-net --map-guest-addr 169.254.1.2 -- true' 2>&1)" \
+		|| { echo "pasta did not start with --map-guest-addr as an unprivileged user: $pasta_out" >&2; exit 1; }
 fi
 rootless() { su smoke -c "mkdir -p /tmp/xdg-smoke && HOME=/home/smoke XDG_RUNTIME_DIR=/tmp/xdg-smoke $*" 2>&1; }
 if rootless podman unshare true >/dev/null; then
