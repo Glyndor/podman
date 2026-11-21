@@ -22,6 +22,7 @@ on:
       - "scripts/build/**"
       - "keyring/**"
       - ".github/workflows/release.yml"
+      - ".github/workflows/reusable-build.yml"
   workflow_dispatch:
 
 permissions: {}

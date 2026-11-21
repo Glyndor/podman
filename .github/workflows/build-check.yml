@@ -63,9 +63,12 @@ jobs:
         run: |
           # Any step that fails leaves the answer at true. The script is the one
           # on the base commit; a base that does not have it yet builds.
+          # --no-renames lists a moved file under both its old and its new path.
+          # With rename detection a build script moved into docs/ would show only
+          # the new path, and the decision would be to skip.
           decision=true
           git show "$BASE:scripts/ci/decide-build.sh" > "$RUNNER_TEMP/decide-build.sh" \
-            && paths="$(git -c core.quotePath=false diff --name-only "$BASE...$HEAD")" \
+            && paths="$(git -c core.quotePath=false diff --no-renames --name-only "$BASE...$HEAD")" \
             && out="$(printf '%s\n' "$paths" | bash "$RUNNER_TEMP/decide-build.sh")" \
             && case "$out" in true | false) decision="$out" ;; esac \
             || decision=true
