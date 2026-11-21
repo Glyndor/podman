@@ -55,7 +55,7 @@ argument contract tested here and their real run in `reusable-build.yml`, which
 `release.yml` runs before anything is signed and `build-check.yml` runs on a pull
 request that changes how the package is built.
 
-One suite needs a library the distributions do not carry: `tests/ci/release-signing-mldsa.test.sh`
+One suite needs a library the distributions do not carry: `tests/release/release-signing-mldsa.test.sh`
 makes and verifies real ML-DSA-65 signatures, and the `python3-cryptography` of Debian and
 Ubuntu has no ML-DSA. `tests.yml` runs it in a virtual environment built from
 `.github/scripts/release/sign-requirements.txt`, pinned by hash. Run without that

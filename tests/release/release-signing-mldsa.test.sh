@@ -3,10 +3,10 @@
 # The hybrid release signature in .github/scripts/release/{sign,verify-sig}.py,
 # verified for real: an Ed25519 signature and an ML-DSA-65 one over the same
 # bytes, both required to pass. The checks that need no ML-DSA library are in
-# tests/ci/release-signing-hybrid.test.sh.
+# tests/release/release-signing-hybrid.test.sh.
 #
 # The keys are made here, at run time, and one fixed vector is checked as well.
-# tests/fixtures/release-signing/mldsa65/ holds a public key, a message and the
+# tests/release/fixtures/mldsa65/ holds a public key, a message and the
 # message's ML-DSA-65 signature, made with OpenSSL 3.5.5
 # (`openssl genpkey -algorithm ML-DSA-65`, `openssl pkeyutl -sign -rawin`) and
 # not with the library under test; it is the vector Glyndor/apt checks its own
@@ -25,7 +25,7 @@ set -u
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 SIGN="$HERE/.github/scripts/release/sign.py"
 VERIFY="$HERE/.github/scripts/release/verify-sig.py"
-VECTOR="$HERE/tests/fixtures/release-signing/mldsa65"
+VECTOR="$HERE/tests/release/fixtures/mldsa65"
 
 if ! python3 -I -c 'from cryptography.hazmat.primitives.asymmetric.mldsa import MLDSA65PrivateKey' 2>/dev/null; then
 	echo "FAIL  $(command -v python3) has no cryptography with ML-DSA; install .github/scripts/release/sign-requirements.txt into a virtual environment and put it first on PATH"
