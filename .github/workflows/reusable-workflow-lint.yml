@@ -45,26 +45,30 @@ jobs:
     # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
     # commit; the arm64 build keeps its own label, so the rootless test covers both.
     runs-on: ubuntu-26.04
-    env:
-      ACTIONLINT_VERSION: v1.7.12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version: "1.26"
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: actionlint-cache
-        with:
-          path: ~/go/bin/actionlint
-          key: actionlint-${{ runner.os }}-${{ env.ACTIONLINT_VERSION }}
-
       - name: Install actionlint
-        if: steps.actionlint-cache.outputs.cache-hit != 'true'
-        run: go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+        env:
+          ACTIONLINT_VERSION: v1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          # The release's own binary, pinned by tag and checked against its sha256
+          # before it is extracted, the way shellcheck is below. It replaces
+          # `go install`, which needed a Go toolchain that floated with the
+          # setup-go version and a cache of the compiled binary. The version and
+          # the hash move together; the hash is in the release's checksums file.
+          dir="$RUNNER_TEMP/actionlint-bin"
+          tarball="$RUNNER_TEMP/actionlint.tar.gz"
+          mkdir -p "$dir"
+          curl -sSfL -o "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION#v}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$ACTIONLINT_SHA256" "$tarball" | sha256sum -c -
+          tar -xz -f "$tarball" -C "$dir" actionlint
+          echo "$dir" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
         env:
