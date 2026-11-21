@@ -228,3 +228,9 @@ watchdog-mutation-counts-scheduled-runs-only	.github/workflows/watchdog.yml	--wo
 dco-push-run-shares-the-group-of-the-ref	.github/workflows/reusable-dco.yml	-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	-${{ github.ref }}	tests/workflows/policy/concurrency-policy.test.sh
 line-limit-push-run-shares-the-group-of-the-ref	.github/workflows/reusable-line-limit.yml	-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	-${{ github.ref }}	tests/workflows/policy/concurrency-policy.test.sh
 workflow-lint-push-run-shares-the-group-of-the-ref	.github/workflows/reusable-workflow-lint.yml	-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	-${{ github.ref }}	tests/workflows/policy/concurrency-policy.test.sh
+check-folder-size-not-a-git-working-tree	scripts/quality/check-folder-size.sh	|| { echo "$root is not a git working tree, so its files cannot be counted" >&2; exit 1; }	|| true	tests/quality/check-folder-size.test.sh
+check-folder-size-a-folder-is-over-the-limit	scripts/quality/check-folder-size.sh	if [ -n "$over" ]; then	if false; then	tests/quality/check-folder-size.test.sh
+check-folder-size-the-limit-is-twenty	scripts/quality/check-folder-size.sh	limit=20	limit=21	tests/quality/check-folder-size.test.sh
+check-folder-size-the-workflows-folder-is-left-out	scripts/quality/check-folder-size.sh	dir == ".github/workflows" ||	dir == "none" ||	tests/quality/check-folder-size.test.sh
+check-folder-size-a-testdata-folder-is-left-out	scripts/quality/check-folder-size.sh	 || ("/" dir "/") ~ /\/testdata\//	 || ("/" dir "/") ~ /\/nothing\//	tests/quality/check-folder-size.test.sh
+check-folder-size-only-the-files-directly-inside-count	scripts/quality/check-folder-size.sh	dir = substr($0, 1, RSTART - 1)	dir = substr($0, 1, index($0, "/") - 1)	tests/quality/check-folder-size.test.sh
