@@ -53,8 +53,15 @@ branch.
 ```sh
 find scripts tests -name '*.sh' -print0 | xargs -0 shellcheck -S warning
 bash scripts/quality/check-test-coverage.sh
-for t in $(find tests -name '*.test.sh' | sort); do bash "$t"; done
+python3 -m venv /tmp/podman-mldsa && /tmp/podman-mldsa/bin/python -m pip install --quiet --require-hashes --only-binary=:all: -r .github/scripts/release/sign-requirements.txt
+status=0; for t in $(find tests -name '*.test.sh' | sort); do case "$t" in *-mldsa.test.sh) PATH="/tmp/podman-mldsa/bin:$PATH" bash "$t" ;; *) bash "$t" ;; esac </dev/null || { echo "FAILED $t"; status=1; }; done; [ "$status" -eq 0 ]
 ```
+
+The suites run on Debian or Ubuntu with bash, git, gpg, make, file, binutils, dpkg-dev,
+shellcheck 0.11.0 (the version CI pins), and `python3` with `python3-yaml`,
+`python3-cryptography` and `python3-venv`. The third line needs network access once, to
+fetch the pinned wheel; the last one runs every suite, says which failed, and exits
+non-zero when one did.
 
 Every script in `scripts/` needs a test; `check-test-coverage.sh` fails when one
 does not. A script `scripts/<area>/x.sh` is tested by `tests/<area>/x.test.sh`. The
@@ -72,8 +79,9 @@ faked machine. Their real run is in `reusable-build.yml`, which `release.yml` ru
 One suite needs a library the distributions do not carry: `tests/release/release-signing-mldsa.test.sh`
 makes and verifies real ML-DSA-65 signatures, and the `python3-cryptography` of Debian and
 Ubuntu has no ML-DSA. `tests.yml` runs it in a virtual environment built from
-`.github/scripts/release/sign-requirements.txt`, pinned by hash. Run without that
-environment first on `PATH`, the suite fails and says what is missing; it does not skip.
+`.github/scripts/release/sign-requirements.txt`, pinned by hash, and the commands above
+do the same. Run without that environment first on `PATH`, the suite fails and says what
+is missing; it does not skip.
 
 **A test you have not watched fail is not a test.** Before claiming a check
 works, remove the control it covers, run it, and confirm it goes red for the
