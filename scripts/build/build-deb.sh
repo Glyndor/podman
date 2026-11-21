@@ -99,6 +99,16 @@ passt_src="${GLYNDOR_PASST_SRC:-/usr/share/glyndor-build/passt}"
 passt_version="$(dpkg-parsechangelog -l "$passt_src/debian/changelog" -S Version)"
 case "$arch" in amd64) passt_target=x86_64 ;; arm64) passt_target=aarch64 ;; *) passt_target="$(uname -m)" ;; esac
 (
+	# eval runs what dpkg-buildflags prints, and its sh export escapes nothing: each
+	# value goes inside double quotes with $ and backticks left as they are (dpkg 1.23,
+	# DEB_CFLAGS_APPEND='$(x)' comes out as $(x)). It is safe here because no input of
+	# it comes from the sources being built: dpkg's defaults in the build image, which
+	# is pinned by digest, the DEB_* variables, which only this line sets (the image
+	# and the workflow's docker run pass none), the build path, which dpkg leaves out
+	# when it holds a character that would need quoting, and a debian/changelog in the
+	# working directory, of which the build container has none (it runs from /).
+	# Running this from a source tree, or feeding it anything taken from upstream,
+	# would end that.
 	eval "$(DEB_BUILD_MAINT_OPTIONS=hardening=+all dpkg-buildflags --export=sh)"
 	export VERSION="$passt_version"
 	make -C "$passt_src" prefix=/usr TARGET="$passt_target" >&2
