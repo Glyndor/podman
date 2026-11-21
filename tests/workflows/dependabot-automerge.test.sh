@@ -3,7 +3,9 @@
 # Tests for the guard in .github/workflows/dependabot-automerge.yml that arms
 # auto-merge only when every commit on the branch is Dependabot's. The step's own
 # run block and its jq program are read from the workflow and run here against a
-# gh that answers from a fixture, so what is tested is what the workflow runs.
+# gh that answers from a fixture, so what is tested is what the workflow runs. The
+# if: of the arm and disarm jobs is evaluated too, for who opened the pull request
+# and who pushed: a person's push must disarm, and must never arm.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -108,6 +110,52 @@ GH_FAILS=1 run_guard '{}'
 check "a failed read is refused" "1 0 1" "$rc $merged $(printf '%s' "$out" | grep -c 'could not read the commits')"
 run_guard '{"commits":null}'
 check "an answer without a list of commits is refused" "1 0 1" "$rc $merged $(printf '%s' "$out" | grep -c 'could not read the commits')"
+
+# --- which job runs: arm when Dependabot pushed, disarm when anybody else did ----------
+# The if: of each job is read from the workflow and evaluated for each event below,
+# so it is what the condition decides that is held, not its spelling. Only the form
+# these conditions use is understood, terms of `<context> == or != '<literal>'` joined
+# by &&; anything else is "unreadable", never true or false.
+jobs_for() { # <workflow> <event> <pull request author> <actor>: the jobs that would run
+	python3 - "$@" <<'PY' 2>&1 || echo "rule failed"
+import re, sys, yaml
+path, event, author, actor = sys.argv[1:5]
+ctx = {"github.event_name": event, "github.event.pull_request.user.login": author, "github.actor": actor}
+jobs = yaml.safe_load(open(path))["jobs"]
+term = re.compile(r"\s*([a-z_.]+)\s*(==|!=)\s*'([^']*)'\s*")
+ran = []
+for name in ("arm", "disarm"):
+    cond = str(jobs[name].get("if", "")).strip()
+    cond = re.sub(r"^\$\{\{(.*)\}\}$", r"\1", cond)
+    value = True
+    for part in cond.split("&&"):
+        m = term.fullmatch(part)
+        if not m or m.group(1) not in ctx:
+            print(f"{name}: unreadable condition {cond!r}")
+            break
+        value = value and ((ctx[m.group(1)] == m.group(3)) == (m.group(2) == "=="))
+    else:
+        if value:
+            ran.append(name)
+print(" ".join(ran) or "none")
+PY
+}
+bot='dependabot[bot]'
+check "Dependabot pushed to its own pull request: arm, and only arm" "arm" "$(jobs_for "$WF" pull_request_target "$bot" "$bot")"
+check "a person pushed to Dependabot's pull request: disarm, and only disarm" "disarm" "$(jobs_for "$WF" pull_request_target "$bot" someone)"
+check "a person's own pull request: neither" "none" "$(jobs_for "$WF" pull_request_target someone someone)"
+check "Dependabot pushing to a person's pull request: neither" "none" "$(jobs_for "$WF" pull_request_target someone "$bot")"
+check "a push to main: neither" "none" "$(jobs_for "$WF" push "" someone)"
+swapped="$WORK/swapped.yml"
+sed "s/ \&\& github.actor == 'dependabot\[bot\]'\$/ \&\& github.actor == 'X'/; s/ \&\& github.actor != 'dependabot\[bot\]'\$/ \&\& github.actor == 'dependabot[bot]'/; s/ \&\& github.actor == 'X'\$/ \&\& github.actor != 'dependabot[bot]'/" "$WF" > "$swapped"
+check "the fixture did swap the two conditions" "1 1" \
+	"$(grep -c "^    if: .* && github.actor != 'dependabot\[bot\]'\$" "$swapped") $(grep -c "^    if: .* && github.actor == 'dependabot\[bot\]'\$" "$swapped")"
+check "with them swapped, a person's push would arm the merge, which the cases above refuse" "arm" "$(jobs_for "$swapped" pull_request_target "$bot" someone)"
+sed "s/^\(    if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot\[bot\]'\) && github.actor != 'dependabot\[bot\]'\$/\1/" "$WF" > "$swapped"
+check "a disarm that stops looking at who pushed also runs on Dependabot's own push" "arm disarm" "$(jobs_for "$swapped" pull_request_target "$bot" "$bot")"
+sed "s/^    if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot\[bot\]' && github.actor != /    if: always() \&\& github.actor != /" "$WF" > "$swapped"
+check "a condition outside the form this reads is unreadable, not an answer" "disarm: unreadable condition \"always() && github.actor != 'dependabot[bot]'\"
+arm" "$(jobs_for "$swapped" pull_request_target "$bot" "$bot")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
