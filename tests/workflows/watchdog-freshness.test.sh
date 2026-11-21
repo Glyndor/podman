@@ -69,12 +69,12 @@ esac
 GH
 chmod +x "$WORK/bin/gh"
 
-run_step() { # <step-dir> [VAR=value]...: sets $rc and $out; the working directory is the repository
+run_step() { # <step-dir> [VAR=value]...: sets $rc and $out; the working directory is $STEP_CWD, the repository by default
 	local dir="$1"; shift
 	: > "$WORK/gh"; rm -rf "$WORK/rt"; mkdir "$WORK/rt"; : > "$WORK/output"
 	rc=0
 	out="$(
-		cd "$HERE" || exit 99
+		cd "${STEP_CWD:-$HERE}" || exit 99
 		# shellcheck source=/dev/null
 		. "$dir/env.sh"
 		env PATH="$WORK/bin:$PATH" LOG_DIR="$WORK" RUNNER_TEMP="$WORK/rt" GITHUB_OUTPUT="$WORK/output" "$@" \
@@ -153,6 +153,26 @@ run_step "$MCHECK" RUNS="$WORK/runs.json" ADDED=""
 check "no commit that added the workflow: it cannot decide" "2 code=2" "$rc $(cat "$WORK/output")"
 run_step "$MCHECK" RUNS="$WORK/runs.json" RUNS_FAIL=1 ADDED="$(date -d '2 days ago' +%s)"
 check "a gh call that fails is a failure with its own code" "2 code=2 1" "$rc $(cat "$WORK/output") $(says 'could not list the runs of mutation.yml')"
+# The start of the schedule is the commit that ADDED mutation.yml, which only a history
+# says: here the file was added thirty days ago and touched again yesterday, with a real
+# git. Counted from the last touch, a sweep that never ran would be inside its grace.
+rm "$WORK/bin/git"
+REPO="$WORK/repo"; mkdir -p "$REPO/.github/workflows"
+commit() { # <days ago> <message>: everything staged, committed at that time
+	local when; when="$(date -d "$1 days ago" +%s)"
+	GIT_AUTHOR_DATE="@$when +0000" GIT_COMMITTER_DATE="@$when +0000" \
+		git -C "$REPO" -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false \
+		-c core.hooksPath=/dev/null commit -q -m "$2"
+}
+git -C "$REPO" -c init.defaultBranch=main init -q
+echo 'on: schedule' > "$REPO/.github/workflows/mutation.yml"; git -C "$REPO" add -A; commit 30 "add the sweep"
+echo '# touched' >> "$REPO/.github/workflows/mutation.yml"; git -C "$REPO" add -A; commit 1 "touch the sweep"
+# The step runs the repository's own script, so the history is the only thing that differs.
+mkdir -p "$REPO/scripts/monitoring"; cp "$HERE/scripts/monitoring/schedule-freshness.sh" "$REPO/scripts/monitoring/"
+printf '[]' > "$WORK/runs.json"
+STEP_CWD="$REPO" run_step "$MCHECK" RUNS="$WORK/runs.json"
+check "no run yet, thirty days after the workflow was added and one after it was touched: a miss" "1 code=1" "$rc $(cat "$WORK/output")"
+
 run_step "$MALARM" CODE=1 RUN_URL=https://example.test/run/4
 check "a miss opens an issue named for it, linking the run" "0 1 1" \
 	"$rc $(grep -c 'create issue create --title The mutation sweep has stopped running' "$WORK/gh") $(grep -c 'https://example.test/run/4' "$WORK/gh")"

@@ -76,6 +76,22 @@ base2="$(git -C "$repo" rev-parse HEAD)"
 echo more >> "$repo/README"; gitc add -A; gitc commit -q -m "touch"
 (cd "$repo" && "$SCRIPT" "$base2" HEAD >/dev/null 2>&1); check "an old line in the base is not rescanned" 0 "$?"
 
+# A file that is moved, unchanged, carries its lines to a new path. With rename detection
+# the diff says only "renamed" and the scan reads nothing, so what entered before the scan
+# existed, or by a merge it does not read, would move for good: the scan reads a moved file
+# whole. The fixture repository asks for rename detection itself, since that is what the
+# default of git does and a machine's own configuration can turn it off.
+git -C "$repo" config diff.renames true
+mkdir -p "$repo/moved"; gitc mv old.txt moved/old.txt; gitc commit -q -m "move the old file"
+out="$( (cd "$repo" && "$SCRIPT" "$base2" HEAD 2>&1) )"; rc=$?
+check "a file moved unchanged is scanned whole, and a credential in it fails" 1 "$rc"
+check "and it is named at its new path" 1 "$(printf '%s' "$out" | grep -c 'moved/old.txt:1 long value assigned to a secret-like name')"
+check "and the moved value is not printed" 0 "$(printf '%s' "$out" | grep -cF -- "$(rep z 40)")"
+base3="$(git -C "$repo" rev-parse HEAD)"
+gitc mv README README.md; gitc commit -q -m "rename a harmless file"
+(cd "$repo" && "$SCRIPT" "$base3" HEAD >/dev/null 2>&1); check "a harmless file moved the same way passes" 0 "$?"
+gitc reset -q --hard "$base2"
+
 # A repository lists the paths that hold throwaway keys on purpose.
 git -C "$repo" reset -q --hard "$base"
 mkdir -p "$repo/fixtures"

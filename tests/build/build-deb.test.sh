@@ -20,7 +20,7 @@ mkdir "$WORK/src" "$WORK/nv" "$WORK/aa"
 mkdir -p "$WORK/passt/debian" "$WORK/passt/contrib/apparmor/abstractions"
 printf 'passt (0.0~git20260728.f8df3f1-1~bpo13+1) trixie-backports; urgency=medium\n\n  * x\n\n -- X <x@example.org>  Tue, 28 Jul 2026 00:00:00 +0000\n' > "$WORK/passt/debian/changelog"
 # passt's own install copies doc/demo.sh with its executable bit: a script among the binaries.
-printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(prefix)/bin/passt\n\tinstall -D -m755 demo.sh $(DESTDIR)$(prefix)/share/doc/passt/demo.sh\n' > "$WORK/passt/Makefile"
+printf 'all:\n\t@echo "$$CFLAGS" > %s/passt-cflags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(prefix)/bin/passt\n\tinstall -D -m755 demo.sh $(DESTDIR)$(prefix)/share/doc/passt/demo.sh\n' "$WORK" > "$WORK/passt/Makefile"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/passt/demo.sh"
 echo p > "$WORK/passt/contrib/apparmor/usr.bin.passt"; echo p > "$WORK/passt/contrib/apparmor/abstractions/passt"
 mkdir -p "$WORK/mods/common/pkg/config" "$WORK/mods/common/pkg/seccomp" "$WORK/mods/common/rpm" "$WORK/mods/image" "$WORK/mods/storage"
@@ -29,7 +29,7 @@ for f in common/pkg/config/containers.conf common/rpm/policy.json image/registri
 echo '{"syscalls":[{"names":["futex_waitv"]}]}' > "$WORK/mods/common/pkg/seccomp/seccomp.json"
 echo '[aliases]' > "$WORK/short.conf"
 export GLYNDOR_PASST_SRC="$WORK/passt" GLYNDOR_MODULES_DIR="$WORK/mods" GLYNDOR_SHORTNAMES="$WORK/short.conf"
-printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags; echo "$$CGO_CFLAGS" > %s/cflags\n\trm -f bin/podman; [ -n "$$FAKE_NO_BIN" ] || install -D -m755 /bin/true bin/podman\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" "$WORK" > "$WORK/src/Makefile"
+printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags; echo "$$CGO_CFLAGS" > %s/cflags; echo "$$CGO_LDFLAGS" > %s/ldflags; echo "$$GOFLAGS" > %s/goflags\n\trm -f bin/podman; [ -n "$$FAKE_NO_BIN" ] || install -D -m755 /bin/true bin/podman\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" "$WORK" "$WORK" "$WORK" > "$WORK/src/Makefile"
 printf 'all:\n\t@echo "$(CARGO)" > %s/cargo-nv\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/netavark\n' "$WORK" > "$WORK/nv/Makefile"; touch "$WORK/nv/Cargo.lock" "$WORK/aa/Cargo.lock"
 printf '[package]\nname = "netavark"\nversion = "2.1.0"\n' > "$WORK/nv/Cargo.toml"
 printf '[package]\nname = "aardvark-dns"\nversion = "2.1.3"\n' > "$WORK/aa/Cargo.toml"
@@ -39,6 +39,21 @@ printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX
 mkdir "$WORK/fakebin"
 printf '#!/bin/sh\n[ "$1 $2" = "version -m" ] && [ -f "$3" ] && [ -z "$FAKE_GO_FAILS" ] || exit 1\ncat "%s/info"\n' "$WORK" > "$WORK/fakebin/go"
 chmod +x "$WORK/fakebin/go"
+# What the build hands to the tools that decide how the package is made. dpkg-buildflags
+# answers a hardened CFLAGS only when asked for hardening=+all, as the real one does with
+# more flags; dpkg-deb and strip record how they were called and then do their work.
+cat > "$WORK/fakebin/dpkg-buildflags" <<'BUILDFLAGS'
+#!/bin/sh
+[ "$1" = --export=sh ] || exit 2
+case "$DEB_BUILD_MAINT_OPTIONS" in
+	hardening=+all) echo 'export CFLAGS="-hardened"' ;;
+	*) echo 'export CFLAGS="-not-hardened"' ;;
+esac
+BUILDFLAGS
+for tool in dpkg-deb strip; do
+	printf '#!/bin/sh\necho "$*" >> "%s/%s.calls"\nexec "%s" "$@"\n' "$WORK" "$tool" "$(command -v "$tool")" > "$WORK/fakebin/$tool"
+done
+chmod +x "$WORK/fakebin/dpkg-buildflags" "$WORK/fakebin/dpkg-deb" "$WORK/fakebin/strip"
 full_info="$(printf '\tbuild\t-buildmode=pie\n\tbuild\t-tags=apparmor,seccomp,selinux,systemd,containers_image_openpgp\n\tbuild\t-trimpath=true\n')"
 printf '%s\n' "$full_info" > "$WORK/info"
 PATH="$WORK/fakebin:$PATH"
@@ -46,6 +61,11 @@ build() { "$SCRIPT" "$WORK/src" "$WORK/nv" "$WORK/aa" "$@"; }
 arch="$(dpkg --print-architecture)"
 
 deb="$(build 6.2.0 "$WORK/out" 2>/dev/null)"
+# What the build gave make and passt, read now: later builds in this file write them again.
+snap() { cflags="$(cat "$WORK/cflags" 2>/dev/null)"; ldflags="$(cat "$WORK/ldflags" 2>/dev/null)"
+	goflags="$(cat "$WORK/goflags" 2>/dev/null)"; passt_cflags="$(cat "$WORK/passt-cflags" 2>/dev/null)"; }
+snap
+build_calls="$(grep -- '--build' "$WORK/dpkg-deb.calls" 2>/dev/null)"; strip_calls="$(cat "$WORK/strip.calls" 2>/dev/null)"
 check "writes podman_<version>_<arch>.deb" "$WORK/out/podman_6.2.0_$arch.deb" "$deb"
 check "control Package" podman "$(dpkg-deb -f "$deb" Package 2>/dev/null)"
 check "control Version equals upstream" 6.2.0 "$(dpkg-deb -f "$deb" Version 2>/dev/null)"
@@ -80,8 +100,16 @@ check "catatonit is required, as upstream does" 1 "$(dpkg-deb -f "$deb" Depends 
 rm "$WORK/mods/common/pkg/seccomp/seccomp.json"
 build 6.2.0 "$WORK/out2" >/dev/null 2>&1; rc=$?; check "a release without a seccomp profile is refused" 1 "$rc"
 echo '{}' > "$WORK/mods/common/pkg/seccomp/seccomp.json"
-case "$arch" in amd64) want_flag="-fcf-protection=full" ;; arm64) want_flag="-mbranch-protection=standard" ;; *) want_flag="" ;; esac
-check "control-flow protection uses the flag this architecture has" 1 "$(grep -c -e "${want_flag:-.}" "$WORK/cflags" 2>/dev/null)"
+
+# --- the hardening the package is declared to have ------------------------------------------
+# The build checks the build info of the binary for -trimpath and -buildmode=pie and nothing
+# else, so the rest is what it asks of the compiler and the linker: that is what these read,
+# in the variables make receives, and none of it is a refusal for the mutation check to see.
+# The real binary is not inspected here, since nothing is compiled.
+check "the toolchain is asked for a position independent executable that carries no build path" "-trimpath -buildmode=pie" "$goflags"
+check "the linker is asked for full RELRO and for BIND_NOW" "-Wl,-z,relro -Wl,-z,now" "$ldflags"
+check "the compiler is asked for _FORTIFY_SOURCE=2" 1 "$(printf '%s\n' "$cflags" | grep -c -w -e '-D_FORTIFY_SOURCE=2')"
+check "passt is built with the flags dpkg-buildflags gives for hardening=+all" "-hardened" "$passt_cflags"
 check "cargo builds only what the lockfile of the tag says" "cargo --locked" "$(cat "$WORK/cargo-nv" 2>/dev/null)"
 check "gpgme is replaced by Go's OpenPGP" containers_image_openpgp "$(cat "$WORK/tags" 2>/dev/null)"
 check "old crun falls back to runc, and conmon has the floor upstream asks for" "conmon (>= 2.1.7), crun (>= 1.21) | runc" \
@@ -101,6 +129,26 @@ refused() { # <out-dir>: sets $rc to the exit code and $err to what it printed o
 	rc=0; build 6.2.0 "$1" >/dev/null 2>"$WORK/err" || rc=$?
 	err="$(cat "$WORK/err")"
 }
+# Control-flow protection is spelled differently per architecture and the suite runs on one,
+# so dpkg is made to say which it is: a runner of the other kind would never reach the branch.
+fakearch="$WORK/fakearch"; mkdir "$fakearch"
+printf '#!/bin/sh\n[ "$1" = --print-architecture ] && [ -n "$FAKE_ARCH" ] && { echo "$FAKE_ARCH"; exit 0; }\nexec "%s" "$@"\n' "$(command -v dpkg)" > "$fakearch/dpkg"
+chmod +x "$fakearch/dpkg"
+for pair in "amd64:-fcf-protection=full" "arm64:-mbranch-protection=standard" "riscv64:"; do
+	flag_arch="${pair%%:*}"; flag="${pair#*:}"
+	rm -f "$WORK/cflags"
+	FAKE_ARCH="$flag_arch" PATH="$fakearch:$PATH" refused "$WORK/out-$flag_arch"
+	snap
+	check "$flag_arch builds, and the package says so" "0 $flag_arch" "$rc $(dpkg-deb -f "$WORK/out-$flag_arch/podman_6.2.0_$flag_arch.deb" Architecture 2>/dev/null)"
+	check "$flag_arch gets ${flag:-no control-flow flag} and nothing of the other architecture's" "-O2 -g ${flag:+$flag }-D_FORTIFY_SOURCE=2" "$(printf '%s' "$cflags" | tr -s ' ')"
+done
+
+# --- the package is made the way it says ------------------------------------------------------
+check "the package is built with --root-owner-group, by one call to dpkg-deb --build" "1 1" \
+	"$(printf '%s\n' "$build_calls" | grep -c -- '--build') $(printf '%s\n' "$build_calls" | grep -c -- '--root-owner-group')"
+check "and every file in it belongs to root, whoever built it" "root/root" "$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $2}' | sort -u)"
+check "the binaries are stripped of what they do not need, not only of debug sections" 1 \
+	"$(printf '%s\n' "$strip_calls" | grep -c -- '--strip-unneeded')"
 for flag in -trimpath=true -buildmode=pie apparmor seccomp systemd; do
 	printf '%s\n' "$full_info" | sed "s/$flag//" > "$WORK/info"
 	refused "$WORK/out-$flag"

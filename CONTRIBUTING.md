@@ -90,7 +90,9 @@ removes it, and the suites that must go red when it is gone. `check-mutation-cov
 names a refusal that has none, and one that cannot have one goes in
 `tests/mutation/exemptions.txt` with what was measured. `bash tests/mutation/run-mutations.sh <id>`
 applies one entry to a copy of the committed tree and runs its suites; with no id it
-runs them all, which `mutation.yml` does every week.
+runs them all, which `mutation.yml` does every week. A control that is not a refusal (a
+`:ro` on a mount, a flag handed to a tool, a version pinned in two places) is invisible to
+that check, so it gets its entry and its test from whoever adds it.
 
 **A test you have not watched fail is not a test.** Before claiming a check
 works, remove the control it covers, run it, and confirm it goes red for the

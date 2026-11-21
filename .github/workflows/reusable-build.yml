@@ -113,7 +113,7 @@ jobs:
               -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \
               bash /scripts/verify/smoke-test.sh "/out/podman_${VERSION}_${ARCH}.deb" "${PODMAN#v}"
             docker run --rm --privileged \
-              -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \
+              -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" -v "$RUNNER_TEMP/out:/out:ro" "podman-deb-$target" \
               bash /scripts/verify/smoke-test.sh "/out/podman_${VERSION}_${ARCH}.deb" "${PODMAN#v}" clean
           done
       - name: Check an older release refuses the package
