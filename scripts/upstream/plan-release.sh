@@ -4,7 +4,8 @@
 #
 # Inputs (files, one "<component> <tag>" per line):
 #   fresh     the newest stable tag upstream publishes for each component
-#   released  the components of the newest release of this repository (may be empty)
+#   released  the components of the newest release of this repository (may be empty);
+#             lines for anything that is not a component in <fresh> are ignored
 #   tags      release tags this repository already has, one per line (may be empty)
 #
 # Prints "build=false", or "build=true" and "tag=<tag>". The tag is v<podman
@@ -27,10 +28,20 @@ if [ ! -s "$released" ] && [ -s "$tags" ]; then
 	exit 1
 fi
 
-sort "$fresh" | cmp -s - <(sort "$released") && { echo "build=false"; exit 0; }
-
+# Read before anything is compared: a <fresh> that could not be filled has no
+# podman line, and compared first it would match a release filtered down to
+# nothing and answer "nothing to build" for an upstream that was never read.
 podman="$(awk '$1 == "podman" {print $2}' "$fresh")"
 [[ "$podman" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no podman tag in $fresh" >&2; exit 1; }
+
+# Only the components the plan asked about are compared. components.txt is also a
+# record of its release: a line in it that is not one of the components in <fresh> (the
+# signature scheme, a date) is not something upstream or the recipe can change, and
+# compared whole it would differ on every run, so every scheduled run would publish
+# another +rN, forever. A component of <fresh> that the release does not list still
+# differs, so a missing line is never read as a present one.
+known() { awk 'NR == FNR {want[$1] = 1; next} $1 in want' "$fresh" "$1"; }
+sort "$fresh" | cmp -s - <(known "$released" | sort) && { echo "build=false"; exit 0; }
 
 # The next revision is one past the highest the repository already has for this
 # Podman version, not a count of its tags: a count lands on a name that exists as
