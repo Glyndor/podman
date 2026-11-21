@@ -6,7 +6,7 @@
 # run here with a gh that answers from a fixture and records what it is asked.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WF="$HERE/.github/workflows/watchdog.yml"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

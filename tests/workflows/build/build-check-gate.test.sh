@@ -11,7 +11,7 @@
 # throwaway repository with the real decide-build.sh in it.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0

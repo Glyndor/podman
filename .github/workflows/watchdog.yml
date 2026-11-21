@@ -22,9 +22,9 @@ name: watchdog
 # one of them a download, for delivery lag; one gh call for the freshness of the
 # keyring watch) on every push to every pull request, with a failure that is not
 # that pull request's. What the scripts decide is tested, with fixtures, by tests/monitoring/,
-# and the steps that run them by watchdog-delivery-lag.test.sh and
-# watchdog-keyring-freshness.test.sh, which do run on a pull request.
-# A rule in workflow-policy.test.sh keeps the trigger off.
+# and the steps that run them by tests/workflows/watchdog/watchdog-delivery-lag.test.sh and
+# tests/workflows/watchdog/watchdog-freshness.test.sh, which do run on a pull request.
+# A rule in tests/workflows/policy/workflow-policy.test.sh keeps the trigger off.
 #
 # Nothing here is cancelled: a run on a schedule or a push is never superseded, and
 # there is no pull request run left to supersede. None of it is a required check: it

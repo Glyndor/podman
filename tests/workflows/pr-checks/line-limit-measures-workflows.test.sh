@@ -7,7 +7,7 @@
 # run over a throwaway repository.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WF="$HERE/.github/workflows/reusable-line-limit.yml"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

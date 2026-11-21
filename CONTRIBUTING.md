@@ -67,7 +67,8 @@ non-zero when one did.
 Every script in `scripts/` needs a test; `check-test-coverage.sh` fails when one
 does not. A script `scripts/<area>/x.sh` is tested by `tests/<area>/x.test.sh`. The
 other folders of `tests/` are named for what they test: `tests/workflows` reads
-`.github/workflows`, `tests/release` exercises the signing tools in
+`.github/workflows`, in one folder for each thing it holds (`release`, `build`, `dependabot`, `keyring`, `watchdog`,
+`pr-checks`, `policy`, `mounts`, `pins`), `tests/release` exercises the signing tools in
 `.github/scripts/release` with its vectors in `tests/release/fixtures`, `tests/docs`
 holds the documents that make a claim about the repository, and `tests/lib` holds
 helpers that suites source. `tests.yml` runs every `*.test.sh` under `tests/` at any depth. The scripts that install the package

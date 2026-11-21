@@ -12,7 +12,7 @@
 # ends of the range come from and for the history the checkout fetches.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0

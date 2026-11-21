@@ -4,13 +4,13 @@
 # keys into a branch: it copies a link as a link and never the file it points to, so
 # a link in the clone of containers/release-keys cannot carry a file of this runner,
 # such as one that holds a credential, into a branch of a public repository. The step
-# before it refuses links (workflows-contract.test.sh); this is the second layer, and
+# before it refuses links (tests/workflows/policy/workflows-contract.test.sh); this is the second layer, and
 # it is run here on its own, in a throwaway repository, with a link that step would
 # have refused. It also replaces the whole set, so a key upstream dropped is dropped.
 # And the comparison before it: a difference is handed on, a failure to compare stops.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0

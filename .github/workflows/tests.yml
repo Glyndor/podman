@@ -77,7 +77,7 @@ jobs:
           count=0
           # Every file named *.test.sh under tests/, at any depth: a suite in a new
           # subfolder runs without anyone editing this step, and one that is named
-          # otherwise is refused by tests/workflows/tests-run-every-suite.test.sh.
+          # otherwise is refused by tests/workflows/policy/tests-run-every-suite.test.sh.
           while IFS= read -r t; do
             echo "== $t"
             count=$((count + 1))

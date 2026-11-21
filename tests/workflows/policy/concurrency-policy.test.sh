@@ -11,7 +11,7 @@
 # file and job, and each is run against copies that break it one way each.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 pass=0; fail=0
 
 check() { # <desc> <want> <got>
