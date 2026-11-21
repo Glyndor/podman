@@ -120,6 +120,13 @@ jobs:
           docker run --rm \
             -v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" podman-deb-ubuntu2204 \
             bash /scripts/verify/refuse-test.sh "/out/podman_${VERSION}_${ARCH}.deb"
+      # Last, because it replaces the Podman of the runner itself. The containers above
+      # cannot run a rootless container (an unprivileged user in them cannot map ids), and
+      # the runner can: it is an Ubuntu 24.04 machine with its own kernel and AppArmor.
+      - name: Run a rootless container on pasta, on the runner itself
+        run: |
+          cp "$RUNNER_TEMP/out/podman_${VERSION}_${ARCH}.deb" "$RUNNER_TEMP/podman-under-test.deb"
+          bash scripts/verify/rootless-test.sh "$RUNNER_TEMP/podman-under-test.deb" "${PODMAN#v}"
       - if: ${{ inputs.upload }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
