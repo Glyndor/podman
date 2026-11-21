@@ -8,6 +8,13 @@ on:
 
 permissions: {}
 
+# A newer push to a pull request makes the run for the older one pointless, so it
+# is cancelled. A push to main is never cancelled: its group is the run id, so
+# each one has a group of its own and nothing supersedes it.
+concurrency:
+  group: tests-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: test
@@ -20,8 +27,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install shellcheck
+        env:
+          SHELLCHECK_VERSION: v0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          set -euo pipefail
+          # Pinned by tag and checked against the release's sha256 before it is
+          # extracted, instead of whatever shellcheck the runner image ships: two
+          # releases disagree about the same code. The version and the hash are
+          # the ones reusable-workflow-lint.yml uses, and they move together.
+          dir="$RUNNER_TEMP/shellcheck-bin"
+          tarball="$RUNNER_TEMP/shellcheck.tar.xz"
+          mkdir -p "$dir"
+          curl -sSfL -o "$tarball" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
+          tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+          echo "$dir" >> "$GITHUB_PATH"
       - name: shellcheck
-        run: shellcheck -S warning scripts/*/*.sh tests/*/*.sh
+        run: |
+          shellcheck --version
+          shellcheck -S warning scripts/*/*.sh tests/*/*.sh
       - name: every script has a test
         run: scripts/quality/check-test-coverage.sh
       - name: suites
