@@ -138,7 +138,7 @@ PY
 	WS="$S/ws"
 	ANCHOR="$WS/keyring/glyndor-release-mldsa65.b64"
 	REL="$WS/.github/scripts/release"
-	sign() { # <anchor: empty|keyed|missing|indented> <mldsa secret, may be empty>
+	sign() { # <anchor: empty|keyed|missing|indented|committed|cr|crlf|bom|tab> <mldsa secret, may be empty>
 		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/out"; mkdir -p "$S/art" "$WS/keyring"
 		: > "$S/calls"; : > "$S/out"
 		touch "$S/art/podman_6.2.0_arch1.deb" "$S/art/podman_6.2.0_arch2.deb"
@@ -147,6 +147,12 @@ PY
 			indented) printf '# Glyndor release ML-DSA-65 public keys.\n\n   # an indented comment\n  \n' > "$ANCHOR" ;;
 			keyed) printf '# Glyndor release ML-DSA-65 public keys.\nAAAAAAAAAAAAAAAA\n' > "$ANCHOR" ;;
 			missing) ;;
+			committed) cp "$HERE/keyring/glyndor-release-mldsa65.b64" "$ANCHOR" ;;
+			# What the verifier reads as a comment line and then a key line.
+			cr) printf '# Glyndor release ML-DSA-65 public keys.\rAAAAAAAAAAAAAAAA\r' > "$ANCHOR" ;;
+			crlf) printf '# Glyndor release ML-DSA-65 public keys.\r\nAAAAAAAAAAAAAAAA\r\n' > "$ANCHOR" ;;
+			bom) printf '\357\273\277# Glyndor release ML-DSA-65 public keys.\n' > "$ANCHOR" ;;
+			tab) printf '# Glyndor release ML-DSA-65 public keys.\n\t# a comment behind a tab\n' > "$ANCHOR" ;;
 		esac
 		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$WS" \
 			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" FAKE_PYTHON="$S/venv-python" \
@@ -180,6 +186,16 @@ PY
 	sign empty a-seed
 	check "a secret and no committed key: the second signature is still required of the verifier" \
 		"0 1 1" "$rc $(calls "$(verify_line podman_6.2.0_arch1.deb --require-mldsa)") $(calls "$(verify_line podman_6.2.0_arch2.deb --require-mldsa)")"
+	sign committed ""
+	check "the anchor this repository commits, no secret: the packages go through" "0 2" "$rc $(signed)"
+	# A carriage return is a line break to the verifier and not to this step, so a
+	# key behind one would be a comment here and required of nobody.
+	for state in cr crlf bom tab; do
+		sign "$state" ""
+		check "an anchor with a byte outside printable ASCII and the line feed ($state), no secret: refused" "1" "$rc"
+		check "$state: and it says which file and why" 1 "$(says 'holds a byte that is neither printable ASCII nor a line feed')"
+		check "$state: and nothing is signed" 0 "$(signed)"
+	done
 	sign missing ""
 	check "no anchor file at all: refused, not read as no key" "1" "$rc"
 	check "and it says the anchor is missing" 1 "$(says 'is missing; refusing to publish')"

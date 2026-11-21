@@ -187,9 +187,20 @@ jobs:
           # stops the run instead of publishing Ed25519 alone under an anchor that
           # promises both. A secret set with no public key committed is required too:
           # a signature nobody can check is refused. With neither, the check is the
-          # Ed25519 one the release always had. Set the secret before committing the key.
+          # Ed25519 one the release always had. Set the secret and merge the key one
+          # after the other: a release built between the two stops, whichever came first.
           anchor="$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64"
           [ -f "$anchor" ] || { echo "::error::$anchor is missing; refusing to publish without knowing whether the second signature is required."; exit 1; }
+          # This step and verify-sig.py both decide what a line of that file is. The
+          # verifier splits on every line break Python knows and this step on the line
+          # feed alone, so a key behind a carriage return would be part of a comment
+          # here and a key there, and the run would publish one signature under an
+          # anchor that holds a key. The file is printable ASCII with line feeds, where
+          # the two readers agree, or the run stops.
+          if LC_ALL=C grep -q '[^ -~]' "$anchor"; then
+            echo "::error::keyring/glyndor-release-mldsa65.b64 holds a byte that is neither printable ASCII nor a line feed; refusing to guess whether it holds a key."
+            exit 1
+          fi
           anchored=false
           if grep -q -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$anchor"; then anchored=true; fi
           if [ "$anchored" = true ] && [ -z "$GLYNDOR_RELEASE_MLDSA65_KEY" ]; then
