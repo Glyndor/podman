@@ -196,8 +196,11 @@ jobs:
           # feed alone, so a key behind a carriage return would be part of a comment
           # here and a key there, and the run would publish one signature under an
           # anchor that holds a key. The file is printable ASCII with line feeds, where
-          # the two readers agree, or the run stops.
-          if LC_ALL=C grep -q '[^ -~]' "$anchor"; then
+          # the two readers agree, or the run stops. The bytes are counted, not
+          # matched line by line: GNU grep reads a file with a NUL in it as binary and
+          # reports no match, which let such a file through as text.
+          outside="$(LC_ALL=C tr -d ' -~\n' < "$anchor" | wc -c)"
+          if [ "$outside" -ne 0 ]; then
             echo "::error::keyring/glyndor-release-mldsa65.b64 holds a byte that is neither printable ASCII nor a line feed; refusing to guess whether it holds a key."
             exit 1
           fi

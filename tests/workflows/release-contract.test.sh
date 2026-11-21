@@ -138,7 +138,7 @@ PY
 	WS="$S/ws"
 	ANCHOR="$WS/keyring/glyndor-release-mldsa65.b64"
 	REL="$WS/.github/scripts/release"
-	sign() { # <anchor: empty|keyed|missing|indented|committed|cr|crlf|bom|tab> <mldsa secret, may be empty>
+	sign() { # <anchor: empty|keyed|missing|indented|committed|cr|crlf|bom|tab|nul|high> <mldsa secret, may be empty>
 		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/out"; mkdir -p "$S/art" "$WS/keyring"
 		: > "$S/calls"; : > "$S/out"
 		touch "$S/art/podman_6.2.0_arch1.deb" "$S/art/podman_6.2.0_arch2.deb"
@@ -153,6 +153,10 @@ PY
 			crlf) printf '# Glyndor release ML-DSA-65 public keys.\r\nAAAAAAAAAAAAAAAA\r\n' > "$ANCHOR" ;;
 			bom) printf '\357\273\277# Glyndor release ML-DSA-65 public keys.\n' > "$ANCHOR" ;;
 			tab) printf '# Glyndor release ML-DSA-65 public keys.\n\t# a comment behind a tab\n' > "$ANCHOR" ;;
+			# A NUL makes GNU grep read the file as binary, where its pattern matches
+			# nothing, so a guard that matched lines let this one through.
+			nul) printf '# Glyndor release ML-DSA-65 public keys.\000# behind a NUL\n' > "$ANCHOR" ;;
+			high) printf '# Glyndor release ML-DSA-65 public keys.\n# \200 a byte past ASCII\n' > "$ANCHOR" ;;
 		esac
 		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$WS" \
 			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" FAKE_PYTHON="$S/venv-python" \
@@ -190,7 +194,7 @@ PY
 	check "the anchor this repository commits, no secret: the packages go through" "0 2" "$rc $(signed)"
 	# A carriage return is a line break to the verifier and not to this step, so a
 	# key behind one would be a comment here and required of nobody.
-	for state in cr crlf bom tab; do
+	for state in cr crlf bom tab nul high; do
 		sign "$state" ""
 		check "an anchor with a byte outside printable ASCII and the line feed ($state), no secret: refused" "1" "$rc"
 		check "$state: and it says which file and why" 1 "$(says 'holds a byte that is neither printable ASCII nor a line feed')"
