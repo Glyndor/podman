@@ -26,7 +26,10 @@ concurrency:
 jobs:
   compare:
     name: compare with upstream
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in this repository's runs on 2026-11-20,
+    # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
+    # commit; the arm64 build keeps its own label, so the rootless test covers both.
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       issues: write
@@ -137,7 +140,7 @@ jobs:
 
   health:
     name: enough keys can still sign
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       issues: write

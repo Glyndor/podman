@@ -43,7 +43,10 @@ concurrency:
 jobs:
   decide:
     name: decide
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in this repository's runs on 2026-11-20,
+    # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
+    # commit; the arm64 build keeps its own label, so the rootless test covers both.
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     # Checkout of the full history plus one git diff: seconds. The rest is slack.
@@ -80,7 +83,7 @@ jobs:
     name: plan
     needs: decide
     if: needs.decide.outputs.build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     # Six git ls-remote calls, as in the release plan.
@@ -122,7 +125,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: amd64, runner: ubuntu-latest }
+          - { arch: amd64, runner: ubuntu-26.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
     uses: ./.github/workflows/reusable-build.yml
     with:
@@ -141,6 +144,7 @@ jobs:
     name: package builds
     needs: [decide, plan, build]
     if: always()
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions: {}
     # Reads four strings.

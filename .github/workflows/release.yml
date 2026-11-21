@@ -37,7 +37,10 @@ jobs:
     # Only main publishes. A dispatch from a branch would otherwise tag an
     # unreviewed commit as the release apt serves.
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in this repository's runs on 2026-11-20,
+    # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
+    # commit; the arm64 build keeps its own label, so the rootless test covers both.
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     timeout-minutes: 10
@@ -109,7 +112,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: amd64, runner: ubuntu-latest }
+          - { arch: amd64, runner: ubuntu-26.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
     uses: ./.github/workflows/reusable-build.yml
     with:
@@ -127,7 +130,7 @@ jobs:
   publish:
     name: Sign and publish
     needs: [plan, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       id-token: write
@@ -209,6 +212,7 @@ jobs:
     name: alert
     needs: [plan, build, publish]
     if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
       issues: write

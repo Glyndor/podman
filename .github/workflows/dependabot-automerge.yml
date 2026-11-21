@@ -28,6 +28,7 @@ jobs:
   arm:
     name: arm auto-merge
     if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -86,6 +87,7 @@ jobs:
   disarm:
     name: disarm when a person pushes
     if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]' && github.actor != 'dependabot[bot]'
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -106,6 +108,7 @@ jobs:
   rebase:
     name: rebase what fell behind
     if: github.event_name == 'push'
+    # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

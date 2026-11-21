@@ -1,0 +1,7 @@
+# actionlint v1.7.12 is the newest release and does not know the ubuntu-26.04
+# label yet, so it reports every job that names it. The label is a GitHub-hosted
+# image, listed here only so the linter accepts it; drop the entry when a release
+# of actionlint knows it.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

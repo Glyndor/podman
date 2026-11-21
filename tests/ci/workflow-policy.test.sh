@@ -41,7 +41,29 @@ for path in sorted(glob.glob(f"{root}/*.yml")):
             for b in cfg.get("branches") or []:
                 if b != "main":
                     print(f"{name}: {event} triggers on branch {b}")
-
+    elif rule == "runners":
+        # ubuntu-latest moves when GitHub moves it, and it moved to 26.04 while the
+        # arm64 label stayed on 24.04. A job that runs this repository's scripts or
+        # the image's own tools names the image it was measured on. The jobs below
+        # only call gh or read strings, and are the only ones left on the moving label.
+        only_gh = {
+            ("build-check.yml", "gate"), ("dependabot-automerge.yml", "arm"),
+            ("dependabot-automerge.yml", "disarm"), ("dependabot-automerge.yml", "rebase"),
+            ("release.yml", "alert"), ("watchdog.yml", "alert"),
+        }
+        pinned = {"ubuntu-26.04", "ubuntu-24.04-arm", "${{ inputs.runner }}"}
+        for job, cfg in (doc.get("jobs") or {}).items():
+            runs_on = cfg.get("runs-on")
+            # A job that calls a reusable workflow has no runner of its own, but its
+            # matrix can hand one down.
+            if runs_on is not None and (name, job) in only_gh:
+                if runs_on != "ubuntu-latest":
+                    print(f"{name}: {job} only calls gh and is listed as left on ubuntu-latest, it runs on {runs_on}")
+            elif runs_on is not None and runs_on not in pinned:
+                print(f"{name}: {job} runs on {runs_on}")
+            for entry in ((cfg.get("strategy") or {}).get("matrix") or {}).get("include") or []:
+                if entry.get("runner") not in pinned:
+                    print(f"{name}: {job} builds {entry.get('arch')} on {entry.get('runner')}")
 PY
 }
 
@@ -52,6 +74,15 @@ trap 'rm -rf "$BAD"' EXIT
 cp "$HERE"/.github/workflows/*.yml "$BAD/"
 sed -i '0,/branches: \["main"\]/s//branches: ["main", "develop"]/' "$BAD/dco.yml"
 check "a trigger on develop is named" "dco.yml: pull_request triggers on branch develop" "$(violations branches "$BAD")"
+
+# --- the image a job runs on is named -------------------------------------------
+check "every job that depends on the image names it" "" "$(violations runners)"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^    runs-on: ubuntu-26.04$/    runs-on: ubuntu-latest/' "$BAD/tests.yml"
+check "a pinned job moved back to ubuntu-latest is named" "tests.yml: test runs on ubuntu-latest" "$(violations runners "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/runner: ubuntu-26.04 }/runner: ubuntu-latest }/' "$BAD/release.yml"
+check "a build matrix on ubuntu-latest is named" "release.yml: build builds amd64 on ubuntu-latest" "$(violations runners "$BAD")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
