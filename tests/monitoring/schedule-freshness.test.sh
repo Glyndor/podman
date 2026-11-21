@@ -47,6 +47,23 @@ check "a recent cancelled run does not hide an old finished one" "1 1" "$rc $(sa
 run '[]'
 check "no runs at all is stale, not fresh" "1 1" "$rc $(says 'no scheduled run has finished')"
 
+# A schedule that began a moment ago has a grace of <max-hours> for its first run.
+grace() { # <json> <since>: sets $rc and $out
+	printf '%s' "$1" > "$WORK/runs.json"
+	rc=0
+	out="$("$SCRIPT" "$WORK/runs.json" "$now" 48 "$2" 2>&1)" || rc=$?
+}
+grace '[]' "$((now - 3600 * 47))"
+check "no run yet, from a schedule that began 47 hours ago: inside the grace" "0 1" "$rc $(says 'no scheduled run has finished yet; the schedule began 47 hours ago')"
+grace '[]' "$((now - 3600 * 49))"
+check "no run yet, 49 hours after it began: a miss" "1 1" "$rc $(says 'no scheduled run has finished')"
+grace '[{"createdAt":"2026-11-18T07:30:00Z","conclusion":"success"}]' "$((now - 3600))"
+check "a stale run is stale whatever the start says" "1 1" "$rc $(says '76 hours old')"
+grace '[]' "$((now + 3600))"
+check "a start in the future cannot decide" "2 1" "$rc $(says "is not a time before now")"
+grace '[]' yesterday
+check "a start that is not a number cannot decide" "2 1" "$rc $(says "the schedule's start 'yesterday' is not a time before now")"
+
 # Cannot read it is a failure, never a pass.
 run 'not json'
 check "unreadable input is refused" "2 1" "$rc $(says 'cannot read the list of runs')"
