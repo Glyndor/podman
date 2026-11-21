@@ -80,6 +80,13 @@ check "and nothing is pushed" 0 "$(grep -c '^argv' "$WORK/log/git")"
 alarm keyring/update-1
 check "a branch is pushed and the issue opens" "0 1 1" "$rc $(grep -c '^argv push' "$WORK/log/git") $(grep -c create "$WORK/log/gh")"
 check "and the issue links the branch" 1 "$(body_says 'ready on the branch `keyring/update-1`')"
+check "the push goes to the repository's plain URL" 1 "$(grep -c '^argv push -q https://github.com/owner/repo.git keyring/update-1$' "$WORK/log/git")"
+encoded="$(printf 'x-access-token:%s' "$token" | base64 -w0)"
+check "the token is not in git's arguments, plain or encoded" 0 "$(grep '^argv' "$WORK/log/git" | grep -c -e "$token" -e "$encoded")"
+header="$(sed -n 's/^config 1 http.https:\/\/github.com\/.extraheader AUTHORIZATION: basic //p' "$WORK/log/git")"
+check "the token reaches git as a header in its environment" "x-access-token:$token" "$(printf '%s' "$header" | base64 -d 2>/dev/null)"
+check "and the encoded header is masked in the log" 1 "$(printf '%s\n' "$out" | grep -c -x -F "::add-mask::$header")"
+check "the token is never printed" 0 "$(printf '%s\n' "$out" | grep -c "$token")"
 
 PUSH_RC=1 alarm keyring/update-2
 check "a refused push still opens the issue" "0 1" "$rc $(grep -c create "$WORK/log/gh")"
