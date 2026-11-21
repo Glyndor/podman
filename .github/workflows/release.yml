@@ -216,19 +216,22 @@ jobs:
             true | false) ;;
             *) echo "::error::the plan did not say whether the newest release carries the second signature ('$PREVIOUS_MLDSA'); refusing to guess."; exit 1 ;;
           esac
+          ed25519="$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64"
           anchor="$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64"
           switch="$GITHUB_WORKSPACE/keyring/second-signature-required"
-          for f in "$anchor" "$switch"; do
-            [ -f "$f" ] || { echo "::error::$f is missing; refusing to publish without knowing whether the second signature is required."; exit 1; }
+          for f in "$ed25519" "$anchor" "$switch"; do
+            [ -f "$f" ] || { echo "::error::$f is missing; refusing to publish without the keys and the switch it reads."; exit 1; }
           done
-          # This step and verify-sig.py both decide what a line of the anchor is. The
-          # verifier splits on every line break Python knows and this step on the line
-          # feed alone, so a key behind a carriage return would be part of a comment
-          # here and a key there, and the run would publish one signature under an
-          # anchor that holds a key. Both files are printable ASCII with line feeds, or
-          # the run stops. The bytes are counted, not matched line by line: GNU grep
-          # reads a file with a NUL in it as binary and reports no match.
-          for f in "$anchor" "$switch"; do
+          # Every file of keyring/ this run reads is read by more than one reader, and
+          # they split lines differently: this step and docs/verify.md on the line feed,
+          # the apt archive with read, verify-sig.py on every line break Python knows.
+          # A key behind a carriage return or a U+0085 would be part of a comment to
+          # one and a key to another: here, a second signature nobody required, and for
+          # the Ed25519 anchor, a key verify-sig.py trusts and the published procedure
+          # never sees. So the three are printable ASCII with line feeds, or the run
+          # stops. The bytes are counted, not matched line by line: GNU grep reads a
+          # file with a NUL in it as binary and reports no match.
+          for f in "$ed25519" "$anchor" "$switch"; do
             outside="$(LC_ALL=C tr -d ' -~\n' < "$f" | wc -c)"
             if [ "$outside" -ne 0 ]; then
               echo "::error::${f#"$GITHUB_WORKSPACE"/} holds a byte that is neither printable ASCII nor a line feed; refusing to guess what it says."

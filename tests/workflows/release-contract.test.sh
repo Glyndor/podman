@@ -164,6 +164,12 @@ PY
 		# The switch as committed, which requires nothing: release-second-signature.test.sh
 		# runs this step with it on.
 		cp "$HERE/keyring/second-signature-required" "$WS/keyring/"
+		# The Ed25519 anchor as committed, unless $ED names a broken one.
+		case "${ED:-committed}" in
+			committed) cp "$HERE/keyring/glyndor-release-ed25519.b64" "$WS/keyring/" ;;
+			missing) ;;
+			*) printf '%b' "$ED" > "$WS/keyring/glyndor-release-ed25519.b64" ;;
+		esac
 		case "$1" in
 			empty) printf '# Glyndor release ML-DSA-65 public keys.\n# Empty until the key exists.\n' > "$ANCHOR" ;;
 			indented) printf '# Glyndor release ML-DSA-65 public keys.\n\n   # an indented comment\n  \n' > "$ANCHOR" ;;
@@ -227,6 +233,23 @@ PY
 		check "$state: and it says which file and why" 1 "$(says 'holds a byte that is neither printable ASCII nor a line feed')"
 		check "$state: and nothing is signed" 0 "$(signed)"
 	done
+	# The Ed25519 anchor is read by verify-sig.py, which splits on every line break
+	# Python knows, and by docs/verify.md and the apt archive, which split on the line
+	# feed. Behind a carriage return, a U+0085 or a NUL, a key is a comment to one and
+	# a key to the other, so the same guard holds it, and the file as committed passes.
+	key="$(grep -v '^#' "$HERE/keyring/glyndor-release-ed25519.b64" | head -n 1)"
+	check "the Ed25519 anchor as committed holds one key and passes the guard" "1 0" \
+		"$(grep -c -v '^#' "$HERE/keyring/glyndor-release-ed25519.b64") $(LC_ALL=C tr -d ' -~\n' < "$HERE/keyring/glyndor-release-ed25519.b64" | wc -c)"
+	ed_bytes='keyring/glyndor-release-ed25519.b64 holds a byte that is neither printable ASCII nor a line feed'
+	for state in "cr:# Glyndor release keys\r$key\n" "crlf:$key\r\n" "bom:\357\273\277$key\n" "tab:\t$key\n" \
+		"nul:# a comment\0000$key\n" "high:# \200\n$key\n" "nel:\302\205$key\n$key\n"; do
+		ED="${state#*:}" sign committed ""
+		check "an Ed25519 anchor with a byte outside printable ASCII and the line feed (${state%%:*}): refused" "1 1" "$rc $(says "$ed_bytes")"
+		check "${state%%:*}: and nothing is signed" 0 "$(signed)"
+	done
+	ED=missing sign committed ""
+	check "no Ed25519 anchor at all: refused before anything is signed" "1 1 0" \
+		"$rc $(says 'keyring/glyndor-release-ed25519.b64 is missing; refusing to publish') $(signed)"
 	# --- once a release carries the second signature, the next one cannot drop it ---
 	downgrade='the newest release carries an ML-DSA-65 signature and keyring/glyndor-release-mldsa65.b64 holds no key'
 	for secret in "" a-seed; do
