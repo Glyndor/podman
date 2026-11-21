@@ -74,6 +74,29 @@ if step watchdog.yml delivery-lag "name=Is the newest release missing something 
 	check "a script killed before its verdict is not read as in time" "137 137" "$rc $code"
 	lag 0
 	check "and the script is asked with a threshold of 24 hours" 24 "$(awk '{print $NF}' "$L/args")"
+
+	# The date of the recipe is the last commit that touched scripts/build, which only a
+	# repository with a history says: here the commit of the build files is older than a
+	# later one that touched something else, and the dates the step writes are read back.
+	# git is the real one, except for ls-remote, which would go to the network.
+	R="$L/repo"; mkdir -p "$R" "$L/realbin"
+	printf '#!/bin/sh\ncase "$1" in ls-remote) exit 0 ;; esac\nexec %s "$@"\n' "$(command -v git)" > "$L/realbin/git"
+	cp "$L/bin/gh" "$L/realbin/gh"; chmod +x "$L/realbin/git"
+	commit() { # <epoch> <message>: everything staged, committed at that time
+		GIT_AUTHOR_DATE="@$1 +0000" GIT_COMMITTER_DATE="@$1 +0000" \
+			git -C "$R" -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false \
+			-c core.hooksPath=/dev/null commit -q -m "$2"
+	}
+	git -C "$R" -c init.defaultBranch=main init -q
+	mkdir -p "$R/scripts/build"; cp "$WS/scripts/build/recipe-id.sh" "$R/scripts/build/"
+	git -C "$R" add -A; commit 1700000000 "the build recipe"
+	cp -r "$WS/scripts/upstream" "$WS/scripts/monitoring" "$R/scripts/"; echo x > "$R/notes.txt"
+	git -C "$R" add -A; commit 1700500000 "something that is not the recipe"
+	rm -rf "$L/rt"; mkdir "$L/rt"; : > "$L/out"; : > "$L/args"
+	run_step "$L" "$R" PATH="$L/realbin:$PATH" RUNNER_TEMP="$L/rt" GITHUB_OUTPUT="$L/out" ARGS="$L/args" \
+		LAG_RC=0 GH_TOKEN=a-token GH_REPO=owner/repo
+	check "the recipe is dated by the last commit that touched scripts/build, not by the newest commit" \
+		"0 recipe r1 1700000000" "$rc $(grep '^recipe ' "$L/rt/lag/dates")"
 else
 	fail=$((fail + 1)); echo "FAIL  watchdog.yml: cannot find the delivery-lag step"
 fi
