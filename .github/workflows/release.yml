@@ -152,6 +152,10 @@ jobs:
         working-directory: ${{ runner.temp }}/artifacts
         env:
           GLYNDOR_RELEASE_ED25519_KEY: ${{ secrets.GLYNDOR_RELEASE_ED25519_KEY }}
+          # The second, post-quantum key. A secret that is not configured
+          # arrives as an empty string, which sign.py reads as unset: the
+          # packages are then signed with Ed25519 alone, as before it existed.
+          GLYNDOR_RELEASE_MLDSA65_KEY: ${{ secrets.GLYNDOR_RELEASE_MLDSA65_KEY }}
           PYTHONUTF8: "1"
         run: |
           if [ -z "$GLYNDOR_RELEASE_ED25519_KEY" ]; then
@@ -162,9 +166,20 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/signvenv"
           py="$RUNNER_TEMP/signvenv/bin/python"
           "$py" -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
+          # With the ML-DSA-65 key set, every package must leave with a second
+          # signature that verifies against the committed ML-DSA-65 public key.
+          # A signer that skipped it, or a secret set before its public half was
+          # committed, then stops the run instead of publishing a signature
+          # nobody can check. Without the key none is required, and the check
+          # is the Ed25519 one the release always had.
+          require=()
+          if [ -n "$GLYNDOR_RELEASE_MLDSA65_KEY" ]; then
+            require=(--require-mldsa)
+          fi
           for deb in podman_*.deb; do
             "$py" "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$deb"
-            "$py" "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64"
+            "$py" "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64" \
+              --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64" "${require[@]}"
           done
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -176,9 +191,16 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           printf 'podman %s\nnetavark %s\naardvark-dns %s\nrecipe %s\n' "$PODMAN" "$NETAVARK" "$AARDVARK" "$RECIPE" > components.txt
+          # The ML-DSA-65 signatures exist only when the signing step had that
+          # key, and it then checked one per package. Listed one by one so that,
+          # without them, the release carries exactly the assets it always has.
+          mldsa=()
+          for f in podman_*.deb.mldsa65.sig; do
+            if [ -e "$f" ]; then mldsa+=("$f"); fi
+          done
           gh release create "$TAG" --target "$GITHUB_SHA" --title "Podman ${TAG#v}" \
             --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \
-            podman_*.deb podman_*.deb.sig components.txt
+            podman_*.deb podman_*.deb.sig "${mldsa[@]}" components.txt
 
   # A failed release leaves no other trace until the watchdog notices a day
   # later, so this opens the issue at once. A manual dispatch is somebody
