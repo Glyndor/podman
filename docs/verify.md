@@ -6,7 +6,7 @@ Each release publishes `podman_<version>_<arch>.deb` and `podman_<version>_<arch
 
 ## Check the signature with OpenSSL
 
-You need OpenSSL 3 and `curl`. The key file holds one raw 32-byte Ed25519 public key per line, in base64: one line today, two while a key is being replaced. The steps take the first line; during a replacement a package is good when either key verifies it, so repeat them with the second line if the first refuses. OpenSSL reads a PEM key, so the steps below wrap the raw key in the standard 12-byte DER header (`302a300506032b6570032100`, which is `MCowBQYDK2VwAyEA` in base64). Set `version` and `arch` to the release you downloaded, for example `6.2.0+r8` and `amd64`:
+You need OpenSSL 3 and `curl`. The key file holds one raw 32-byte Ed25519 public key per line, in base64: one line today, two while a key is being replaced. It is printable ASCII with line feeds and nothing else, which every verifier of this repository and of the apt archive requires: a copy that picked up a carriage return or a byte-order mark on the way is not the published file, so fetch it again rather than edit it. The steps take the first line; during a replacement a package is good when either key verifies it, so repeat them with the second line if the first refuses. OpenSSL reads a PEM key, so the steps below wrap the raw key in the standard 12-byte DER header (`302a300506032b6570032100`, which is `MCowBQYDK2VwAyEA` in base64). Set `version` and `arch` to the release you downloaded, for example `6.2.0+r8` and `amd64`:
 
 ```bash
 version='6.2.0+r8'; arch=amd64

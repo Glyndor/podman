@@ -7,7 +7,9 @@ Usage:
 
 <sig> is the raw 64-byte Ed25519 signature of <file>. A key file holds one
 base64 public key per line, the same format the apt archive uses; blank lines
-and lines starting with '#' are ignored. A signature is accepted if any listed
+and lines starting with '#' are ignored. It is printable ASCII with line feeds:
+any other byte, a carriage return or a byte-order mark among them, is a broken
+key file. A signature is accepted if any listed
 key verifies it, so a two-phase rotation can trust the old and the new key at
 once. A wrong-but-well-formed signing key would otherwise publish a release
 nothing can verify, and releases are immutable.
@@ -70,15 +72,27 @@ def read_keys(path: str, size: int, what: str, missing_is_empty: bool) -> list:
 	exits 2 and never reads as a signature that failed.
 	"""
 	try:
-		text = Path(path).read_text(encoding="utf-8")
+		data = Path(path).read_bytes()
 	except FileNotFoundError:
 		if missing_is_empty:
 			return []
 		fail(TRUST_ANCHOR, f"{what} key file {path} not found")
-	except (OSError, UnicodeDecodeError) as exc:
+	except OSError as exc:
 		fail(TRUST_ANCHOR, f"cannot read the {what} key file {path}: {exc}")
+	# Printable ASCII and line feeds, and nothing else. Every other reader of these
+	# files splits lines on the line feed alone (the release workflow, the steps of
+	# docs/verify.md, the apt archive), and splitlines() would also split on a
+	# carriage return, a form feed or a U+0085: a key behind one would be a key
+	# here and a comment to all of them, so the file is refused instead.
+	outside = sorted({b for b in data if b != 0x0A and not 0x20 <= b <= 0x7E})
+	if outside:
+		fail(
+			TRUST_ANCHOR,
+			f"the {what} key file {path} holds a byte that is neither printable ASCII nor a line feed"
+			f" (0x{outside[0]:02x}); refusing to guess what it says",
+		)
 	keys = []
-	for number, line in enumerate(text.splitlines(), 1):
+	for number, line in enumerate(data.decode("ascii").split("\n"), 1):
 		line = line.strip()
 		if not line or line.startswith("#"):
 			continue
@@ -88,8 +102,7 @@ def read_keys(path: str, size: int, what: str, missing_is_empty: bool) -> list:
 		try:
 			raw = base64.b64decode(line + "=" * (-len(line) % 4), validate=True)
 		except ValueError as exc:
-			# binascii.Error for a character outside the alphabet, and plain
-			# ValueError for one outside ASCII, a byte-order mark among them.
+			# binascii.Error for a character outside the alphabet.
 			fail(TRUST_ANCHOR, f"malformed {what} public key on line {number} of {path}: not base64 ({exc})")
 		if len(raw) != size:
 			fail(
