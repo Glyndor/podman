@@ -91,8 +91,11 @@ jobs:
           git commit -q -s -F "$RUNNER_TEMP/message.txt"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
+      # The issue is the alarm, so this runs even when the commit step failed: a
+      # failed step skips every later one unless it says otherwise, and the change
+      # of keys would then leave no branch, no issue and nothing else.
       - name: Push the branch and open an issue
-        if: steps.diff.outputs.differs == 'true'
+        if: always() && steps.diff.outputs.differs == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -102,12 +105,26 @@ jobs:
           if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
             echo "an issue for this is already open"; exit 0
           fi
-          # The issue is the alarm, so it opens even when the push does not: a branch
-          # that already exists or a refused push must not hide that the keys changed.
-          if git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "$BRANCH"; then
-            ready="The update is ready on the branch \`$BRANCH\`. Check that each key belongs to a Podman maintainer, then open the pull request: https://github.com/$GH_REPO/compare/main...$BRANCH?expand=1"
+          # The issue is the alarm, so it opens even when there is no branch to push or
+          # the push does not go through: neither may hide that the keys changed.
+          by_hand="copy the keys from containers/release-keys/podman into keyring/podman by hand after checking them."
+          if [ -z "$BRANCH" ]; then
+            # The commit step writes the branch name only once it has committed.
+            ready="The workflow could not prepare the update branch; $by_hand"
           else
-            ready="The workflow could not push the update branch; copy the keys from containers/release-keys/podman into keyring/podman by hand after checking them."
+            # The token goes in a header git reads from its environment, not in the
+            # URL: a URL with the token is in git's argv, and in the error git prints
+            # to this public log when the push fails. Nothing is written to
+            # .git/config, and the encoded form is masked like the token is.
+            auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+            echo "::add-mask::$auth"
+            if GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+              GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+              git push -q "https://github.com/${GH_REPO}.git" "$BRANCH"; then
+              ready="The update is ready on the branch \`$BRANCH\`. Check that each key belongs to a Podman maintainer, then open the pull request: https://github.com/$GH_REPO/compare/main...$BRANCH?expand=1"
+            else
+              ready="The workflow could not push the update branch; $by_hand"
+            fi
           fi
           {
             echo "containers/release-keys no longer matches keyring/podman:"

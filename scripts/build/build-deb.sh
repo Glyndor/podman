@@ -55,13 +55,16 @@ export SOURCE_DATE_EPOCH
 make -C "$podman_src" PREFIX=/usr EXTRA_BUILDTAGS=containers_image_openpgp \
 	BUILD_INFO="$SOURCE_DATE_EPOCH" BUILD_ORIGIN="Glyndor" >&2
 # The binary has to carry what was asked for; a Makefile that stops passing a flag
-# along would otherwise ship without it and nothing would say so.
-if command -v go >/dev/null && [ -f "$podman_src/bin/podman" ]; then
-	built="$(go version -m "$podman_src/bin/podman" 2>/dev/null || true)"
-	for want in '-trimpath=true' '-buildmode=pie' 'apparmor' 'seccomp' 'systemd'; do
-		printf '%s' "$built" | grep -q -- "$want" || { echo "the built podman lacks $want" >&2; exit 1; }
-	done
-fi
+# along would otherwise ship without it and nothing would say so. A build that
+# cannot read the build info is refused too: skipping the check when go or the
+# binary is missing would ship exactly the package this exists to stop.
+command -v go >/dev/null || { echo "no go to read the build info of the built podman" >&2; exit 1; }
+[ -f "$podman_src/bin/podman" ] || { echo "make left no bin/podman to check" >&2; exit 1; }
+built="$(go version -m "$podman_src/bin/podman")" \
+	|| { echo "cannot read the build info of bin/podman" >&2; exit 1; }
+for want in '-trimpath=true' '-buildmode=pie' 'apparmor' 'seccomp' 'systemd'; do
+	printf '%s' "$built" | grep -q -- "$want" || { echo "the built podman lacks $want" >&2; exit 1; }
+done
 make -C "$podman_src" install PREFIX=/usr DESTDIR="$stage" >&2
 # `install` does not put the shell completions in place; Debian's own package ships
 # them, so a customer who moves to this one would otherwise lose tab completion.
@@ -96,6 +99,16 @@ passt_src="${GLYNDOR_PASST_SRC:-/usr/share/glyndor-build/passt}"
 passt_version="$(dpkg-parsechangelog -l "$passt_src/debian/changelog" -S Version)"
 case "$arch" in amd64) passt_target=x86_64 ;; arm64) passt_target=aarch64 ;; *) passt_target="$(uname -m)" ;; esac
 (
+	# eval runs what dpkg-buildflags prints, and its sh export escapes nothing: each
+	# value goes inside double quotes with $ and backticks left as they are (dpkg 1.23,
+	# DEB_CFLAGS_APPEND='$(x)' comes out as $(x)). It is safe here because no input of
+	# it comes from the sources being built: dpkg's defaults in the build image, which
+	# is pinned by digest, the DEB_* variables, which only this line sets (the image
+	# and the workflow's docker run pass none), the build path, which dpkg leaves out
+	# when it holds a character that would need quoting, and a debian/changelog in the
+	# working directory, of which the build container has none (it runs from /).
+	# Running this from a source tree, or feeding it anything taken from upstream,
+	# would end that.
 	eval "$(DEB_BUILD_MAINT_OPTIONS=hardening=+all dpkg-buildflags --export=sh)"
 	export VERSION="$passt_version"
 	make -C "$passt_src" prefix=/usr TARGET="$passt_target" >&2
@@ -135,15 +148,18 @@ done < "$work/elf"
 # without a version apt installs the package on a release whose glibc is older
 # and every binary then fails to start (measured on Ubuntu 22.04, where netavark
 # needs 2.39 and the release has 2.35).
-glibc_min="$(xargs -0 -r objdump -T < "$work/dynamic" 2>/dev/null \
-	| grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -n 1 || true)"
+# Not reading it is a failure: a fallback version would declare a floor the binaries
+# do not have, and Ubuntu 22.04 would install a package that cannot start there.
+glibc_min="$(xargs -0 -r objdump -T < "$work/dynamic" \
+	| grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -n 1)" \
+	|| { echo "could not read the glibc symbols the binaries ask for" >&2; exit 1; }
 
 # Shared libraries the binaries really link against, as Debian package names.
 libs="$(xargs -0 -r ldd < "$work/dynamic" \
 	| awk '$3 ~ /^\// {print $3}' | sort -u \
 	| xargs -r -n1 realpath | xargs -r dpkg -S 2>/dev/null \
 	| sed 's/:[a-z0-9]*:.*//; s/: .*//' | sort -u \
-	| sed "s/^libc6\$/libc6 (>= ${glibc_min:-2.0})/" | paste -sd, | sed 's/,/, /g')"
+	| sed "s/^libc6\$/libc6 (>= ${glibc_min})/" | paste -sd, | sed 's/,/, /g')"
 
 # These libraries are renamed between Debian and Ubuntu releases; a binary linked
 # to one would not start elsewhere, so a build that picks one up is refused.
