@@ -104,6 +104,12 @@ for path in sorted(glob.glob(f"{root}/*.yml")):
             block = ((doc.get("jobs") or {}).get(job) or {}).get("concurrency")
             if block is not None and str(block.get("cancel-in-progress", False)).strip().lower() != "false":
                 print(f"{name}: {job} is in a group that cancels")
+    elif rule == "watchers":
+        # These only read upstream, the releases and the runs: a pull request cannot change
+        # what they find, and each run on one is network calls for nothing.
+        if name in ("watchdog.yml", "keyring-watch.yml"):
+            for event in sorted(set(triggers(doc)) & {"pull_request", "pull_request_target"}):
+                print(f"{name}: triggers on {event}, and a pull request cannot change what it reads")
     elif rule == "runners":
         # ubuntu-latest moves when GitHub moves it, and it moved to 26.04 while the
         # arm64 label stayed on 24.04. A job that runs this repository's scripts or
@@ -191,6 +197,12 @@ check "a cancelling group on the disarm job is named" "dependabot-automerge.yml:
 cp "$HERE"/.github/workflows/*.yml "$BAD/"
 sed -i 's/^    name: disarm when a person pushes$/    name: disarm when a person pushes\n    concurrency:\n      group: d\n      cancel-in-progress: false/' "$BAD/dependabot-automerge.yml"
 check "a group that queues and never cancels is accepted" "" "$(violations never-cancelled "$BAD")"
+
+# --- a watcher does not run on a pull request ------------------------------------
+check "the watchdog and the keyring watch do not trigger on a pull request" "" "$(violations watchers)"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^  push:$/  pull_request:\n    branches: ["main"]\n  push:/' "$BAD/watchdog.yml"
+check "a pull_request trigger on the watchdog is named" "watchdog.yml: triggers on pull_request, and a pull request cannot change what it reads" "$(violations watchers "$BAD")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
