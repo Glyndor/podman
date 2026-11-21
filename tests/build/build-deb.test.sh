@@ -18,7 +18,9 @@ check() { # <desc> <want> <got>
 mkdir "$WORK/src" "$WORK/nv" "$WORK/aa"
 mkdir -p "$WORK/passt/debian" "$WORK/passt/contrib/apparmor/abstractions"
 printf 'passt (0.0~git20260728.f8df3f1-1~bpo13+1) trixie-backports; urgency=medium\n\n  * x\n\n -- X <x@example.org>  Tue, 28 Jul 2026 00:00:00 +0000\n' > "$WORK/passt/debian/changelog"
-printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(prefix)/bin/passt\n' > "$WORK/passt/Makefile"
+# passt's own install copies doc/demo.sh with its executable bit: a script among the binaries.
+printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(prefix)/bin/passt\n\tinstall -D -m755 demo.sh $(DESTDIR)$(prefix)/share/doc/passt/demo.sh\n' > "$WORK/passt/Makefile"
+printf '#!/bin/sh\nexit 0\n' > "$WORK/passt/demo.sh"
 echo p > "$WORK/passt/contrib/apparmor/usr.bin.passt"; echo p > "$WORK/passt/contrib/apparmor/abstractions/passt"
 mkdir -p "$WORK/mods/common/pkg/config" "$WORK/mods/common/pkg/seccomp" "$WORK/mods/common/rpm" "$WORK/mods/image" "$WORK/mods/storage"
 printf 'module x\nrequire (\n\tgo.podman.io/common v0.70.0\n\tgo.podman.io/image/v5 v5.42.1\n\tgo.podman.io/storage v1.65.1\n)\n' > "$WORK/src/go.mod"
@@ -59,6 +61,8 @@ check "policy.json is a conffile under /etc/containers" ./etc/containers/policy.
 for f in ./usr/bin/passt ./usr/bin/pasta ./etc/apparmor.d/usr.bin.passt ./etc/apparmor.d/abstractions/passt; do
 	check "passt ships $f" "$f" "$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "$f")"
 done
+check "an executable script in the tree does not stop the build" ./usr/share/doc/passt/demo.sh \
+	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/doc/passt/demo.sh')"
 check "passt is no longer only recommended" 0 "$(dpkg-deb -f "$deb" Recommends 2>/dev/null | grep -c passt)"
 check "the AppArmor profiles are loaded on configure" 1 "$(dpkg-deb -I "$deb" postinst 2>/dev/null | grep -c 'apparmor_parser -r')"
 check "the distribution's containers-common is not depended on" 0 "$(dpkg-deb -f "$deb" Depends 2>/dev/null | grep -c 'golang-github-containers-common')"

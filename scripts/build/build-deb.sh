@@ -22,7 +22,8 @@ arch="$(dpkg --print-architecture)"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] || { echo "bad version: $version" >&2; exit 1; }
 
 stage="$(mktemp -d)"
-trap 'rm -rf "$stage"' EXIT
+work="$(mktemp -d)"
+trap 'rm -rf "$stage" "$work"' EXIT
 
 # GOTOOLCHAIN=auto lets the go in Debian 13 fetch the exact toolchain go.mod
 # asks for; the module proxy checks it against the Go checksum database.
@@ -111,25 +112,34 @@ if [ -d "$passt_src/contrib/apparmor" ]; then
 	done
 fi
 
+# Every ELF in the package, listed once. The checks below read binaries, and an executable
+# bit does not make a file one: passt installs doc/demo.sh with it, ldd exits non-zero on a
+# script, and under pipefail that stopped the build after the package was complete.
+: > "$work/elf"; : > "$work/dynamic"
+while IFS= read -r -d '' f; do
+	if file -b "$f" | grep -q '^ELF'; then
+		printf '%s\0' "$f" >> "$work/elf"
+		# ldd also refuses a static binary, so only what has a dynamic section goes to it.
+		if readelf -d "$f" 2>/dev/null | grep -q '(NEEDED)'; then printf '%s\0' "$f" >> "$work/dynamic"; fi
+	fi
+done < <(find "$stage" -type f -print0)
+
 # Release artifacts ship stripped (releases standard): drop debug symbols from every ELF.
-find "$stage" -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && strip --strip-unneeded "$1"' _ {} \;
+xargs -0 -r strip --strip-unneeded < "$work/elf"
 # A binary that still has debug sections means strip did not run: say so rather than ship 75 MB.
 while IFS= read -r -d '' f; do
-	file -b "$f" | grep -q '^ELF' || continue
 	! readelf -S "$f" 2>/dev/null | grep -q '\.debug_' || { echo "$f still has debug sections" >&2; exit 1; }
-done < <(find "$stage" -type f -perm -u+x -print0)
+done < "$work/elf"
 
 # The newest glibc symbol any binary asks for. libc6 has to be declared with it:
 # without a version apt installs the package on a release whose glibc is older
 # and every binary then fails to start (measured on Ubuntu 22.04, where netavark
 # needs 2.39 and the release has 2.35).
-glibc_min="$(find "$stage" -type f -perm -u+x -print0 \
-	| xargs -0 -r objdump -T 2>/dev/null \
+glibc_min="$(xargs -0 -r objdump -T < "$work/dynamic" 2>/dev/null \
 	| grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -n 1 || true)"
 
 # Shared libraries the binaries really link against, as Debian package names.
-libs="$(find "$stage" -type f -perm -u+x -print0 \
-	| xargs -0 -r ldd 2>/dev/null \
+libs="$(xargs -0 -r ldd < "$work/dynamic" \
 	| awk '$3 ~ /^\// {print $3}' | sort -u \
 	| xargs -r -n1 realpath | xargs -r dpkg -S 2>/dev/null \
 	| sed 's/:[a-z0-9]*:.*//; s/: .*//' | sort -u \
