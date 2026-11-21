@@ -55,7 +55,7 @@ bash "$here/package-state.sh" replaced golang-github-containers-common
 # passt of Ubuntu 24.04 (and of the other releases) predates, and the distribution's package is replaced.
 bash "$here/package-state.sh" replaced passt
 dpkg -L podman | grep -q '^/usr/bin/pasta$' || { echo "the package does not ship pasta" >&2; exit 1; }
-pasta --help 2>&1 | grep -q -- '--map-guest-addr' || { echo "pasta lacks --map-guest-addr, which Podman passes" >&2; exit 1; }
+bash "$here/package-state.sh" pasta-option
 bash "$here/package-state.sh" kept buildah skopeo
 dpkg -s podman | grep -q '^Provides:.*golang-github-containers-common (= 0\.[6-9][0-9]' \
 	|| { echo "the package does not provide containers-common" >&2; exit 1; }
@@ -99,10 +99,7 @@ out="$(podman --storage-driver vfs run --rm --network smoke --rootfs "$root" /us
 # Two containers on that network have to find each other by name. That is
 # aardvark-dns, the part of the network stack a single container cannot show:
 # the bridge can be up and name resolution still broken.
-podman --storage-driver vfs run -d --name smoke-a --network smoke --rootfs "$root" /usr/bin/sleep 120 >/dev/null
-found="$(podman --storage-driver vfs run --rm --network smoke --rootfs "$root" /usr/bin/getent hosts smoke-a || true)"
-podman --storage-driver vfs rm -f smoke-a >/dev/null 2>&1 || true
-[ -n "$found" ] || { echo "a container on the bridge network could not resolve another by name" >&2; exit 1; }
+bash "$here/package-state.sh" dns smoke "$root"
 # skopeo and buildah read the policy from /etc/containers; a copy and a pull are what
 # stop with "no policy.json file found" when it is not there.
 img="$(mktemp -d)"

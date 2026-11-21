@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# The checks of smoke-test.sh that ask what the installed package left on the system
-# rather than what it does, kept in a script of their own so a test can run them
-# against a system it controls. smoke-test.sh needs root, apt and a clean container,
-# and a check that cannot run anywhere else is a check nobody has seen fail.
+# The checks of smoke-test.sh whose verdict is a reading of what a command answers:
+# what the installed package left on the system, and the two answers of the network
+# stack a single container cannot give. They are kept in a script of their own so a
+# test can run them against answers it controls. smoke-test.sh needs root, apt and a
+# clean container, and a check that cannot run anywhere else is a check nobody has
+# seen fail.
 #
 # Usage: package-state.sh <check> [package...]
 #   seccomp         /usr/share/containers/seccomp.json is the profile of this release,
@@ -12,6 +14,11 @@
 #   replaced <pkg>  the distribution's <pkg> is not installed next to this package
 #   kept <pkg>...   every <pkg> is still installed, as buildah and skopeo must be after
 #                   the upgrade from the distribution's Podman
+#   pasta-option    the pasta on PATH offers --map-guest-addr, which Podman 6.2.0 always
+#                   passes and the passt of the supported releases predates
+#   dns <network> <rootfs>
+#                   a container on <network> finds another one by name, which is
+#                   aardvark-dns: the bridge can be up and name resolution still broken
 #
 # Exit 0 when the check holds, 1 when it does not, 2 for a usage error.
 
@@ -34,7 +41,19 @@ case "$check" in
 		for pkg in "$@"; do
 			installed "$pkg" || { echo "$pkg was removed by the upgrade" >&2; exit 1; }
 		done ;;
+	pasta-option)
+		[ "$#" -eq 0 ] || { echo "pasta-option takes no argument" >&2; exit 2; }
+		help="$(pasta --help 2>&1)" || { echo "pasta --help failed: $help" >&2; exit 1; }
+		grep -q -F -- '--map-guest-addr' <<< "$help" \
+			|| { echo "pasta lacks --map-guest-addr, which Podman passes" >&2; exit 1; } ;;
+	dns)
+		[ "$#" -eq 2 ] || { echo "dns takes a network and a root directory" >&2; exit 2; }
+		podman --storage-driver vfs run -d --name smoke-a --network "$1" --rootfs "$2" /usr/bin/sleep 120 >/dev/null \
+			|| { echo "could not start a container on the network $1" >&2; exit 1; }
+		found="$(podman --storage-driver vfs run --rm --network "$1" --rootfs "$2" /usr/bin/getent hosts smoke-a || true)"
+		podman --storage-driver vfs rm -f smoke-a >/dev/null 2>&1 || true
+		[ -n "$found" ] || { echo "a container on the bridge network could not resolve another by name" >&2; exit 1; } ;;
 	*)
-		echo "usage: package-state.sh seccomp | replaced <package> | kept <package>..." >&2
+		echo "usage: package-state.sh seccomp | replaced <package> | kept <package>... | pasta-option | dns <network> <rootfs>" >&2
 		exit 2 ;;
 esac
