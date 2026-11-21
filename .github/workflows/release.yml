@@ -81,14 +81,19 @@ jobs:
           # releases would one day miss the revision the planner has to step past.
           git ls-remote --tags "https://github.com/$GH_REPO.git" \
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
-          bash scripts/upstream/read-released.sh "$w/released" "$w/assets"
+          bash scripts/upstream/read-released.sh "$w/released"
           bash scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
-          # Whether the newest release carries the second signature. From the first
-          # release that does, the signing step refuses to publish one without it.
-          [ -f "$w/assets" ] || { echo "the asset list of the newest release was not written" >&2; exit 1; }
-          previous_mldsa=false
-          if grep -q '\.mldsa65\.sig$' "$w/assets"; then previous_mldsa=true; fi
-          echo "previous_mldsa=$previous_mldsa" >> "$GITHUB_OUTPUT"
+          # Whether the newest release carries the second signature, which the signing
+          # step reads as an alarm (see there). Asked only when this run builds: most
+          # runs build nothing, and an asset list that could not be read would turn
+          # each of them red and open an issue over an answer nobody uses. When it
+          # builds, a list that cannot be read stops the run.
+          if [ "$(sed -n 's/^build=//p' "$GITHUB_OUTPUT")" = true ]; then
+            bash scripts/upstream/read-released.sh "$w/released-again" "$w/assets"
+            previous_mldsa=false
+            if grep -q '\.mldsa65\.sig$' "$w/assets"; then previous_mldsa=true; fi
+            echo "previous_mldsa=$previous_mldsa" >> "$GITHUB_OUTPUT"
+          fi
           # The package version is the tag without its leading v; the build
           # workflow takes it as given, since an expression cannot strip it.
           tag="$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT")"

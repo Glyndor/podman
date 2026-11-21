@@ -53,6 +53,7 @@ GIT
 	# assets are $ASSETS; ASSETS_FAIL makes listing them fail.
 	cat > "$P/bin/gh" <<'GH'
 #!/usr/bin/env bash
+echo "$1 $2" >> "$GH_LOG"
 case "$1 $2" in
 	"release list") printf '%s\n' "${LATEST:-}" ;;
 	"release download")
@@ -64,8 +65,8 @@ esac
 GH
 	chmod +x "$P/bin/git" "$P/bin/gh"
 	plan() { # [VAR=value]...: runs the step; sets $rc, $out and $P/out
-		rm -rf "$P/rt"; mkdir "$P/rt"; : > "$P/out"
-		run_step "$P" "$WS" PATH="$P/bin:$PATH" RUNNER_TEMP="$P/rt" GITHUB_OUTPUT="$P/out" \
+		rm -rf "$P/rt"; mkdir "$P/rt"; : > "$P/out"; : > "$P/gh.log"
+		run_step "$P" "$WS" PATH="$P/bin:$PATH" RUNNER_TEMP="$P/rt" GITHUB_OUTPUT="$P/out" GH_LOG="$P/gh.log" \
 			GH_TOKEN=a-token GH_REPO=owner/repo "$@"
 	}
 	said() { sed -n "s/^$1=//p" "$P/out" | paste -sd' '; }
@@ -84,6 +85,15 @@ GH
 	check "an asset list that cannot be read stops the plan, and says nothing about the signature" "1 " \
 		"$rc $(said previous_mldsa)"
 	check "and it says which list" 1 "$(says 'cannot list the assets of release v6.1.0')"
+	# Most runs build nothing. There the plan is what it was before the asset list
+	# existed: the same calls and the same outputs, so a list that cannot be read
+	# cannot turn a run red that had nothing to publish.
+	same='podman v6.2.0\nnetavark v2.1.0\naardvark-dns v2.1.3\nrecipe r1\n'
+	plan LATEST=v6.2.0 TAGS=v6.2.0 COMPONENTS="$same" ASSETS_FAIL=1
+	check "nothing to build: the plan succeeds even when the asset list cannot be read" "0 false" "$rc $(said build)"
+	check "and it does not ask for the list" "release list|release download" "$(paste -sd'|' "$P/gh.log")"
+	check "and hands on what it always did, and nothing about the signature" \
+		"build version podman netavark aardvark recipe podman_sha netavark_sha aardvark_sha" "$(sed 's/=.*//' "$P/out" | paste -sd' ')"
 else
 	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the plan step"
 fi
