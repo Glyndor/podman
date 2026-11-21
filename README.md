@@ -8,13 +8,11 @@ Debian 13 ships Podman 5.4 with netavark 1.14, which is too old for current Podm
 
 ## Install
 
-The package is served from the Glyndor apt repository. See [apt.glyndor.net](https://apt.glyndor.net) for setup, then:
-
 ```bash
-sudo apt install podman
+curl -fsSL https://apt.glyndor.net/install/podman | sudo sh
 ```
 
-Because the Glyndor version is newer than Debian's, `apt` prefers it once the repository is configured.
+It adds the Glyndor apt repository, installs its signing key after checking the fingerprint, and installs the package. From then on `apt` keeps it current: the Glyndor version is newer than the distribution's, so `apt` prefers it. What the script does, step by step, is described at [apt.glyndor.net](https://apt.glyndor.net).
 
 ## How a release is made
 
@@ -41,7 +39,7 @@ Each release carries one `.deb` and one detached `.sig` per architecture, and a 
 
 ## Scope
 
-The package replaces Debian's `netavark` and `aardvark-dns`. It also ships `passt` and `pasta`, built from Debian's signed source of a release newer than the one Podman 6.2.0 asks for, and the containers-common configuration of the release. Other dependencies such as `conmon` and `crun` come from Debian. Release versions follow Podman's (`6.2.0`), with a `+rN` suffix when netavark or aardvark-dns change under the same Podman. Report Podman bugs to [containers/podman](https://github.com/containers/podman).
+The package replaces Debian's `netavark` and `aardvark-dns`. It also ships `passt` and `pasta`, built from Debian's signed source of a release newer than the one Podman 6.2.0 asks for, and the containers-common configuration of the release. Other dependencies such as `conmon` and `crun` come from Debian. Release versions follow Podman's (`6.2.0`), with a `+rN` suffix when netavark, aardvark-dns or the way the package is built (everything under `scripts/build/`) changes under the same Podman. A packaging fix is the most common reason for one. Report Podman bugs to [containers/podman](https://github.com/containers/podman).
 
 ## License
 
