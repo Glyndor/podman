@@ -10,6 +10,7 @@
 
 set -euo pipefail
 
+here="$(cd "$(dirname "$0")" && pwd)"
 deb="${1:?deb}"
 version="${2:?version}"
 mode="${3:-upgrade}"
@@ -41,26 +42,21 @@ dpkg -L podman | grep -q '^/usr/share/man/man1/podman-run\.1' || { echo "the pac
 # The containers-common configuration of this release, not the older one a distribution
 # ships: the profile has the futex family, a pull has the policy it needs, and the
 # distribution's package is not what satisfies the dependency.
-grep -q '"futex_waitv"' /usr/share/containers/seccomp.json || { echo "the seccomp profile is not this release's" >&2; exit 1; }
+bash "$here/package-state.sh" seccomp
 [ -s /etc/containers/policy.json ] || { echo "the package does not ship /etc/containers/policy.json" >&2; exit 1; }
 for f in registries.conf containers.conf registries.conf.d/000-shortnames.conf; do
 	[ -s "/usr/share/containers/$f" ] || { echo "the package does not ship /usr/share/containers/$f" >&2; exit 1; }
 done
-! dpkg-query -W -f='${Status}' golang-github-containers-common 2>/dev/null | grep -q 'ok installed' \
-	|| { echo "the distribution's containers-common is installed next to this package" >&2; exit 1; }
+bash "$here/package-state.sh" replaced golang-github-containers-common
 # On a clean image the tools are installed after the package, as a customer who adds
 # them later does; they must find their policy and registries under /etc/containers.
 [ "$mode" != clean ] || apt-get install -y -qq buildah skopeo >/dev/null
 # passt comes with the package: Podman 6.2.0 always passes pasta --map-guest-addr, which the
 # passt of Ubuntu 24.04 (and of the other releases) predates, and the distribution's package is replaced.
-! dpkg-query -W -f='${Status}' passt 2>/dev/null | grep -q 'ok installed' \
-	|| { echo "the distribution's passt is installed next to this package" >&2; exit 1; }
+bash "$here/package-state.sh" replaced passt
 dpkg -L podman | grep -q '^/usr/bin/pasta$' || { echo "the package does not ship pasta" >&2; exit 1; }
 pasta --help 2>&1 | grep -q -- '--map-guest-addr' || { echo "pasta lacks --map-guest-addr, which Podman passes" >&2; exit 1; }
-for kept in buildah skopeo; do
-	dpkg-query -W -f='${Status}' "$kept" 2>/dev/null | grep -q 'ok installed' \
-		|| { echo "$kept was removed by the upgrade" >&2; exit 1; }
-done
+bash "$here/package-state.sh" kept buildah skopeo
 dpkg -s podman | grep -q '^Provides:.*golang-github-containers-common (= 0\.[6-9][0-9]' \
 	|| { echo "the package does not provide containers-common" >&2; exit 1; }
 
