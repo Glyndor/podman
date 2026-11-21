@@ -54,6 +54,56 @@ for path in sorted(glob.glob(f"{root}/*.yml")):
                         before = line[:m.start()].rstrip()
                         if not re.search(r"(?:^|[\s(`;|&])(?:bash|python3?|sh)$", before):
                             print(f"{name}: {job} runs {m.group(1)} without an interpreter")
+    elif rule == "concurrency":
+        # A run on a pull request that a newer push has overtaken answers about a commit
+        # that no longer exists, so the workflow cancels it. The group is the workflow's, or
+        # the job's, or the reusable workflow's the job calls. The jobs below are the only
+        # ones left out, each for a condition that is stated here and checked by "never-
+        # cancelled": disarm takes a merge back, so another run must never cut it short, and
+        # rebase runs on a push to main, where nothing is cancelled.
+        exempt = {("dependabot-automerge.yml", "disarm"), ("dependabot-automerge.yml", "rebase")}
+        if not set(triggers(doc)) & {"pull_request", "pull_request_target"}:
+            continue
+        def cancels(block):
+            return str(block.get("cancel-in-progress", False)).strip().lower() != "false"
+        top = doc.get("concurrency")
+        if top is not None:
+            if not cancels(top):
+                print(f"{name}: concurrency does not cancel a superseded run")
+            continue
+        for job, cfg in (doc.get("jobs") or {}).items():
+            if (name, job) in exempt:
+                continue
+            block = cfg.get("concurrency")
+            uses = str(cfg.get("uses", ""))
+            if block is None and uses.startswith("./.github/workflows/"):
+                with open(f"{root}/{uses.rsplit('/', 1)[1]}") as reusable:
+                    block = (yaml.safe_load(reusable) or {}).get("concurrency")
+            if block is None:
+                print(f"{name}: {job} runs on a pull request with no concurrency")
+            elif not cancels(block):
+                print(f"{name}: {job} concurrency does not cancel a superseded run")
+    elif rule == "target-group":
+        # On pull_request_target the ref is main for every pull request, so a group built
+        # on it would let one pull request's run cancel another's.
+        if "pull_request_target" not in triggers(doc):
+            continue
+        blocks = [("workflow", doc.get("concurrency"))] + [(j, c.get("concurrency")) for j, c in (doc.get("jobs") or {}).items()]
+        for where, block in blocks:
+            group = str((block or {}).get("group", ""))
+            if "github.ref" in group:
+                print(f"{name}: {where} groups pull_request_target runs by ref, which is main for every pull request")
+    elif rule == "never-cancelled":
+        # disarm turns auto-merge off after a person pushed to a Dependabot branch. A
+        # newer run that cancelled it, and then declined to arm, would leave the merge on.
+        if name != "dependabot-automerge.yml":
+            continue
+        if doc.get("concurrency") is not None:
+            print(f"{name}: a workflow-level concurrency can cancel the disarm job")
+        for job in ("disarm", "rebase"):
+            block = ((doc.get("jobs") or {}).get(job) or {}).get("concurrency")
+            if block is not None and str(block.get("cancel-in-progress", False)).strip().lower() != "false":
+                print(f"{name}: {job} is in a group that cancels")
     elif rule == "runners":
         # ubuntu-latest moves when GitHub moves it, and it moved to 26.04 while the
         # arm64 label stayed on 24.04. A job that runs this repository's scripts or
@@ -107,6 +157,40 @@ cp "$HERE"/.github/workflows/*.yml "$BAD/"
 sed -i 's#\$(bash scripts/build/recipe-id.sh)#$(scripts/build/recipe-id.sh)#' "$BAD/release.yml"
 check "so is one inside a command substitution" \
 	"release.yml: plan runs scripts/build/recipe-id.sh without an interpreter" "$(violations interpreter "$BAD")"
+
+# --- a superseded run on a pull request is cancelled ----------------------------
+check "every workflow that runs on a pull request cancels the runs a push overtook" "" "$(violations concurrency)"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i '/^concurrency:/,/^$/d' "$BAD/commit-hygiene.yml"
+check "a workflow with no concurrency is named, job by job" \
+	"commit-hygiene.yml: commit-identity runs on a pull request with no concurrency
+commit-hygiene.yml: secret-scan runs on a pull request with no concurrency" "$(violations concurrency "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^  cancel-in-progress: true$/  cancel-in-progress: false/' "$BAD/build-check.yml"
+check "one that no longer cancels is named" "build-check.yml: concurrency does not cancel a superseded run" "$(violations concurrency "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i '/^concurrency:/,/^$/d' "$BAD/reusable-dco.yml"
+check "the group of a reusable workflow a caller uses counts, and its absence is named" "dco.yml: dco runs on a pull request with no concurrency" "$(violations concurrency "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i '/^    concurrency:$/,/^      cancel-in-progress: true$/d' "$BAD/dependabot-automerge.yml"
+check "arm, which has its own group, is named when it loses it" "dependabot-automerge.yml: arm runs on a pull request with no concurrency" "$(violations concurrency "$BAD")"
+
+check "no pull_request_target group is built on the ref" "" "$(violations target-group)"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/-arm-\${{ github.event.pull_request.number }}/-arm-${{ github.ref }}/' "$BAD/dependabot-automerge.yml"
+check "a group on the ref of a pull_request_target run is named" \
+	"dependabot-automerge.yml: arm groups pull_request_target runs by ref, which is main for every pull request" "$(violations target-group "$BAD")"
+
+check "nothing can cancel the disarm and rebase jobs" "" "$(violations never-cancelled)"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^permissions: {}$/permissions: {}\n\nconcurrency:\n  group: all\n  cancel-in-progress: true/' "$BAD/dependabot-automerge.yml"
+check "a group over the whole workflow is named" "dependabot-automerge.yml: a workflow-level concurrency can cancel the disarm job" "$(violations never-cancelled "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^    name: disarm when a person pushes$/    name: disarm when a person pushes\n    concurrency:\n      group: d\n      cancel-in-progress: true/' "$BAD/dependabot-automerge.yml"
+check "a cancelling group on the disarm job is named" "dependabot-automerge.yml: disarm is in a group that cancels" "$(violations never-cancelled "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^    name: disarm when a person pushes$/    name: disarm when a person pushes\n    concurrency:\n      group: d\n      cancel-in-progress: false/' "$BAD/dependabot-automerge.yml"
+check "a group that queues and never cancels is accepted" "" "$(violations never-cancelled "$BAD")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

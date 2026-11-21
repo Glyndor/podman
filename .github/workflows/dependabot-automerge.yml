@@ -24,10 +24,28 @@ on:
 
 permissions: {}
 
+# What a newer event may cancel is decided job by job, because two of the three arm
+# and disarm a merge. Nothing is cancelled at the workflow level.
+#
+# arm: yes, and only another arm of the same pull request. It is one call, bound with
+# --match-head-commit to the commit that started the run: a run overtaken by a push
+# would be refused for that commit anyway, and the newer run asks about the current
+# one. The group names the pull request number: on pull_request_target the ref is
+# main for every pull request, and a group on it would let one pull request's run
+# cancel another's.
+# disarm: never. It is what takes a merge back after a person pushed, and a newer
+# run of arm that is refused leaves auto-merge on, so cancelling a disarm for any
+# other run could leave a merge armed that a person has just changed.
+# rebase: never. It runs on a push to main, and a push run is never cancelled; one
+# cut short would leave pull requests that fell behind without their request.
+
 jobs:
   arm:
     name: arm auto-merge
     if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    concurrency:
+      group: ${{ github.workflow }}-arm-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions:
