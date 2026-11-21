@@ -133,6 +133,11 @@ jobs:
   publish:
     name: Sign and publish
     needs: [plan, build]
+    # The same guard as plan, on the job that holds the signing keys and creates the
+    # release: a skipped plan already skips this one, and a later edit that makes this
+    # job run whatever its needs did (an always() above it) would otherwise publish
+    # from a branch.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
       contents: write
@@ -157,6 +162,7 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/artifacts
       - name: Sign every package, then verify against the published key
+        id: sign
         working-directory: ${{ runner.temp }}/artifacts
         env:
           GLYNDOR_RELEASE_ED25519_KEY: ${{ secrets.GLYNDOR_RELEASE_ED25519_KEY }}
@@ -174,21 +180,45 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/signvenv"
           py="$RUNNER_TEMP/signvenv/bin/python"
           "$py" -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
-          # With the ML-DSA-65 key set, every package must leave with a second
-          # signature that verifies against the committed ML-DSA-65 public key.
-          # A signer that skipped it, or a secret set before its public half was
-          # committed, then stops the run instead of publishing a signature
-          # nobody can check. Without the key none is required, and the check
-          # is the Ed25519 one the release always had.
+          # The second signature is required by what the repository commits, not by a
+          # setting nobody can read from here: once keyring/glyndor-release-mldsa65.b64
+          # holds a public key, every package must leave with an ML-DSA-65 signature
+          # that verifies against it. A secret that was lost, renamed or never set then
+          # stops the run instead of publishing Ed25519 alone under an anchor that
+          # promises both. A secret set with no public key committed is required too:
+          # a signature nobody can check is refused. With neither, the check is the
+          # Ed25519 one the release always had. Set the secret and merge the key one
+          # after the other: a release built between the two stops, whichever came first.
+          anchor="$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64"
+          [ -f "$anchor" ] || { echo "::error::$anchor is missing; refusing to publish without knowing whether the second signature is required."; exit 1; }
+          # This step and verify-sig.py both decide what a line of that file is. The
+          # verifier splits on every line break Python knows and this step on the line
+          # feed alone, so a key behind a carriage return would be part of a comment
+          # here and a key there, and the run would publish one signature under an
+          # anchor that holds a key. The file is printable ASCII with line feeds, where
+          # the two readers agree, or the run stops.
+          if LC_ALL=C grep -q '[^ -~]' "$anchor"; then
+            echo "::error::keyring/glyndor-release-mldsa65.b64 holds a byte that is neither printable ASCII nor a line feed; refusing to guess whether it holds a key."
+            exit 1
+          fi
+          anchored=false
+          if grep -q -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$anchor"; then anchored=true; fi
+          if [ "$anchored" = true ] && [ -z "$GLYNDOR_RELEASE_MLDSA65_KEY" ]; then
+            echo "::error::keyring/glyndor-release-mldsa65.b64 holds a public key and GLYNDOR_RELEASE_MLDSA65_KEY is not configured; refusing to publish with one signature."
+            exit 1
+          fi
+          required=false
           require=()
           if [ -n "$GLYNDOR_RELEASE_MLDSA65_KEY" ]; then
+            required=true
             require=(--require-mldsa)
           fi
           for deb in podman_*.deb; do
             "$py" "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$deb"
             "$py" "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64" \
-              --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64" "${require[@]}"
+              --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$anchor" "${require[@]}"
           done
+          echo "require_mldsa=$required" >> "$GITHUB_OUTPUT"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/artifacts/podman_*.deb
@@ -197,14 +227,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          REQUIRE_MLDSA: ${{ steps.sign.outputs.require_mldsa }}
         run: |
           printf 'podman %s\nnetavark %s\naardvark-dns %s\nrecipe %s\n' "$PODMAN" "$NETAVARK" "$AARDVARK" "$RECIPE" > components.txt
-          # The ML-DSA-65 signatures exist only when the signing step had that
-          # key, and it then checked one per package. Listed one by one so that,
-          # without them, the release carries exactly the assets it always has.
+          # The ML-DSA-65 signatures are published whenever they exist. When the signing
+          # step required them, one that is not here stops the run: a release is
+          # immutable, and one without its second signature cannot be completed later.
+          # Listed one by one so that, without them, the release carries exactly the
+          # assets it always has.
           mldsa=()
-          for f in podman_*.deb.mldsa65.sig; do
-            if [ -e "$f" ]; then mldsa+=("$f"); fi
+          for deb in podman_*.deb; do
+            if [ -e "$deb.mldsa65.sig" ]; then
+              mldsa+=("$deb.mldsa65.sig")
+            elif [ "$REQUIRE_MLDSA" = true ]; then
+              echo "::error::$deb.mldsa65.sig is missing and the second signature is required; refusing to publish."
+              exit 1
+            fi
           done
           gh release create "$TAG" --target "$GITHUB_SHA" --title "Podman ${TAG#v}" \
             --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \

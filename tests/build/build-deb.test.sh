@@ -135,5 +135,43 @@ check "an objdump that fails is refused, even after printing a version" "1 1" "$
 PATH="$WORK/objdump-empty:$PATH" refused "$WORK/out-objdump-empty"
 check "binaries that show no glibc symbol are refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'could not read the glibc symbols')"
 
+# One package has to serve Debian 13 and Ubuntu 24.04 and 26.04, so a build that links
+# a library renamed between them is refused, and the libraries it may link are the ones
+# that stay. ldd names what the binaries link, and dpkg -S the package that owns each
+# file: both are faked, so the case does not depend on what this machine has installed.
+# The accepted shape comes first, so a refusal below is for the library and not for a
+# harness that cannot build.
+mkdir "$WORK/fakeldd" "$WORK/libs"
+real_dpkg="$(command -v dpkg)"
+cat > "$WORK/fakeldd/ldd" <<'LDD'
+#!/bin/sh
+for lib in $FAKE_LIBS; do
+	printf '\t%s.so.1 => %s/%s (0x00007f0000000000)\n' "$lib" "$LIBS_DIR" "$lib"
+done
+LDD
+cat > "$WORK/fakeldd/dpkg" <<DPKG
+#!/bin/sh
+[ "\$1" = -S ] || exec "$real_dpkg" "\$@"
+shift
+for f in "\$@"; do printf '%s:%s: %s\\n' "\${f##*/}" amd64 "\$f"; done
+DPKG
+chmod +x "$WORK/fakeldd/ldd" "$WORK/fakeldd/dpkg"
+links() { # <libraries...>: a build whose binaries link these, as the package names that own them
+	local lib
+	for lib in "$@"; do : > "$WORK/libs/$lib"; done
+	last_out="$WORK/out-links-$RANDOM"
+	FAKE_LIBS="$*" LIBS_DIR="$WORK/libs" PATH="$WORK/fakeldd:$PATH" refused "$last_out"
+}
+links libc6 libgcc-s1 libseccomp2
+check "a build that links only libc, libgcc and libseccomp is accepted" 0 "$rc"
+deb="$(ls "$last_out"/podman_6.2.0_*.deb 2>/dev/null)"
+check "and it depends on exactly those three, libc6 with the glibc floor" "libc6 (>= N), libgcc-s1, libseccomp2" \
+	"$(dpkg-deb -f "$deb" Depends 2>/dev/null | sed 's/.*nftables, //; s/(>= [0-9.]*)/(>= N)/')"
+for lib in libgpgme11t64 libassuan9 libsubid5 libsqlite3-0 libapparmor1 libbtrfs0t64; do
+	links libc6 "$lib"
+	check "a build that also links $lib is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c -- "^build links a library that differs between releases: .*\\<$lib\\>")"
+	check "and no package is written for $lib" 0 "$(find "$last_out" -name '*.deb' 2>/dev/null | wc -l)"
+done
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

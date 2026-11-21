@@ -162,6 +162,9 @@ key="$(cat "$WORK/ed.b64")"
 printf '%s!%s\n' "${key:0:10}" "${key:10}" > "$WORK/ed-stray.b64"
 expect 2 "malformed Ed25519 public key on line 1" "an Ed25519 key with a stray character is our malformed file" \
 	-- python3 "$VERIFY" "$f" "$f.sig" "$WORK/ed-stray.b64"
+printf '\357\273\277%s\n' "$key" > "$WORK/ed-bom.b64"
+expect 2 "malformed Ed25519 public key on line 1" "an Ed25519 key behind a byte-order mark is our malformed file, not a crash" \
+	-- python3 "$VERIFY" "$f" "$f.sig" "$WORK/ed-bom.b64"
 expect 2 "31 bytes, expected 32" "an Ed25519 key of the wrong length is refused for its length" \
 	-- python3 "$VERIFY" "$f" "$f.sig" "$WORK/ed-short.b64"
 expect 2 "not found" "a missing Ed25519 key file is our error" \

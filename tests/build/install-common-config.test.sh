@@ -8,6 +8,8 @@ HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT="$HERE/scripts/build/install-common-config.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+SMOKE="$HERE/scripts/verify/smoke-test.sh"
+STATE="$HERE/scripts/verify/package-state.sh"
 pass=0; fail=0
 
 check() { # <desc> <want> <got>
@@ -40,6 +42,22 @@ check "and its own graphroot" 1 \
 check "storage.conf stays with the package that owns it" 0 "$([ -e "$WORK/stage/usr/share/containers/storage.conf" ] && echo 1 || echo 0)"
 check "the seccomp profile is the module's, not another" 1 "$(grep -c futex_waitv "$WORK/stage/usr/share/containers/seccomp.json")"
 check "creates the directories the spec owns" 1 "$([ -d "$WORK/stage/etc/containers/oci/hooks.d" ] && echo 1 || echo 0)"
+
+# What the smoke test asks of the installed package under these two folders has to be
+# what this script puts in the stage: a path mistyped in either list is otherwise found
+# by the build, after twelve minutes and two architectures. The paths are read from the
+# smoke test and the script it calls, comments left out, and a list that came out too
+# short is a failure of the reading and not an empty set that passes.
+required="$( {
+	grep -v '^[[:space:]]*#' "$SMOKE" | sed -n 's/^for f in \(registries\.conf [^;]*\); do$/\1/p' | tr ' ' '\n' | sed 's#^#/usr/share/containers/#'
+	grep -v '^[[:space:]]*#' "$SMOKE" "$STATE" | grep -o '/\(etc\|usr/share\)/containers/[A-Za-z0-9._/-]*' | grep -v '/$'
+} | sort -u)"
+check "the smoke test names at least the five files this script installs" 1 "$([ "$(printf '%s\n' "$required" | grep -c .)" -ge 5 ] && echo 1 || echo 0)"
+missing=""
+while IFS= read -r path; do
+	[ -s "$WORK/stage$path" ] || missing="$missing $path"
+done <<< "$required"
+check "every file the smoke test requires is installed by this script" "" "${missing# }"
 
 rm "$WORK/mods/common/rpm/policy.json"
 "$SCRIPT" "$WORK/src" "$WORK/stage2" "$WORK/short.conf" >/dev/null 2>&1; check "a module without policy.json is refused" 1 "$?"

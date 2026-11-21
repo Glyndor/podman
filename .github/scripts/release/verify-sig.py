@@ -39,7 +39,6 @@ problem with the trust anchor and not with the file being checked.
 """
 import argparse
 import base64
-import binascii
 import os
 import sys
 from pathlib import Path
@@ -88,7 +87,9 @@ def read_keys(path: str, size: int, what: str, missing_is_empty: bool) -> list:
 		# a different key.
 		try:
 			raw = base64.b64decode(line + "=" * (-len(line) % 4), validate=True)
-		except binascii.Error as exc:
+		except ValueError as exc:
+			# binascii.Error for a character outside the alphabet, and plain
+			# ValueError for one outside ASCII, a byte-order mark among them.
 			fail(TRUST_ANCHOR, f"malformed {what} public key on line {number} of {path}: not base64 ({exc})")
 		if len(raw) != size:
 			fail(
