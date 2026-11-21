@@ -4,7 +4,8 @@
 # on a pull request that a newer push overtook is cancelled; nothing that runs on a
 # push, a schedule or a call is cancelled by the next run; a pull_request_target run
 # is grouped by its pull request and not by the ref, which is main for all of them;
-# and the jobs that take a merge back are in no group. workflow-policy.test.sh
+# the jobs that take a merge back are in no group; and a push run is in a group of
+# its own, so the next push cannot cancel it while it waits. workflow-policy.test.sh
 # holds the other rules over the same files; this one is a suite of its own so
 # neither grows past the soft limit of line-limit.yml. Each rule prints the offending
 # file and job, and each is run against copies that break it one way each.
@@ -130,6 +131,26 @@ for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
             # progress belongs to the run that arrives, not to the one it finds.
             if block is not None:
                 print(f"{name}: {job} is in a concurrency group, and a group can cancel it")
+    elif rule == "push-group":
+        # GitHub keeps at most one pending run per concurrency group and cancels it when
+        # the next one is queued, whatever cancel-in-progress says. A group that pushes
+        # to main share loses the verdict of a push that waited behind another: of three
+        # merges in a row, the middle one is never checked, and the push is the only run
+        # that says main is green. So a group a push can reach is made of the run id. The
+        # one exception is release.yml, serialised on purpose: two release runs at once
+        # would race for the same tag, and a pending one that is replaced loses nothing,
+        # since the run after it plans from upstream and the releases again.
+        exempt = {("release.yml", "workflow")}
+        if "push" not in events_of(doc, name):
+            continue
+        blocks = [("workflow", doc.get("concurrency"))]
+        blocks += [(job, cfg.get("concurrency")) for job, cfg in (doc.get("jobs") or {}).items() if not only_pr(cfg)]
+        for where, block in blocks:
+            if block is None or (name, where) in exempt:
+                continue
+            group = str(block.get("group", ""))
+            if "github.run_id" not in group:
+                print(f"{name}: {where} groups push runs by {group!r}, so a push can cancel the one queued before it")
 PY
 }
 
@@ -202,6 +223,26 @@ sed -i "s/ == 'pull_request_target' && github.event.pull_request.user.login/ != 
 check "the fixture did free the arm job from its event" "0" "$(grep -c "event_name == 'pull_request_target' && github.event.pull_request.user" "$BAD/dependabot-automerge.yml")"
 check "a job that stopped naming a pull request event, in a workflow that has a push, is named" \
 	"dependabot-automerge.yml: arm cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
+
+# --- a push run is never cancelled by the next push --------------------------------
+check "every group a push can reach is the run's own" "" "$(violations push-group)"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
+sed -i "s/^  group: tests-\${{ github.event_name == 'pull_request' \&\& github.ref || github.run_id }}\$/  group: tests-\${{ github.ref }}/" "$BAD/tests.yml"
+check "the fixture did group the push runs of tests.yml by ref" 1 "$(grep -c '^  group: tests-\${{ github.ref }}$' "$BAD/tests.yml")"
+check "a push group built on the ref is named" \
+	"tests.yml: workflow groups push runs by 'tests-\${{ github.ref }}', so a push can cancel the one queued before it" "$(violations push-group "$BAD")"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
+sed -i "s/^  group: workflow-lint-\${{ github.workflow }}-.*\$/  group: workflow-lint-\${{ github.workflow }}-\${{ github.ref }}/" "$BAD/reusable-workflow-lint.yml"
+check "and so is one in a reusable workflow that a push caller runs" \
+	"reusable-workflow-lint.yml: workflow groups push runs by 'workflow-lint-\${{ github.workflow }}-\${{ github.ref }}', so a push can cancel the one queued before it" \
+	"$(violations push-group "$BAD")"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
+sed -i 's/^  group: release$/  group: release-${{ github.ref }}/' "$BAD/release.yml"
+check "release.yml, serialised on purpose, is the one group left out" "" "$(violations push-group "$BAD")"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
+sed -i 's/^permissions: {}$/permissions: {}\n\nconcurrency:\n  group: watchdog\n  cancel-in-progress: false/' "$BAD/watchdog.yml"
+check "a fixed group on a workflow with a push trigger is named, whatever cancel-in-progress says" \
+	"watchdog.yml: workflow groups push runs by 'watchdog', so a push can cancel the one queued before it" "$(violations push-group "$BAD")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
