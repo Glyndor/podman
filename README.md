@@ -34,9 +34,10 @@ flowchart LR
 - Before signing, the same package is installed on clean Debian 13, Ubuntu 24.04 and Ubuntu 26.04, and runs a container on each, including one on a bridge network.
 - It links only libc, libgcc and libseccomp, so one package serves every release. Signature checks use Go's OpenPGP instead of gpgme, and subid and sqlite are not linked, because those libraries are renamed between releases. Debian 12 is not supported: its glibc is older than netavark needs.
 - On Ubuntu 24.04 the package uses `runc`, because that release's `crun` is too old for current Podman.
-- If any step fails nothing is published, and the previous release remains the latest.
+- Last, the package replaces Podman on the build runner itself, an Ubuntu virtual machine, and runs a rootless container on `pasta`, which the containers above cannot do.
+- If any step fails nothing is published, and the previous release remains the latest. A failed scheduled run also opens an issue in this repository.
 
-Each release carries one `.deb` and one detached `.sig` per architecture. Verification instructions are in [docs/verify.md](docs/verify.md).
+Each release carries one `.deb` and one detached `.sig` per architecture, and a build provenance attestation. [docs/verify.md](docs/verify.md) shows how to check the signature with OpenSSL and the attestation with `gh`.
 
 ## Scope
 
