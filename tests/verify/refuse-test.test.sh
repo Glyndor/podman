@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/verify/refuse-test.sh: the argument contract, and how it copes
-# with a release whose archive has moved. The real refusal needs root inside an
-# Ubuntu 22.04 container and is exercised by the release workflow.
+# Tests for scripts/verify/refuse-test.sh: the argument contract, how it copes
+# with a release whose archive has moved, and that only a refusal for libc6
+# counts. The real refusal needs root inside an Ubuntu 22.04 container and is
+# exercised by the release workflow.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -36,6 +37,9 @@ case "$1" in
 		exit 0 ;;
 	install)
 		[ "${APT_INSTALL_OK:-0}" != 1 ] || exit 0
+		if [ "${APT_INSTALL_FAILS_OTHERWISE:-0}" = 1 ]; then
+			echo "E: Unable to correct problems, you have held broken packages."; exit 100
+		fi
 		if [ "${APT_UPDATE_FAILS_ONCE:-0}" = 1 ] && ! grep -q old-releases "$APT_SOURCES"; then
 			echo "E: Unable to locate package podman"; exit 100
 		fi
@@ -69,6 +73,12 @@ done
 write_sources amd64
 PATH="$WORK/bin:$PATH" APT_INSTALL_OK=1 APT_LOG="$WORK/log3" APT_SOURCES="$WORK/sources.list" "$SCRIPT" "$WORK/p.deb" >/dev/null 2>&1
 check "a package that installs where it must be refused fails" 1 "$?"
+
+# An install that fails for a reason other than libc6 proves nothing about the
+# glibc floor, so it is a failure too, and it says so.
+PATH="$WORK/bin:$PATH" APT_INSTALL_FAILS_OTHERWISE=1 APT_LOG="$WORK/log4" APT_SOURCES="$WORK/sources.list" "$SCRIPT" "$WORK/p.deb" >/dev/null 2>"$WORK/err4"
+check "an install refused for another reason fails" 1 "$?"
+check "and says it was not libc6" 1 "$(grep -c 'the install failed, but not because of libc6' "$WORK/err4")"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
