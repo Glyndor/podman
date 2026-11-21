@@ -55,6 +55,16 @@ build-deb-links-a-library-renamed-between-releases	scripts/build/build-deb.sh	*g
 build-deb-no-cargo-lock	scripts/build/build-deb.sh	[ -f "$src/Cargo.lock" ] || { echo "$src has no Cargo.lock to build against" >&2; exit 1; }	[ -f "$src/Cargo.lock" ] || true	tests/build/build-deb.test.sh
 build-deb-no-passt-source	scripts/build/build-deb.sh	[ -f "$passt_src/Makefile" ] || { echo "no passt source at $passt_src" >&2; exit 1; }	[ -f "$passt_src/Makefile" ] || true	tests/build/build-deb.test.sh
 build-deb-crate-version-unreadable	scripts/build/build-deb.sh	|| { echo "cannot read the netavark or aardvark-dns version from Cargo.toml" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
+build-deb-no-full-relro	scripts/build/build-deb.sh	export CGO_LDFLAGS="-Wl,-z,relro -Wl,-z,now"	export CGO_LDFLAGS="-Wl,-z,now"	tests/build/build-deb.test.sh
+build-deb-no-bind-now	scripts/build/build-deb.sh	export CGO_LDFLAGS="-Wl,-z,relro -Wl,-z,now"	export CGO_LDFLAGS="-Wl,-z,relro"	tests/build/build-deb.test.sh
+build-deb-no-fortify-source	scripts/build/build-deb.sh	 -D_FORTIFY_SOURCE=2"	"	tests/build/build-deb.test.sh
+build-deb-not-a-position-independent-executable	scripts/build/build-deb.sh	export GOFLAGS="-trimpath -buildmode=pie"	export GOFLAGS="-trimpath"	tests/build/build-deb.test.sh
+build-deb-no-control-flow-protection-on-amd64	scripts/build/build-deb.sh	amd64) flow_protection="-fcf-protection=full" ;;	amd64) flow_protection="" ;;	tests/build/build-deb.test.sh
+build-deb-no-control-flow-protection-on-arm64	scripts/build/build-deb.sh	arm64) flow_protection="-mbranch-protection=standard" ;;	arm64) flow_protection="" ;;	tests/build/build-deb.test.sh
+build-deb-an-architecture-with-no-flag-gets-the-x86-one	scripts/build/build-deb.sh	*) flow_protection="" ;;	*) flow_protection="-fcf-protection=full" ;;	tests/build/build-deb.test.sh
+build-deb-passt-is-not-hardened	scripts/build/build-deb.sh	DEB_BUILD_MAINT_OPTIONS=hardening=+all dpkg-buildflags	dpkg-buildflags	tests/build/build-deb.test.sh
+build-deb-binaries-keep-their-symbols	scripts/build/build-deb.sh	strip --strip-unneeded <	strip --strip-debug <	tests/build/build-deb.test.sh
+build-deb-the-package-is-not-owned-by-root	scripts/build/build-deb.sh	dpkg-deb --root-owner-group -Zxz	dpkg-deb -Zxz	tests/build/build-deb.test.sh
 install-common-config-modules-unreadable	scripts/build/install-common-config.sh	[[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "cannot read the containers modules from $src/go.mod" >&2; exit 1; }	[[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || true	tests/build/install-common-config.test.sh
 install-common-config-no-short-names	scripts/build/install-common-config.sh	[ -s "$shortnames" ] || { echo "no short-name list at $shortnames" >&2; exit 1; }	[ -s "$shortnames" ] || true	tests/build/install-common-config.test.sh
 install-common-config-module-lacks-a-file	scripts/build/install-common-config.sh	[ -s "$1" ] || { echo "the module has no $1" >&2; exit 1; }	[ -s "$1" ] || true	tests/build/install-common-config.test.sh
@@ -84,6 +94,8 @@ read-released-components-without-podman	scripts/upstream/read-released.sh	|| { e
 verify-tag-not-annotated	scripts/upstream/verify-tag.sh	|| { echo "$tag is not an annotated tag" >&2; exit 1; }	|| true	tests/upstream/verify-tag.test.sh
 verify-tag-object-names-another-tag	scripts/upstream/verify-tag.sh	|| { echo "ref $tag points at a signed tag object named '$named'" >&2; exit 1; }	|| true	tests/upstream/verify-tag.test.sh
 verify-tag-no-keys	scripts/upstream/verify-tag.sh	[ ${#files[@]} -gt 0 ] || { echo "no keys under $keys" >&2; exit 1; }	[ ${#files[@]} -gt 0 ] || true	tests/upstream/verify-tag.test.sh
+# The mutation keeps the caller's GNUPGHOME, which the script then deletes on exit: the suite points it at a throwaway of its own.
+verify-tag-the-keyring-is-the-callers	scripts/upstream/verify-tag.sh	GNUPGHOME="$(mktemp -d)"	GNUPGHOME="${GNUPGHOME:-$(mktemp -d)}"	tests/upstream/verify-tag.test.sh
 verify-tag-bad-signature-status	scripts/upstream/verify-tag.sh	if grep -q "\[GNUPG:\] $bad" <<<"$status"; then	if false; then	tests/upstream/verify-tag.test.sh
 verify-tag-no-good-signature	scripts/upstream/verify-tag.sh	if ! { grep -q '\[GNUPG:\] GOODSIG' <<<"$status" && grep -q '\[GNUPG:\] VALIDSIG' <<<"$status"; }; then	if false; then	tests/upstream/verify-tag.test.sh
 package-state-ships-usage	scripts/verify/package-state.sh	[ "$#" -eq 0 ] || { echo "ships takes no argument" >&2; exit 2; }	[ "$#" -eq 0 ] || true	tests/verify/package-state-contents.test.sh

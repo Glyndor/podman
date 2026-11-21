@@ -53,6 +53,16 @@ refused() { # <desc> <tag> <keys-dir> <reason the script must give>
 	check "$1 fails for the reason: $4" 1 "$(printf '%s\n' "$err" | grep -c -F -- "$4")"
 }
 refused "signed by an unknown key" v1.0.1 "$WORK/keys" "rejected: ERRSIG"
+# The keyring that decides is the one built here from the allowed keys, never the caller's:
+# a developer's machine or a runner of their own has keys of its own. Here the caller's
+# GNUPGHOME holds the key that signed v1.0.1, which is not in the allowed set, and the
+# answer has to stay the refusal of the case above. Paired with the same variable set to a
+# keyring that holds the allowed key, which passes either way.
+err="$(GNUPGHOME="$gh_other" "$SCRIPT" "$repo" v1.0.1 "$WORK/keys" 2>&1 >/dev/null)"; rc=$?
+check "a tag signed by a key in the caller's own keyring, and not in the allowed set, fails" 1 "$rc"
+check "and for the reason that the key is not one of the allowed" 1 "$(printf '%s\n' "$err" | grep -c -F -- "rejected: ERRSIG")"
+GNUPGHOME="$gh_good" "$SCRIPT" "$repo" v1.0.0 "$WORK/keys" >/dev/null 2>&1; check "with the caller's GNUPGHOME set to another keyring, a tag of an allowed key passes" 0 "$?"
+check "and the caller's keyring is left as it was" 1 "$([ -d "$gh_good" ] && [ -d "$gh_other" ] && echo 1 || echo 0)"
 refused "annotated but unsigned" v1.0.2 "$WORK/keys" "has no good signature"
 refused "lightweight tag" v1.0.3 "$WORK/keys" "is not an annotated tag"
 # A lightweight tag on a commit whose message has a "tag v1.0.4" line would get past
