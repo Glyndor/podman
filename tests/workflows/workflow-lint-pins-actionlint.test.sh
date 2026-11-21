@@ -3,7 +3,9 @@
 # The workflow linter is installed from its release, and only after the tarball
 # matches the sha256 written beside the version. The step is read from
 # reusable-workflow-lint.yml and run here with a curl that serves a tarball from
-# disk, so what is tested is the block the runner executes.
+# disk, so what is tested is the block the runner executes. The rule that keeps a
+# job holding a secret from installing third-party tooling is run the same way, over
+# a workspace of fixture workflows and over this repository's own.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -80,6 +82,30 @@ install "0000000000000000000000000000000000000000000000000000000000000000"
 check "a tarball that does not match is refused" "1 0" "$rc $(grep -c 'actionlint-bin' "$WORK/path")"
 check "and nothing is extracted from it" 0 "$([ -e "$WORK/rt/actionlint-bin/actionlint" ] && echo 1 || echo 0)"
 check "and the failure is the hash check" 1 "$(printf '%s\n' "$out" | grep -c 'FAILED')"
+
+# --- tooling isolation -------------------------------------------------------------
+# shellcheck source=tests/lib/workflow-step.sh
+. "$HERE/tests/lib/workflow-step.sh"
+I="$WORK/isolation"
+if step reusable-workflow-lint.yml workflow-lint "name=A job holding a secret must not install third-party tooling" "$I"; then
+	isolate() { # <workflow body>: a workspace with that one workflow; sets $rc and $out
+		rm -rf "$I/ws"; mkdir -p "$I/ws/.github/workflows"
+		printf '%s\n' "$1" > "$I/ws/.github/workflows/w.yml"
+		run_step "$I" "$I/ws"
+	}
+	secret='jobs:\n  j:\n    env:\n      T: ${{ secrets.TOKEN }}\n    steps:\n      - run: |\n'
+	isolate "$(printf "$secret"'          cargo install something\n')"
+	check "a job holding a secret that runs cargo install is refused, and named" "1 1" \
+		"$rc $(says 'job `j` installs third-party tooling while holding a secret: `cargo install something`')"
+	isolate "$(printf "$secret"'          pip install --require-hashes -r requirements.txt\n')"
+	check "one whose install is pinned by hash passes" "0 1" "$rc $(says 'tooling-isolation: no job holding a secret installs third-party tooling.')"
+	isolate "$(printf 'jobs:\n  j:\n    steps:\n      - run: cargo install something\n')"
+	check "an install in a job that holds no secret passes" 0 "$rc"
+	run_step "$I" "$HERE"
+	check "and this repository's workflows pass it" "0 1" "$rc $(says 'tooling-isolation: no job holding a secret installs')"
+else
+	fail=$((fail + 1)); echo "FAIL  reusable-workflow-lint.yml: cannot find the tooling-isolation step"
+fi
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

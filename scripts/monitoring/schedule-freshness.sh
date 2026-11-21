@@ -12,15 +12,25 @@
 # that `gh run list --workflow <file> --event schedule --json createdAt,conclusion`
 # prints.
 #
-# Exit 0: the newest finished scheduled run is within <max-hours>. Exit 1: it is
-# older, or there is none. Exit 2: it could not decide (unreadable input, a date
-# it cannot parse), which the caller must treat as a failure, never as fresh.
+# A cron that was added a moment ago has not fired yet, and that is not a miss.
+# With <scheduled-since-epoch>, the time its schedule began (the commit that added
+# the workflow), no finished run is fine until <max-hours> after it, and a miss
+# after that, as without it.
 #
-# Usage: schedule-freshness.sh <runs.json> <now-epoch> <max-hours>
+# Exit 0: the newest finished scheduled run is within <max-hours>, or there is none
+# yet inside the grace. Exit 1: it is older, or there is none. Exit 2: it could not
+# decide (unreadable input, a date it cannot parse, a start that is not a number or
+# lies in the future), which the caller must treat as a failure, never as fresh.
+#
+# Usage: schedule-freshness.sh <runs.json> <now-epoch> <max-hours> [<scheduled-since-epoch>]
 
 set -euo pipefail
 
-runs="${1:?runs.json}"; now="${2:?now}"; max_hours="${3:?max-hours}"
+runs="${1:?runs.json}"; now="${2:?now}"; max_hours="${3:?max-hours}"; since="${4:-}"
+if [ -n "$since" ]; then
+	[[ "$since" =~ ^[0-9]+$ ]] && [ "$since" -le "$now" ] \
+		|| { echo "the schedule's start '$since' is not a time before now" >&2; exit 2; }
+fi
 
 newest="$(jq -r '
 	if type != "array" then error("not a list of runs") else . end
@@ -29,7 +39,14 @@ newest="$(jq -r '
 	| max // "none"
 ' "$runs" 2> /dev/null)" || { echo "cannot read the list of runs in $runs" >&2; exit 2; }
 
-[ "$newest" != none ] || { echo "no scheduled run has finished" >&2; exit 1; }
+if [ "$newest" = none ]; then
+	if [ -n "$since" ] && [ $(( (now - since) / 3600 )) -le "$max_hours" ]; then
+		echo "no scheduled run has finished yet; the schedule began $(( (now - since) / 3600 )) hours ago, inside the $max_hours-hour limit"
+		exit 0
+	fi
+	echo "no scheduled run has finished" >&2
+	exit 1
+fi
 
 hours=$(( (now - newest) / 3600 ))
 if [ "$hours" -gt "$max_hours" ]; then

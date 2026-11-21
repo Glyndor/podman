@@ -1,0 +1,346 @@
+#!/usr/bin/env bash
+# The catalogue of mutations: every entry breaks one guard of the scripts of this
+# repository on purpose and names the tests that must notice. A guard that no test
+# notices is decoration, and reading the suite cannot tell which ones are
+# decoration: the only way to know is to break them and watch it go red.
+#
+#   run-mutations.sh            every entry of the catalogue
+#   run-mutations.sh --list     the ids, one per line
+#   run-mutations.sh <id>       one entry
+#
+# Options:
+#   --repo <path>      the repository to copy and mutate (default: this repository)
+#   --catalog <path>   the catalogue to read (default: <repo>/tests/mutation/catalog.txt)
+#
+# THE COPY CARRIES NO GIT METADATA
+#
+# The copy is made with `git archive HEAD`, so it holds no .git directory and
+# judges the repository as it is committed, not as it is in the working directory
+# of whoever ran it. A suite that fails in a pristine copy cannot tell a mutant
+# from an unmutated tree, so it is excluded, measured once per suite against a
+# copy of its own: one that needs the history of the repository, or a library the
+# machine does not have. Which suites that was on the machine the catalogue was
+# measured on, and why, is written in the catalogue. An entry whose every suite is
+# excluded could not be run, and is an error.
+#
+# A MUTANT THAT DOES NOT PARSE IS NOT A KILL
+#
+# A mutation that leaves its file with a syntax error makes a suite red for a
+# reason that is not the guard, so the entry is an error and counts as not run.
+# A shell script is read with `bash -n`, and the Python it hands to python3 in a
+# heredoc is compiled too; a Python file is compiled; a workflow is parsed as YAML
+# and the shell of every `run:` step is read with `bash -n`.
+#
+# A KILL THAT SHOWS NO REASON
+#
+# A suite that goes red prints the FAIL lines it was written to print, and the
+# runner shows up to five of them. A suite that goes red without any died
+# instead of failing an assertion, and a crash is a kill the guard may not have
+# earned: the mutation may have removed something the script needed. The runner
+# says so for each such kill and counts them at the end of the sweep. It does
+# not refuse them, because a suite may report a failure another way (a Python
+# assertion leaves a traceback), so the count is the thing to read: an entry
+# that appears in it should show a reason by hand.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# syntax_ok, which says whether a mutant still parses.
+# shellcheck source=tests/lib/mutation-syntax.sh
+. "$HERE/../lib/mutation-syntax.sh"
+REPO="$(cd "$HERE/../.." && pwd)"
+CATALOG=""
+LIST=0
+ONLY=()
+
+usage() {
+	cat <<'EOF'
+usage: run-mutations.sh [--repo <path>] [--catalog <path>] [--list] [<id>...]
+EOF
+}
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--repo)
+		REPO="${2:?--repo needs a path}"
+		shift 2
+		;;
+	--catalog)
+		CATALOG="${2:?--catalog needs a path}"
+		shift 2
+		;;
+	--list)
+		LIST=1
+		shift
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	-*)
+		echo "run-mutations.sh: unknown option $1" >&2
+		usage >&2
+		exit 2
+		;;
+	*)
+		ONLY+=("$1")
+		shift
+		;;
+	esac
+done
+
+REPO="$(cd "$REPO" 2>/dev/null && pwd)" || {
+	echo "run-mutations.sh: no repository at $REPO" >&2
+	exit 2
+}
+[ -n "$CATALOG" ] || CATALOG="$REPO/tests/mutation/catalog.txt"
+[ -f "$CATALOG" ] || {
+	echo "run-mutations.sh: no catalogue at $CATALOG" >&2
+	exit 2
+}
+
+# --- the catalogue ---------------------------------------------------------------
+# One entry per line, five fields separated by tabs: the id, the file to mutate,
+# the exact text to replace, the text that replaces it and the tests of tests/
+# that must fail. The text to replace has to appear exactly once in the file: a
+# text that appears nowhere changes nothing and proves nothing, and one that
+# appears twice is ambiguous.
+IDS=()
+FILES=()
+OLDS=()
+NEWS=()
+TESTS=()
+
+while IFS= read -r line || [ -n "$line" ]; do
+	trimmed="${line#"${line%%[![:space:]]*}"}"
+	[ -n "$trimmed" ] || continue
+	case "$trimmed" in '#'*) continue ;; esac
+	tabs="${line//[^$'\t']/}"
+	if [ "${#tabs}" -ne 4 ]; then
+		echo "run-mutations.sh: the catalogue line must hold exactly four tabs: $line" >&2
+		exit 2
+	fi
+	f1="${line%%$'\t'*}"
+	r="${line#*$'\t'}"
+	f2="${r%%$'\t'*}"
+	r="${r#*$'\t'}"
+	f3="${r%%$'\t'*}"
+	r="${r#*$'\t'}"
+	f4="${r%%$'\t'*}"
+	f5="${r#*$'\t'}"
+	if [ -z "$f1" ] || [ -z "$f2" ] || [ -z "$f3" ] || [ -z "$f4" ] || [ -z "$f5" ]; then
+		echo "run-mutations.sh: the catalogue line has an empty field: $line" >&2
+		exit 2
+	fi
+	IDS+=("$f1")
+	FILES+=("$f2")
+	OLDS+=("$f3")
+	NEWS+=("$f4")
+	TESTS+=("$f5")
+done < "$CATALOG"
+
+# The catalogue has to hold something, and every id has to be its own: an empty one reads
+# as a green run of nothing, and a repeated id lets a selection skip the second entry.
+if [ "${#IDS[@]}" -eq 0 ]; then
+	echo "run-mutations.sh: the catalogue has no entries" >&2
+	exit 2
+fi
+dups="$(printf '%s\n' "${IDS[@]}" | sort | uniq -d)"
+if [ -n "$dups" ]; then
+	echo "run-mutations.sh: the catalogue holds an id more than once: $dups" >&2
+	exit 2
+fi
+
+if [ "$LIST" -eq 1 ]; then
+	for id in "${IDS[@]}"; do printf '%s\n' "$id"; done
+	exit 0
+fi
+
+SELECTED=()
+if [ "${#ONLY[@]}" -eq 0 ]; then
+	SELECTED=("${!IDS[@]}")
+else
+	for want in "${ONLY[@]}"; do
+		found=0
+		for i in "${!IDS[@]}"; do
+			if [ "${IDS[$i]}" = "$want" ]; then
+				SELECTED+=("$i")
+				found=1
+				break
+			fi
+		done
+		if [ "$found" -eq 0 ]; then
+			echo "run-mutations.sh: no mutation with the id $want" >&2
+			exit 2
+		fi
+	done
+fi
+
+# --- the copies ------------------------------------------------------------------
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+copy_repo() { # <destination>
+	local dest="$1"
+	mkdir -p "$dest" || return 1
+	git -C "$REPO" archive HEAD | tar -x -C "$dest"
+}
+
+mutate() { # <file> <old> <new>
+	python3 -I - "$1" "$2" "$3" <<-'PY'
+		import pathlib
+		import sys
+
+		path, old, new = sys.argv[1:4]
+		target = pathlib.Path(path)
+		text = target.read_text(encoding="utf-8")
+		count = text.count(old)
+		if count != 1:
+		    print(f"{path}: the text to replace appears {count} times", file=sys.stderr)
+		    raise SystemExit(1)
+		if old == new:
+		    print(f"{path}: the mutation replaces the text with itself", file=sys.stderr)
+		    raise SystemExit(1)
+		mutated = text.replace(old, new)
+		if mutated == text:
+		    print(f"{path}: the mutation left the file unchanged", file=sys.stderr)
+		    raise SystemExit(1)
+		target.write_text(mutated, encoding="utf-8")
+	PY
+}
+
+# A suite that fails in a pristine copy cannot tell a mutant from an unmutated
+# tree, so it is excluded. Each suite is measured once, against a copy of its
+# own that carries no mutation.
+declare -A BASE
+baseline_of() { # <test path> -> pass | fail | missing
+	local test="$1" dest="$WORK/baseline"
+	rm -rf "$dest"
+	if ! copy_repo "$dest"; then
+		echo "error"
+		return
+	fi
+	if [ ! -f "$dest/$test" ]; then
+		echo "missing"
+		return
+	fi
+	if (cd "$dest" && bash "$test" >"$WORK/baseline.log" 2>&1); then
+		echo "pass"
+	else
+		echo "fail"
+	fi
+}
+
+for i in "${SELECTED[@]}"; do
+	IFS=',' read -r -a wanted <<<"${TESTS[$i]}"
+	for t in "${wanted[@]}"; do
+		[ -n "$t" ] || continue
+		[ -n "${BASE[$t]:-}" ] && continue
+		BASE[$t]="$(baseline_of "$t")"
+		case "${BASE[$t]}" in
+		pass) ;;
+		fail)
+			echo "run-mutations.sh: $t fails without any mutation, it is excluded"
+			;;
+		missing)
+			echo "run-mutations.sh: $t is not in the copy of the repository" >&2
+			exit 2
+			;;
+		*)
+			echo "run-mutations.sh: the copy of the repository failed" >&2
+			exit 2
+			;;
+		esac
+	done
+done
+
+# --- the sweep -------------------------------------------------------------------
+survivors=0
+errors=0
+entries=0
+quiet=0
+
+run_entry() { # <index> -> 0 when a test killed it, 1 when it survived, 2 when it could not be run
+	local idx="$1"
+	local id="${IDS[$idx]}" file="${FILES[$idx]}" old="${OLDS[$idx]}" new="${NEWS[$idx]}"
+	local dest="$WORK/mutant"
+	local -a wanted
+	local t killed=0 ran=0 rc=0
+	IFS=',' read -r -a wanted <<<"${TESTS[$idx]}"
+
+	rm -rf "$dest"
+	if ! copy_repo "$dest"; then
+		echo "mutation $id: the copy of the repository failed" >&2
+		return 2
+	fi
+	if [ ! -f "$dest/$file" ]; then
+		echo "mutation $id: $file is not in the copy of the repository" >&2
+		return 2
+	fi
+	if ! mutate "$dest/$file" "$old" "$new"; then
+		echo "mutation $id: the text to replace is not in $file exactly once, or the mutation left it unchanged" >&2
+		return 2
+	fi
+	rc=0
+	syntax_ok "$dest/$file" || rc=$?
+	if [ "$rc" -ne 0 ]; then
+		case "$rc" in
+		2)
+			echo "mutation $id: there is no syntax check for $file" >&2
+			;;
+		*)
+			echo "mutation $id: the mutation leaves $file with a syntax error" >&2
+			;;
+		esac
+		return 2
+	fi
+	for t in "${wanted[@]}"; do
+		[ -n "$t" ] || continue
+		if [ "${BASE[$t]:-fail}" != "pass" ]; then
+			echo "mutation $id: $t is excluded, it fails without any mutation"
+			continue
+		fi
+		ran=$((ran + 1))
+		if (cd "$dest" && bash "$t" >"$WORK/test.log" 2>&1); then
+			echo "mutation $id: $t still passes"
+		else
+			echo "mutation $id: killed by $t"
+			# The reason the suite went red, not only the colour: a suite that
+			# fails for another reason is a kill that never happened.
+			grep -m 5 -E '^[[:space:]]*FAIL' "$WORK/test.log" | sed 's/^/    /' || true
+			# A suite that goes red without printing one FAIL line did not fail an
+			# assertion: it died, and a crash is a kill that may not be the guard's.
+			# Some suites report failures another way, so this is counted and said
+			# at the end of the sweep, not refused.
+			if ! grep -qE '^[[:space:]]*FAIL' "$WORK/test.log"; then
+				echo "mutation $id: warning: $t went red without a FAIL line, so no reason is shown for it"
+				quiet=$((quiet + 1))
+			fi
+			killed=$((killed + 1))
+		fi
+	done
+	if [ "$ran" -eq 0 ]; then
+		echo "mutation $id: every test it names fails without any mutation, none of them can tell" >&2
+		return 2
+	fi
+	if [ "$killed" -eq 0 ]; then
+		echo "mutation $id: SURVIVED, none of the tests it names failed" >&2
+		return 1
+	fi
+	return 0
+}
+
+for i in "${SELECTED[@]}"; do
+	entries=$((entries + 1))
+	rc=0
+	run_entry "$i" || rc=$?
+	case "$rc" in
+	0) ;;
+	1) survivors=$((survivors + 1)) ;;
+	*) errors=$((errors + 1)) ;;
+	esac
+done
+
+[ "$quiet" -eq 0 ] \
+	|| echo "$quiet kill(s) with no FAIL line in the suite output: the suite died, or it reports failures another way"
+echo "$entries entries, $survivors survived, $errors could not be run"
+[ "$survivors" -eq 0 ] && [ "$errors" -eq 0 ]

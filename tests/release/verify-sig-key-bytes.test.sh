@@ -61,6 +61,11 @@ expect 0 "verified $f" "and the key with no line feed after it" \
 expect 1 "no release key verifies $f" "the Ed25519 anchor this repository commits is read, and its key is not the test's" \
 	-- python3 "$VERIFY" "$f" "$f.sig" "$HERE/keyring/glyndor-release-ed25519.b64"
 
+# A key file that exists and cannot be read is the anchor broken, not a missing one.
+mkdir "$WORK/a-directory.b64"
+expect 2 "cannot read the Ed25519 key file $WORK/a-directory.b64" "a key file that cannot be read is a broken anchor, and says so" \
+	-- python3 "$VERIFY" "$f" "$f.sig" "$WORK/a-directory.b64"
+
 # --- the shapes where the readers disagree --------------------------------------
 # <name>:<contents for printf %b>. Each holds the key that verifies the package.
 cases=(

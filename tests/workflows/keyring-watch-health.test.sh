@@ -91,6 +91,7 @@ GH
 	}
 	alarm 1
 	check "too few keys: an issue is opened, and the run still fails" "1 1" "$rc $(grep -c '^title: Fewer than two Podman signing keys will be valid$' "$I/log")"
+	check "and the run says why in its own log" 1 "$(says '::error::Fewer than two Podman signing keys will be valid')"
 	check "and it is a security issue of the highest priority" "type:security prio:P1" "$(sed -n 's/^label: \(type\|prio\):/\1:/p' "$I/log" | grep -E 'type:security|prio:P1' | paste -sd' ')"
 	alarm 2
 	check "a keyring that cannot be read: an issue that says so, not the one about too few keys" "1 1 0" \

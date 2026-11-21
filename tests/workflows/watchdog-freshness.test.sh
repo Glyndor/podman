@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Tests for the keyring-watch freshness job of .github/workflows/watchdog.yml: the
-# daily cron that tells the repository upstream changed a signing key is the one
-# workflow nothing else watches. Its two steps are read from the workflow and run
-# here with a gh that answers from a fixture and records what it is asked.
+# Tests for the freshness jobs of .github/workflows/watchdog.yml: the daily cron that
+# tells the repository upstream changed a signing key, and the weekly mutation sweep,
+# are the workflows nothing else watches. Their steps are read from the workflow and
+# run here with a gh that answers from a fixture and records what it is asked.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -17,11 +17,11 @@ check() { # <desc> <want> <got>
 	else fail=$((fail + 1)); echo "FAIL  $1 (want '$2', got '$3')"; fi
 }
 
-# step <name> <out-dir>: the run block, the literal env values and the if: of the
-# step of the job, which must be exactly one.
+# step <name> <out-dir> [job]: the run block, the literal env values and the if: of
+# the step of the job (keyring-watch-freshness by default), which must be exactly one.
 step() {
 	mkdir -p "$2"
-	python3 - "$WF" keyring-watch-freshness "$1" "$2" <<'PY'
+	python3 - "$WF" "${3:-keyring-watch-freshness}" "$1" "$2" <<'PY'
 import shlex, sys, yaml
 path, job, name, out = sys.argv[1:5]
 with open(path) as fh:
@@ -118,6 +118,46 @@ check "a second miss comments on the open issue instead" "0 1 0" \
 run_step "$ALARM" CODE=2 RUN_URL=https://example.test/run/3
 check "a check that could not decide opens its own issue" "0 1" \
 	"$rc $(grep -c "create issue create --title The keyring watch's freshness check could not decide" "$WORK/gh")"
+
+# --- the mutation sweep --------------------------------------------------------------
+MCHECK="$WORK/mcheck"; MALARM="$WORK/malarm"
+step "Has the mutation sweep run in the last nine days" "$MCHECK" mutation-freshness || { echo "FAIL  cannot read the sweep's check step"; exit 1; }
+step "Open an issue, or add to the one that is open" "$MALARM" mutation-freshness || { echo "FAIL  cannot read the sweep's alarm step"; exit 1; }
+check "the sweep's check and alarm have no expression in their run blocks" "0 0" \
+	"$(grep -c '\${{' "$MCHECK/run.sh") $(grep -c '\${{' "$MALARM/run.sh")"
+check "its alarm opens only on a scheduled run that failed" "failure() && github.event_name == 'schedule'" "$(cat "$MALARM/if.txt")"
+check "the workflow it watches is a scheduled one that exists" 1 "$(grep -c '^    - cron: ' "$HERE/.github/workflows/mutation.yml")"
+# The start of the schedule is read from git: a git that answers $ADDED for the commit
+# that added mutation.yml, or nothing.
+cat > "$WORK/bin/git" <<'GIT'
+#!/usr/bin/env bash
+[ "$1 $2" = "log -1" ] || exit 1
+printf '%s\n' "${ADDED:-}"
+GIT
+chmod +x "$WORK/bin/git"
+runs_at 30 success
+run_step "$MCHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '30 days ago' +%s)"
+check "a sweep that ran thirty hours ago passes" "0 code=0" "$rc $(cat "$WORK/output")"
+check "and it asks for the scheduled runs of mutation.yml" 1 \
+	"$(grep -c -- 'run-list run list --workflow mutation.yml --event schedule' "$WORK/gh")"
+runs_at 230 success
+run_step "$MCHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '30 days ago' +%s)"
+check "one that last ran 230 hours ago fails" "1 code=1 1" "$rc $(cat "$WORK/output") $(says '230 hours old')"
+printf '[]' > "$WORK/runs.json"
+run_step "$MCHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '2 days ago' +%s)"
+check "no run yet, two days after the workflow was added: inside the grace" "0 code=0 1" \
+	"$rc $(cat "$WORK/output") $(says 'no scheduled run has finished yet')"
+run_step "$MCHECK" RUNS="$WORK/runs.json" ADDED="$(date -d '10 days ago' +%s)"
+check "no run yet, ten days after: a miss" "1 code=1" "$rc $(cat "$WORK/output")"
+run_step "$MCHECK" RUNS="$WORK/runs.json" ADDED=""
+check "no commit that added the workflow: it cannot decide" "2 code=2" "$rc $(cat "$WORK/output")"
+run_step "$MCHECK" RUNS="$WORK/runs.json" RUNS_FAIL=1 ADDED="$(date -d '2 days ago' +%s)"
+check "a gh call that fails is a failure with its own code" "2 code=2 1" "$rc $(cat "$WORK/output") $(says 'could not list the runs of mutation.yml')"
+run_step "$MALARM" CODE=1 RUN_URL=https://example.test/run/4
+check "a miss opens an issue named for it, linking the run" "0 1 1" \
+	"$rc $(grep -c 'create issue create --title The mutation sweep has stopped running' "$WORK/gh") $(grep -c 'https://example.test/run/4' "$WORK/gh")"
+run_step "$MALARM" CODE=2 RUN_URL=https://example.test/run/5 OPEN_ISSUE=21
+check "and a second one comments on the open issue" "0 1" "$rc $(grep -c 'comment issue comment 21' "$WORK/gh")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

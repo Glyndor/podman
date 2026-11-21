@@ -1,0 +1,451 @@
+#!/usr/bin/env bash
+# Fail when a refusal in a script or a workflow of this repository has neither an
+# entry in the mutation catalogue nor a written exemption.
+#
+# The catalogue in tests/mutation/catalog.txt is what the mutation sweep runs, and
+# the sweep only ever measures the guards it was told about. A guard nobody
+# catalogued is invisible to the one instrument that would say whether a suite
+# notices it gone, and before the catalogue existed, measuring by hand found about
+# a dozen at a time that could be deleted with every suite green. This check closes the set
+# from the other side: it reads the scripts, finds every refusal in them, and
+# requires each one to be either mutated by an entry or exempted with a reason.
+#
+# WHAT IS A REFUSAL
+#
+# A line of code, comments and quoted text aside, that exits with a non-zero
+# status: `exit N`, a call of `fail` where the file defines that helper,
+# `return N` in the shell of a function (`return 1` is one; `return 0`, a bare
+# `return` and `return "$rc"` are not), or, in
+# the Python a script carries, `sys.exit(...)` or `raise SystemExit(...)` whose
+# argument is a non-zero integer or starts with a string: `sys.exit(3)`,
+# `sys.exit("no index")`, `sys.exit(f"cannot read {path}")`,
+# `raise SystemExit("no index")`. Python prints a string argument and exits
+# with status 1, which is how most of the Python in a script here refuses.
+# `sys.exit(0)`, `sys.exit()`, `sys.exit(None)` and a bare `raise SystemExit`
+# end the program well and are not refusals. The refusal is the statement that
+# leads to it: the condition on the same line
+# (`[ ... ] || exit 1`) and the lines it continues, or else the block that
+# holds it, from its header (`if`, `elif`, a `case` arm, `|| {`, a Python
+# `if`/`except`) down to the refusal. A refusal with no enclosing block reaches
+# back to the start of the statement before it.
+#
+# An entry covers a refusal when the text it replaces lies on one of those
+# lines. So does an exemption, which names a file, a text in it, and the reason
+# the refusals that text reaches have no entry, separated by TAB in
+# tests/mutation/exemptions.txt; a text of `*` exempts the whole file. An entry's
+# text occurs once, because the runner refuses anything else; an exemption's
+# text may occur more than once, for two refusals written alike, and every
+# occurrence has to reach a refusal.
+#
+# An entry whose text is not in its file exactly once, or whose replacement is
+# the text itself, is a failure whatever file it names: the sweep cannot apply
+# it, and it would say so only after running every entry before it, which is
+# minutes on a pull request and a week on the schedule.
+#
+# An exemption whose text is not in its file, one occurrence of which reaches no
+# refusal, that has no reason, or that names a refusal an entry already covers
+# is a failure: an exemption that outlived its premise keeps a hole open after
+# the reason for it is gone.
+#
+# A function that returns 1 hands the refusal to its caller, which decides what
+# it means: `installed` in package-state.sh returns 1 for a package dpkg does
+# not list, and the caller refuses on it. The `return 1` is the place a mutation
+# removes that refusal, so it is read as one. A function that returns 1 to say
+# "no" to a question, and not to refuse, is read the same way, and is exempted
+# with that reason. A `return` inside Python is Python returning a value, and is
+# not read.
+#
+# A refusal directly in the body of a function is not guarded by the function:
+# it reaches back to the statement before it, as one at the top level does, so
+# an entry elsewhere in the same function does not cover it.
+#
+# Only a literal non-zero status or a string counts: `exit "$rc"`,
+# `return "$rc"` and `sys.exit(message)`, whose value is not known without
+# running the code (a status that may be 0 as likely as a message), are not
+# read, so a helper that refuses that way is invisible here.
+#
+# WHAT IS READ
+#
+# Every shell script under scripts/ (by extension, or by shebang for a file with
+# none), every Python file under .github/scripts/, and the `run:` blocks of every
+# workflow under .github/workflows/, .yml and .yaml: release.yml signs and
+# publishes and no pull request runs it, and the others hold the gates of every
+# pull request. Only the shell of a workflow is read; a description or a name that
+# says `exit 1` is YAML, not a refusal. In a Python file, a call of `fail(` counts
+# when the file defines `def fail`, as verify-sig.py and sign.py do. argparse's
+# `parser.error(...)` exits 2 and is not read.
+#
+# Usage: check-mutation-coverage.sh [repo-root]   (default: the current directory)
+set -euo pipefail
+root="${1:-$PWD}"
+python3 -I - "$root" <<'PY'
+import os
+import re
+import sys
+
+root = sys.argv[1]
+CATALOG = "tests/mutation/catalog.txt"
+EXEMPTIONS = "tests/mutation/exemptions.txt"
+WATCHED_DIRS = ("scripts", ".github/scripts")
+# The workflow that has to be there: the one that signs and publishes.
+REQUIRED_FLOW = "release.yml"
+WORKFLOWS = ".github/workflows"
+SHEBANG = re.compile(r"^#!.*(/| )(sh|bash|dash)(\s|$)")
+EXIT = re.compile(r"(?<![\w$.-])exit\s+[1-9][0-9]*\b")
+RETURN = re.compile(r"(?<![\w$.-])return\s+[1-9][0-9]*\b")
+# A heredoc handed to python3, and the word that ends it.
+PY_HEREDOC = re.compile(r"\bpython3\b[^\n]*<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
+# The key of a `run:` step: a block scalar (`run: |`, `run: >-`, `- run: |`, a
+# comment after it) or a command on the same line.
+RUN_BLOCK = re.compile(r"^(\s*(?:-\s+)?)run:\s*[|>][-+]?[0-9]*\s*(?:#.*)?$")
+RUN_LINE = re.compile(r"^(\s*(?:-\s+)?run:\s*)\S")
+# A quote is read as STRING (see code_of) so a string argument can be told from
+# `sys.exit()`, whose parentheses hold nothing.
+STRING = "\x01"
+PY_EXIT = re.compile(r"\b(?:sys\.exit|raise\s+SystemExit)\(\s*(?:[1-9][0-9]*\s*\)|[rRbBfFuU]{0,2}" + STRING + ")")
+FAIL_CALL = re.compile(r"(?:^|[\s;&|{(])fail(?=\s|$)")
+FAIL_DEF = re.compile(r"^\s*fail\s*\(\)\s*\{?")
+PY_FAIL_CALL = re.compile(r"(?<![\w.])fail\(")
+# The first line of a function, shell or Python.
+FUNC_DEF = re.compile(r"^\s*(?:def\s+\w+\s*\(|function\s+[\w-]+|[\w-]+\s*\(\)\s*\{?\s*$)")
+PY_FAIL_DEF = re.compile(r"^\s*def\s+fail\s*\(")
+# The first line of a block: a shell `if`, `elif`, `else`, loop, `case` arm or
+# `{`, or a Python statement that ends with a colon. A line with less
+# indentation that is none of these (a YAML key, a heredoc that starts the
+# Python of a script) is not a block of this code, and a refusal under it is at
+# the top level.
+HEADER = re.compile(r"^(?:if|elif|else|while|until|for|case|except|try|with|def)\b"
+                    r"|(?:\bthen|\bdo|\{|\)|:|\bin)$")
+errors = []
+
+
+def read(rel):
+    with open(os.path.join(root, rel), encoding="utf-8") as fh:
+        return fh.read()
+
+
+def is_python(rel):
+    return rel.endswith(".py")
+
+
+def is_script(rel):
+    name = os.path.basename(rel)
+    if name.endswith((".sh", ".bash", ".py")):
+        return True
+    if "." in name:
+        return False
+    try:
+        first = read(rel).split("\n", 1)[0]
+    except (OSError, UnicodeDecodeError):
+        return False
+    return bool(SHEBANG.match(first))
+
+
+def watched():
+    found = []
+    for top in WATCHED_DIRS:
+        for dirpath, dirnames, names in os.walk(os.path.join(root, top)):
+            dirnames.sort()
+            for name in sorted(names):
+                rel = os.path.relpath(os.path.join(dirpath, name), root).replace(os.sep, "/")
+                if is_script(rel):
+                    found.append(rel)
+    try:
+        names = sorted(os.listdir(os.path.join(root, WORKFLOWS)))
+    except OSError:
+        names = []
+    flows = [f"{WORKFLOWS}/{n}" for n in names if n.endswith((".yml", ".yaml"))]
+    if not flows:
+        errors.append(f"{WORKFLOWS} holds no workflow, so its refusals cannot be read")
+    if f"{WORKFLOWS}/{REQUIRED_FLOW}" not in flows:
+        errors.append(f"{WORKFLOWS}/{REQUIRED_FLOW} is watched and does not exist")
+    return found + flows
+
+
+def is_workflow(rel):
+    return rel.startswith(WORKFLOWS + "/")
+
+
+def shell_of(lines):
+    """The lines of a workflow with everything but the shell of its `run:` steps blanked."""
+    out = [""] * len(lines)
+    n = 0
+    while n < len(lines):
+        block = RUN_BLOCK.match(lines[n])
+        inline = RUN_LINE.match(lines[n])
+        if block:
+            key = len(block.group(1).expandtabs(8))
+            n += 1
+            while n < len(lines) and (not lines[n].strip() or indent(lines[n]) > key):
+                out[n] = lines[n]
+                n += 1
+            continue
+        if inline:
+            out[n] = " " * len(inline.group(1)) + lines[n][len(inline.group(1)):]
+        n += 1
+    return out
+
+
+def python_lines(lines):
+    """0-based numbers of the lines of a heredoc handed to python3."""
+    inside, n = set(), 0
+    while n < len(lines):
+        start = PY_HEREDOC.search(lines[n])
+        if not start or "python3" not in code_of(lines[n]):
+            n += 1
+            continue
+        tag = start.group(1)
+        n += 1
+        while n < len(lines) and lines[n].strip() != tag:
+            inside.add(n)
+            n += 1
+        n += 1
+    return inside
+
+
+def code_of(line, mark=" "):
+    """The line with quoted text and a trailing comment removed; a quote leaves `mark`."""
+    out, quote, i = [], None, 0
+    while i < len(line):
+        c = line[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c in "'\"":
+            quote = c
+            out.append(mark)
+        elif c == "#" and (i == 0 or line[i - 1] in " \t"):
+            break
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def indent(line):
+    expanded = line.expandtabs(8)
+    return len(expanded) - len(expanded.lstrip())
+
+
+def blank(line):
+    stripped = line.strip()
+    return not stripped or stripped.startswith("#")
+
+
+def refusals(rel, lines):
+    """(first line, refusal line) of every refusal, 0-based."""
+    pyfile = is_python(rel)
+    defines_fail = any((PY_FAIL_DEF if pyfile else FAIL_DEF).match(line) for line in lines)
+    python = set(range(len(lines))) if pyfile else python_lines(lines)
+    found = []
+    for n, line in enumerate(lines):
+        if blank(line):
+            continue
+        code = code_of(line)
+        if FAIL_DEF.match(line) or PY_FAIL_DEF.match(line):
+            continue
+        if pyfile:
+            hit = PY_EXIT.search(code_of(line, STRING)) or (defines_fail and PY_FAIL_CALL.search(code))
+        else:
+            hit = EXIT.search(code) or PY_EXIT.search(code_of(line, STRING)) \
+                or (defines_fail and FAIL_CALL.search(code)) \
+                or (n not in python and RETURN.search(code))
+        if not hit:
+            continue
+        start = statement_start(lines, n)
+        before = " ".join(code_of(lines[i]) for i in range(start, n)) + code[:hit.start()]
+        if "||" in before or "&&" in before:
+            span = (start, n)
+        else:
+            header = enclosing(lines, start)
+            if header is not None and (FAIL_DEF.match(lines[header]) or PY_FAIL_DEF.match(lines[header])):
+                continue
+            # A function is not the guard of a refusal in its body: the statement
+            # before the refusal is, as at the top level.
+            if header is not None and FUNC_DEF.match(lines[header]):
+                header = None
+            span = (header if header is not None else sibling(lines, start), n)
+        found.append(span)
+    return found
+
+
+def statement_start(lines, n):
+    i = n
+    while i > 0:
+        stripped = lines[i].strip()
+        if stripped.startswith(("||", "&&", "|")) or lines[i - 1].rstrip().endswith("\\"):
+            i -= 1
+            continue
+        break
+    return i
+
+
+def enclosing(lines, n):
+    """The header of the block that holds line n, or None at the top level."""
+    level = indent(lines[n])
+    for i in range(n - 1, -1, -1):
+        if blank(lines[i]):
+            continue
+        if indent(lines[i]) < level:
+            head = statement_start(lines, i)
+            code = code_of(lines[i]).strip()
+            if not HEADER.search(code) and not HEADER.search(code_of(lines[head]).strip()):
+                return None
+            if code.startswith(("else", "elif")):
+                return opening_if(lines, i) or head
+            return head
+    return None
+
+
+def opening_if(lines, n):
+    level = indent(lines[n])
+    for i in range(n - 1, -1, -1):
+        if blank(lines[i]) or indent(lines[i]) != level:
+            continue
+        if lines[i].strip().startswith("if"):
+            return statement_start(lines, i)
+    return None
+
+
+def sibling(lines, n):
+    level = indent(lines[n])
+    for i in range(n - 1, -1, -1):
+        if blank(lines[i]):
+            continue
+        if indent(lines[i]) <= level:
+            return statement_start(lines, i)
+    return n
+
+
+def spans_of(text, needle):
+    """Lines (first, last) of every occurrence of needle."""
+    found, at = [], text.find(needle) if needle else -1
+    while at >= 0:
+        first = text.count("\n", 0, at)
+        found.append((first, first + needle.count("\n")))
+        at = text.find(needle, at + 1)
+    return found
+
+
+def span_of(text, needle):
+    """Lines of the one occurrence of needle, or None."""
+    found = spans_of(text, needle)
+    return found[0] if len(found) == 1 else None
+
+
+def entries():
+    found = {}
+    try:
+        body = read(CATALOG)
+    except OSError as exc:
+        errors.append(f"cannot read {CATALOG}: {exc}")
+        return found
+    for raw in body.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        fields = raw.split("\t")
+        if len(fields) != 5:
+            errors.append(f"{CATALOG}: a line does not hold five fields: {raw}")
+            continue
+        found.setdefault(fields[1], []).append((fields[0], fields[2]))
+        applies(*fields[:4])
+    return found
+
+
+def applies(ident, rel, old, new):
+    """The runner's own conditions for applying an entry, checked without running it."""
+    try:
+        count = read(rel).count(old)
+    except OSError:
+        errors.append(f"{CATALOG}: {ident}: {rel} cannot be read, so the sweep cannot apply the entry")
+        return
+    if count != 1:
+        errors.append(f"{CATALOG}: {ident}: its text is in {rel} {count} time(s), not once, "
+                      "so the sweep cannot apply the entry")
+    elif old == new:
+        errors.append(f"{CATALOG}: {ident}: it replaces its text with itself, so the sweep cannot apply the entry")
+
+
+def exemptions():
+    found = []
+    if not os.path.isfile(os.path.join(root, EXEMPTIONS)):
+        return found
+    for number, raw in enumerate(read(EXEMPTIONS).splitlines(), 1):
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        fields = raw.split("\t")
+        if len(fields) != 3 or not all(f.strip() for f in fields):
+            errors.append(f"{EXEMPTIONS}:{number}: not `file<TAB>text<TAB>reason`: {raw}")
+            continue
+        found.append((number, fields[0], fields[1], fields[2]))
+    return found
+
+
+def overlaps(a, b):
+    return a[0] <= b[1] and b[0] <= a[1]
+
+
+files = watched()
+catalogued = entries()
+exempt = exemptions()
+total = covered = exempted = 0
+uncovered = []
+used = set()
+for rel in files:
+    text = read(rel)
+    lines = text.split("\n")
+    if is_workflow(rel):
+        lines = shell_of(lines)
+    marks = []
+    for ident, old in catalogued.get(rel, []):
+        where = span_of(text, old)
+        if where is not None:
+            marks.append(where)
+    whole = [e for e in exempt if e[1] == rel and e[2] == "*"]
+    parts = [(e, spans_of(text, e[2])) for e in exempt if e[1] == rel and e[2] != "*"]
+    for number, _, needle, _ in (e for e, where in parts if not where):
+        errors.append(f"{EXEMPTIONS}:{number}: its text is not in {rel}: {needle}")
+    if whole and catalogued.get(rel):
+        errors.append(f"{EXEMPTIONS}:{whole[0][0]}: {rel} is exempt as a whole and has entries; exempt its refusals one by one")
+    spans = refusals(rel, lines)
+    for e, where in parts:
+        for occurrence in where:
+            if not any(overlaps(span, occurrence) for span in spans):
+                errors.append(f"{EXEMPTIONS}:{e[0]}: its text at {rel}:{occurrence[0] + 1} reaches no refusal; delete it or narrow it")
+    for span in spans:
+        total += 1
+        hit_entry = any(overlaps(span, m) for m in marks)
+        hits = [e for e, where in parts if any(overlaps(span, w) for w in where)]
+        for e in hits:
+            used.add(e[0])
+            if hit_entry:
+                errors.append(f"{EXEMPTIONS}:{e[0]}: {rel}:{span[0] + 1} has an entry; delete the exemption")
+        if whole:
+            used.add(whole[0][0])
+        if hit_entry:
+            covered += 1
+        elif hits or whole:
+            exempted += 1
+        else:
+            uncovered.append((rel, span, lines[span[1]].strip()))
+for number, rel, needle, _ in exempt:
+    if rel not in files:
+        errors.append(f"{EXEMPTIONS}:{number}: {rel} is not a script this check reads")
+    elif number not in used and not any(f"{EXEMPTIONS}:{number}:" in e for e in errors):
+        errors.append(f"{EXEMPTIONS}:{number}: it reaches no refusal in {rel}; delete it")
+if not total:
+    errors.append("no refusal found in any script, so this check would pass having looked at nothing")
+for rel, (first, last), line in uncovered:
+    errors.append(f"{rel}:{first + 1}-{last + 1}: a refusal with no entry in {CATALOG} "
+                  f"and no exemption in {EXEMPTIONS}: {line}")
+for message in errors:
+    print(f"::error::{message}")
+if errors:
+    sys.exit(1)
+print(f"{total} refusal(s) in {len(files)} script(s): {covered} catalogued, {exempted} exempt.")
+PY

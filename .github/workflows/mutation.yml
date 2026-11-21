@@ -1,0 +1,158 @@
+name: mutation
+
+# Breaks every catalogued guard on purpose and requires a suite to notice. A guard no
+# suite notices is decoration, and reading the suites cannot tell which ones are: the
+# catalogue in tests/mutation/catalog.txt names, for each refusal of the scripts and
+# workflows, the text that removes it and the suites that must go red, and
+# tests/mutation/run-mutations.sh applies each entry to a copy of the tree made with
+# `git archive HEAD` and runs those suites. That every refusal has an entry or a
+# written exemption is checked on every pull request by
+# scripts/quality/check-mutation-coverage.sh, in tests.yml, where it costs a second.
+#
+# Events. Weekly and on demand, every entry: a change to a file a suite reads without
+# naming it can kill a guard's test, and only the whole sweep sees that. On a pull
+# request into main, only the entries the change can affect, and none when it can
+# affect none: scripts/quality/mutation-scope.sh decides, read from the base commit the
+# event names so a pull request cannot narrow its own sweep, and it fails open to
+# every entry.
+#
+# Cost. The whole sweep is measured beside timeout-minutes below. A pull request that
+# touches no guarded script, no suite an entry names and nothing those suites read
+# pays for the decision only.
+#
+# Concurrency. A newer push to a pull request cancels the run for the commit it
+# replaced; a scheduled or dispatched run has a group of its own and is never
+# cancelled.
+#
+# Check name. "every catalogued guard is noticed", from the gate job. The sweep is
+# skipped when the decision says nothing can be affected, and a skipped job reports
+# success whether it was skipped by the decision or because the decision failed, so
+# the gate reads the results of both and passes only for a skip that was decided or a
+# sweep that succeeded. Require that name, not the sweep, once it has been seen to
+# fail for its reason on a real pull request.
+
+on:
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "41 5 * * 1" # Monday, 05:41 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  decide:
+    name: decide
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    # Ceiling, not measured: a checkout of the full history and one git diff, as the
+    # decide job of build-check.yml, which takes 3 to 9 seconds.
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.d.outputs.run }}
+      ids: ${{ steps.d.outputs.ids }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Which entries this change can affect
+        id: d
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # The decision is the base commit's copy of the script, so a pull request
+          # cannot narrow its own sweep; this workflow file is still the pull
+          # request's own, which no script can close. A base without the script, a
+          # decision that fails, or a word that is not an id runs every entry.
+          decision=all
+          if [ "$EVENT" = pull_request ] \
+            && git show "$BASE:scripts/quality/mutation-scope.sh" > "$RUNNER_TEMP/mutation-scope.sh" 2>/dev/null; then
+            if out="$(bash "$RUNNER_TEMP/mutation-scope.sh")"; then
+              decision="$out"
+            fi
+          fi
+          ids=""
+          while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            if [ "$id" = all ] || ! [[ "$id" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+              ids=all
+              break
+            fi
+            ids="${ids:+$ids }$id"
+          done <<< "$decision"
+          if [ -z "$ids" ]; then
+            run=false
+            echo "No catalogued guard can be affected by this change; the sweep is not needed."
+          else
+            run=true
+            echo "Entries to run: $ids"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+
+  sweep:
+    name: sweep
+    needs: decide
+    if: needs.decide.outputs.run == 'true'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    # Measured on 2026-11-21, on a workstation shared with other jobs: the whole
+    # sweep, 140 entries, in 4 minutes 13 seconds, most of it the 17 entries of
+    # build-deb.test.sh at about 9 seconds each. Not yet seen on a GitHub runner.
+    # Thirty minutes is seven times that and still bounds a hang, which would
+    # otherwise cost the six-hour default; raise it when a whole sweep passes fifteen.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Every mutation is killed by a suite
+        env:
+          IDS: ${{ needs.decide.outputs.ids }}
+        run: |
+          selected=()
+          if [ "$IDS" != all ]; then
+            read -r -a selected <<< "$IDS"
+          fi
+          bash tests/mutation/run-mutations.sh "${selected[@]}"
+
+  gate:
+    name: every catalogued guard is noticed
+    needs: [decide, sweep]
+    if: always()
+    runs-on: ubuntu-26.04
+    permissions: {}
+    # Ceiling, not measured: it reads three strings.
+    timeout-minutes: 5
+    env:
+      DECIDE: ${{ needs.decide.result }}
+      RUN: ${{ needs.decide.outputs.run }}
+      SWEEP: ${{ needs.sweep.result }}
+    steps:
+      - name: Pass only when the sweep was skipped on purpose or succeeded
+        run: |
+          if [ "$DECIDE" != success ]; then
+            echo "::error::decide ended as $DECIDE, so nothing says the sweep was not needed"
+            exit 1
+          fi
+          case "$RUN:$SWEEP" in
+            false:skipped)
+              echo "decide found no catalogued guard this change can affect; the sweep was skipped on purpose"
+              ;;
+            true:success)
+              echo "the sweep ran and every selected mutation was killed"
+              ;;
+            *)
+              echo "::error::decide said run=$RUN and the sweep ended as $SWEEP"
+              exit 1
+              ;;
+          esac

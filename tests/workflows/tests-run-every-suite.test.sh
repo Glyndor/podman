@@ -93,6 +93,12 @@ orphans() { # <root>: one line per file under <root>/tests that nothing runs
 		rel="${f#"$root"/}"
 		case "$rel" in
 			*.test.sh | tests/lib/*.sh) ;;
+			# The mutation sweep is a script and not a suite: mutation.yml runs it, and
+			# without a line there that does, it is as orphaned as any other.
+			tests/mutation/run-mutations.sh)
+				grep -v '^[[:space:]]*#' "$root/.github/workflows/mutation.yml" 2>/dev/null \
+					| grep -q 'bash tests/mutation/run-mutations.sh' \
+					|| echo "$rel is the mutation sweep and no line of mutation.yml runs it" ;;
 			*.sh) echo "$rel is a script under tests/ that is not a suite and not in tests/lib" ;;
 			*.test.* | *_test.* | *-test.*) echo "$rel is named like a suite and no step runs it" ;;
 		esac
@@ -109,6 +115,14 @@ rm "$T/tests/a/helper.sh"; : > "$T/tests/a/b/x.test.bash"
 check "a suite named with another extension is named" "tests/a/b/x.test.bash is named like a suite and no step runs it" "$(orphans "$T")"
 rm "$T/tests/a/b/x.test.bash"; : > "$T/tests/a/x_test.sh"
 check "and one named x_test.sh, which is a script and not a suite" "tests/a/x_test.sh is a script under tests/ that is not a suite and not in tests/lib" "$(orphans "$T")"
+
+rm "$T/tests/a/x_test.sh"
+mkdir -p "$T/tests/mutation" "$T/.github/workflows"; : > "$T/tests/mutation/run-mutations.sh"
+printf '      - run: |\n          # bash tests/mutation/run-mutations.sh\n' > "$T/.github/workflows/mutation.yml"
+check "the mutation sweep that mutation.yml only mentions in a comment is named" \
+	"tests/mutation/run-mutations.sh is the mutation sweep and no line of mutation.yml runs it" "$(orphans "$T")"
+printf '      - run: |\n          bash tests/mutation/run-mutations.sh "${selected[@]}"\n' > "$T/.github/workflows/mutation.yml"
+check "and one it runs is not" "" "$(orphans "$T")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

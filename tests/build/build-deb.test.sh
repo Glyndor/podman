@@ -124,6 +124,20 @@ check "a build info that cannot be read is refused" "1 1" "$rc $(printf '%s' "$e
 FAKE_NO_BIN=1 refused "$WORK/out-nobin"
 check "a make that leaves no bin/podman is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'left no bin/podman')"
 
+# The inputs the build reads before it compiles anything, each refused by name.
+rm "$WORK/nv/Cargo.lock"
+refused "$WORK/out-nolock"
+check "a Rust source with no Cargo.lock to build against is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c "$WORK/nv has no Cargo.lock to build against")"
+touch "$WORK/nv/Cargo.lock"
+GLYNDOR_PASST_SRC="$WORK/no-passt" refused "$WORK/out-nopasst"
+check "a passt source that is not there is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c "no passt source at $WORK/no-passt")"
+cp "$WORK/aa/Cargo.toml" "$WORK/aa/Cargo.toml.real"
+printf '[package]\nname = "aardvark-dns"\nversion = "2.1"\n' > "$WORK/aa/Cargo.toml"
+refused "$WORK/out-noversion"
+check "a crate version that is not X.Y.Z is refused, and no package is written" "1 1 0" \
+	"$rc $(printf '%s' "$err" | grep -c 'cannot read the netavark or aardvark-dns version from Cargo.toml') $(find "$WORK/out-noversion" -name '*.deb' 2>/dev/null | wc -l)"
+mv "$WORK/aa/Cargo.toml.real" "$WORK/aa/Cargo.toml"
+
 # The glibc floor is read from the binaries or the build stops: a fallback would
 # declare libc6 (>= 2.0) and the package would install where it cannot run.
 mkdir "$WORK/objdump-fails" "$WORK/objdump-empty"

@@ -63,11 +63,13 @@ check "and says recipe" 1 "$(printf '%s' "$out" | grep -c 'recipe')"
 
 # Undecidable inputs are an error, never a pass.
 printf 'podman v6.3.0\nnetavark v2.1.0\naardvark-dns v2.1.0\nrecipe aaa\n' > "$WORK/fresh"; : > "$WORK/dates"
-run >/dev/null 2>&1; check "a missing date is exit 2" 2 "$?"
+err="$(run 2>&1 >/dev/null)"; rc=$?
+check "a missing date is exit 2, and says which" "2 1" "$rc $(printf '%s\n' "$err" | grep -c -x 'no date known for podman v6.3.0')"
 
 cp "$WORK/released" "$WORK/fresh"; : > "$WORK/dates"
-"$SCRIPT" "$WORK/fresh" /dev/null "$WORK/tags" "$WORK/dates" "$now" 24 >/dev/null 2>&1
-check "tags without readable released components is exit 2" 2 "$?"
+err="$("$SCRIPT" "$WORK/fresh" /dev/null "$WORK/tags" "$WORK/dates" "$now" 24 2>&1 >/dev/null)"; rc=$?
+check "tags without readable released components is exit 2, for that reason" "2 1" \
+	"$rc $(printf '%s\n' "$err" | grep -c -x 'cannot tell what the newest release carries')"
 
 "$SCRIPT" >/dev/null 2>&1; check "no arguments fails" 1 "$([ $? -ne 0 ] && echo 1 || echo 0)"
 

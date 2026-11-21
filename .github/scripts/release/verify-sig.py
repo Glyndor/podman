@@ -150,7 +150,7 @@ def check_mldsa65(data: bytes, args: argparse.Namespace) -> str:
 			)
 		return "Ed25519; no ML-DSA-65 signature, and none is required"
 
-	if not raw_keys:
+	if not raw_keys:  # a second signature, and no key to check it against
 		fail(
 			REFUSED,
 			f"{args.file} carries an ML-DSA-65 signature and no ML-DSA-65 release public key is configured;"

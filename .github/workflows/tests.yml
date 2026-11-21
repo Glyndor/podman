@@ -57,6 +57,10 @@ jobs:
           find scripts tests -name '*.sh' -print0 | xargs -0 shellcheck -S warning
       - name: every script has a test
         run: bash scripts/quality/check-test-coverage.sh
+      # The sweep itself is mutation.yml; this is the second it costs to know that
+      # every refusal is in the catalogue the sweep runs, or exempted with a reason.
+      - name: every refusal has a mutation entry or an exemption
+        run: bash scripts/quality/check-mutation-coverage.sh
       - name: Install the pinned cryptography wheel for the ML-DSA-65 suite
         run: |
           set -euo pipefail
