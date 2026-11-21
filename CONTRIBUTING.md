@@ -53,6 +53,12 @@ argument contract tested here and their real run in `reusable-build.yml`, which
 `release.yml` runs before anything is signed and `build-check.yml` runs on a pull
 request that changes how the package is built.
 
+One suite needs a library the distributions do not carry: `tests/ci/release-signing-mldsa.test.sh`
+makes and verifies real ML-DSA-65 signatures, and the `python3-cryptography` of Debian and
+Ubuntu has no ML-DSA. `tests.yml` runs it in a virtual environment built from
+`.github/scripts/release/sign-requirements.txt`, pinned by hash. Run without that
+environment first on `PATH`, the suite fails and says what is missing; it does not skip.
+
 **A test you have not watched fail is not a test.** Before claiming a check
 works, remove the control it covers, run it, and confirm it goes red for the
 reason it names. Assert which failure fired, never that some failure did.
