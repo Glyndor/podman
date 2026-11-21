@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Tests that the table of workflows in CONTRIBUTING.md names every workflow file the
-# repository has and no file it does not, and that the commands it gives run scripts
-# through an interpreter, as the workflows must (workflow-policy.test.sh). The table is
+# repository has and no file it does not, that the commands it gives run scripts
+# through an interpreter, as the workflows must (workflow-policy.test.sh), and that the
+# pull request template gives the same commands. The table is
 # what a contributor reads to learn what can fail and why, and three of the files that
 # hold the logic of three of its rows were missing from it, with nothing to say so.
 set -u
@@ -87,6 +88,36 @@ bare() { sed -n '/^```/,/^```/p' "$1" | grep -E '^(\./)?scripts/[A-Za-z0-9_./-]+
 check "no command in the guide runs a script by its execute bit" "" "$(bare "$HERE/CONTRIBUTING.md")"
 printf '```sh\nscripts/quality/x.sh\nbash scripts/quality/y.sh\n```\n' > "$WORK/guide.md"
 check "one that does is named, and one through bash is not" "scripts/quality/x.sh" "$(bare "$WORK/guide.md")"
+
+# --- the pull request template gives the commands the guide gives ----------------
+# The template is copied into every pull request without anyone reading it, so a
+# command in it that drifted from the guide is copied as it is. Each command it gives
+# (a code span that runs the suites, shellcheck or the coverage check) has to be a
+# line of the guide's fenced block, which is the one the workflows are held to.
+stale() { # <template> <guide>: one line per command of the template the guide does not give
+	python3 - "$1" "$2" <<'PY' 2>&1 || echo "rule failed"
+import re, sys
+template, guide = (open(p).read() for p in sys.argv[1:3])
+lines = set()
+for block in re.findall(r"^```sh\n(.*?)^```", guide, re.S | re.M):
+    lines.update(l.strip() for l in block.split("\n") if l.strip())
+spans = [s for s in re.findall(r"`([^`]+)`", template) if re.search(r"\.test\.sh|shellcheck|check-test-coverage", s)]
+if not spans:
+    print("the template gives no command to run")
+for s in spans:
+    if s not in lines:
+        print(f"the template gives {s!r}, which the guide does not")
+PY
+}
+check "every command the template gives is one the guide gives" "" "$(stale "$HERE/.github/PULL_REQUEST_TEMPLATE.md" "$HERE/CONTRIBUTING.md")"
+printf -- '- [ ] `for t in tests/*/*.test.sh; do bash "$t"; done` passes\n' > "$WORK/template.md"
+check "the old command, which misses a suite one folder deeper, is named" \
+	"the template gives 'for t in tests/*/*.test.sh; do bash \"\$t\"; done', which the guide does not" \
+	"$(stale "$WORK/template.md" "$HERE/CONTRIBUTING.md")"
+printf -- '- [ ] `bash scripts/quality/check-test-coverage.sh` and `find scripts tests -name '"'"'*.sh'"'"' -print0 | xargs -0 shellcheck -S warning`\n' > "$WORK/template.md"
+check "a template whose commands are the guide's passes" "" "$(stale "$WORK/template.md" "$HERE/CONTRIBUTING.md")"
+printf -- '- [ ] Tests pass\n' > "$WORK/template.md"
+check "a template that gives no command at all is named" "the template gives no command to run" "$(stale "$WORK/template.md" "$HERE/CONTRIBUTING.md")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
