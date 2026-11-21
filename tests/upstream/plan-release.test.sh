@@ -105,5 +105,15 @@ check "and one read back with a stale component is, as the next revision" "build
 printf 'netavark v2.1.0\n' > "$WORK/nopodman"
 "$SCRIPT" "$WORK/nopodman" "$WORK/none" "$WORK/none" >/dev/null 2>&1; check "no podman line fails" 1 "$?"
 
+# An upstream that could not be read leaves <fresh> empty. Against a release that
+# lists only lines that are not components it would compare equal, so the refusal
+# has to come before the comparison.
+: > "$WORK/empty"; printf 'signature ed25519\n' > "$WORK/notes-only"
+out="$("$SCRIPT" "$WORK/empty" "$WORK/notes-only" "$WORK/t1" 2>&1)"; rc=$?
+check "an empty fresh list fails instead of planning nothing" 1 "$rc"
+check "and the refusal is the missing podman tag" 1 "$(printf '%s' "$out" | grep -c 'no podman tag')"
+out="$("$SCRIPT" "$WORK/empty" "$WORK/same" "$WORK/t1" 2>&1)"; rc=$?
+check "and so does an empty fresh list against a full release" "1 0" "$rc $(printf '%s' "$out" | grep -c 'build=')"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
