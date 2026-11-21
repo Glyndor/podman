@@ -36,7 +36,10 @@ permissions:
 
 concurrency:
   group: workflow-lint-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and a reusable workflow
+  # runs on the events of the workflow that calls it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   workflow-lint:
