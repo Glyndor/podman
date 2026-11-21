@@ -161,6 +161,9 @@ PY
 		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/out"; mkdir -p "$S/art" "$WS/keyring"
 		: > "$S/calls"; : > "$S/out"
 		touch "$S/art/podman_6.2.0_arch1.deb" "$S/art/podman_6.2.0_arch2.deb"
+		# The switch as committed, which requires nothing: release-second-signature.test.sh
+		# runs this step with it on.
+		cp "$HERE/keyring/second-signature-required" "$WS/keyring/"
 		case "$1" in
 			empty) printf '# Glyndor release ML-DSA-65 public keys.\n# Empty until the key exists.\n' > "$ANCHOR" ;;
 			indented) printf '# Glyndor release ML-DSA-65 public keys.\n\n   # an indented comment\n  \n' > "$ANCHOR" ;;

@@ -1,0 +1,16 @@
+# Whether every release must carry the ML-DSA-65 signature beside the Ed25519 one.
+#
+# The release workflow reads this file. While it holds only comments, as now, it
+# requires nothing: the second signature is required only while
+# keyring/glyndor-release-mldsa65.b64 holds a key or its secret is set. Once a line
+# reading exactly
+#
+#   required
+#
+# is added (without the indent above), every release must carry it: a release
+# whose anchor holds no key, whose signing secret is not set, or whose second
+# signature is missing or does not verify is refused. Taking the line out again is
+# what retires the second signature, a change of its own in a reviewed pull request.
+#
+# Printable ASCII and line feeds only. Any line that is not a comment, blank or
+# exactly "required" stops the release instead of being read as "not required".
