@@ -3,7 +3,8 @@
 # Tests for the plan step of .github/workflows/release.yml, read from the workflow and
 # run here under the shell GitHub uses. What it hands the rest of the run is decided
 # there and nowhere else: whether the newest release carries the second signature,
-# which the signing step then refuses to drop. read-released.sh and plan-release.sh
+# which the signing step then refuses to drop, and the commit of each upstream tag,
+# which must be an annotated one. read-released.sh and plan-release.sh
 # are the real scripts; latest-stable.sh and recipe-id.sh are fakes that answer
 # fixed tags, and git and gh answer from the case instead of the network.
 set -u
@@ -94,6 +95,12 @@ GH
 	check "and it does not ask for the list" "release list|release download" "$(paste -sd'|' "$P/gh.log")"
 	check "and hands on what it always did, and nothing about the signature" \
 		"build version podman netavark aardvark recipe podman_sha netavark_sha aardvark_sha" "$(sed 's/=.*//' "$P/out" | paste -sd' ')"
+	# Each tag must be annotated: the commit the build checks out is the one its peeled
+	# ref names, and a lightweight tag has none.
+	plan LIGHTWEIGHT=aardvark-dns
+	check "an upstream tag that is not annotated stops the plan, and says which" "1 1" \
+		"$rc $(says 'aardvark-dns v2.1.3 is not an annotated tag upstream')"
+	check "and no commit is handed on for it" "c0ffee-podman c0ffee-netavark " "$(said podman_sha) $(said netavark_sha) $(said aardvark_sha)"
 else
 	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the plan step"
 fi

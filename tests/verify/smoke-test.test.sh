@@ -4,7 +4,8 @@
 # the install and the container run need root on Debian 13 and are exercised by
 # the release workflow, not by this suite. What the script asks of the installed
 # package (the seccomp profile, the distribution's copies gone, buildah and skopeo
-# kept) is run by package-state.sh, whose own suite runs each check; this one reads
+# kept, the option pasta must have, two containers that find each other by name) is
+# run by package-state.sh, whose own suite runs each check; this one reads
 # smoke-test.sh and fails when a call to it is gone, since a call replaced by `:`
 # leaves that suite green and the check unmade.
 set -u
@@ -27,7 +28,9 @@ calls() { grep -v '^[[:space:]]*#' "$1" | grep -c -x -F -- "$2"; }
 for line in 'bash "$here/package-state.sh" seccomp' \
 	'bash "$here/package-state.sh" replaced golang-github-containers-common' \
 	'bash "$here/package-state.sh" replaced passt' \
-	'bash "$here/package-state.sh" kept buildah skopeo'; do
+	'bash "$here/package-state.sh" kept buildah skopeo' \
+	'bash "$here/package-state.sh" pasta-option' \
+	'bash "$here/package-state.sh" dns smoke "$root"'; do
 	check "the smoke test runs: ${line#bash \"\$here/package-state.sh\" }" 1 "$(calls "$SCRIPT" "$line")"
 done
 WORK="$(mktemp -d)"

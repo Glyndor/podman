@@ -28,7 +28,7 @@ def triggers(doc):
     on = doc.get("on", doc.get(True)) or {}
     return on if isinstance(on, dict) else {}
 
-for path in sorted(glob.glob(f"{root}/*.yml")):
+for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
     name = path.rsplit("/", 1)[1]
     with open(path) as fh:
         doc = yaml.safe_load(fh)
@@ -101,7 +101,7 @@ for path in sorted(glob.glob(f"{root}/*.yml")):
                 return ev
             ev.discard("workflow_call")
             called = False
-            for other in sorted(glob.glob(f"{root}/*.yml")):
+            for other in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
                 with open(other) as fh:
                     odoc = yaml.safe_load(fh)
                 for cfg in (odoc.get("jobs") or {}).values():
@@ -202,92 +202,92 @@ PY
 check "no workflow triggers on a branch other than main" "" "$(violations branches)"
 BAD="$(mktemp -d)"
 trap 'rm -rf "$BAD"' EXIT
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i '0,/branches: \["main"\]/s//branches: ["main", "develop"]/' "$BAD/dco.yml"
 check "a trigger on develop is named" "dco.yml: pull_request triggers on branch develop" "$(violations branches "$BAD")"
 
 # --- the image a job runs on is named -------------------------------------------
 check "every job that depends on the image names it" "" "$(violations runners)"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^    runs-on: ubuntu-26.04$/    runs-on: ubuntu-latest/' "$BAD/tests.yml"
 check "a pinned job moved back to ubuntu-latest is named" "tests.yml: test runs on ubuntu-latest" "$(violations runners "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/runner: ubuntu-26.04 }/runner: ubuntu-latest }/' "$BAD/release.yml"
 check "a build matrix on ubuntu-latest is named" "release.yml: build builds amd64 on ubuntu-latest" "$(violations runners "$BAD")"
 
 # --- repository scripts are run through an interpreter ---------------------------
 check "no workflow runs a repository script by its execute bit" "" "$(violations interpreter)"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's#bash scripts/quality/check-test-coverage.sh#scripts/quality/check-test-coverage.sh#' "$BAD/tests.yml"
 check "a script called without bash is named" \
 	"tests.yml: test runs scripts/quality/check-test-coverage.sh without an interpreter" "$(violations interpreter "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's#\$(bash scripts/build/recipe-id.sh)#$(scripts/build/recipe-id.sh)#' "$BAD/release.yml"
 check "so is one inside a command substitution" \
 	"release.yml: plan runs scripts/build/recipe-id.sh without an interpreter" "$(violations interpreter "$BAD")"
 
 # --- a superseded run on a pull request is cancelled ----------------------------
 check "every workflow that runs on a pull request cancels the runs a push overtook" "" "$(violations concurrency)"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i '/^concurrency:/,/^$/d' "$BAD/commit-hygiene.yml"
 check "a workflow with no concurrency is named, job by job" \
 	"commit-hygiene.yml: commit-identity runs on a pull request with no concurrency
 commit-hygiene.yml: secret-scan runs on a pull request with no concurrency" "$(violations concurrency "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^  cancel-in-progress: true$/  cancel-in-progress: false/' "$BAD/build-check.yml"
 check "one that no longer cancels is named" "build-check.yml: concurrency does not cancel a superseded run" "$(violations concurrency "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i '/^concurrency:/,/^$/d' "$BAD/reusable-dco.yml"
 check "the group of a reusable workflow a caller uses counts, and its absence is named" "dco.yml: dco runs on a pull request with no concurrency" "$(violations concurrency "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i '/^    concurrency:$/,/^      cancel-in-progress: true$/d' "$BAD/dependabot-automerge.yml"
 check "arm, which has its own group, is named when it loses it" "dependabot-automerge.yml: arm runs on a pull request with no concurrency" "$(violations concurrency "$BAD")"
 
 check "no pull_request_target group is built on the ref" "" "$(violations target-group)"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/-arm-\${{ github.event.pull_request.number }}/-arm-${{ github.ref }}/' "$BAD/dependabot-automerge.yml"
 check "a group on the ref of a pull_request_target run is named" \
 	"dependabot-automerge.yml: arm groups pull_request_target runs by ref, which is main for every pull request" "$(violations target-group "$BAD")"
 
 check "nothing can cancel the disarm and rebase jobs" "" "$(violations never-cancelled)"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^permissions: {}$/permissions: {}\n\nconcurrency:\n  group: all\n  cancel-in-progress: true/' "$BAD/dependabot-automerge.yml"
 check "a group over the whole workflow is named" "dependabot-automerge.yml: a workflow-level concurrency can cancel the disarm job" "$(violations never-cancelled "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^    name: disarm when a person pushes$/    name: disarm when a person pushes\n    concurrency:\n      group: d\n      cancel-in-progress: true/' "$BAD/dependabot-automerge.yml"
 check "a cancelling group on the disarm job is named" "dependabot-automerge.yml: disarm is in a concurrency group, and a group can cancel it" "$(violations never-cancelled "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^    name: disarm when a person pushes$/    name: disarm when a person pushes\n    concurrency:\n      group: d\n      cancel-in-progress: false/' "$BAD/dependabot-automerge.yml"
 check "and so is one that says it never cancels: a pending run of it is still cancelled by the next" \
 	"dependabot-automerge.yml: disarm is in a concurrency group, and a group can cancel it" "$(violations never-cancelled "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^    name: rebase what fell behind$/    name: rebase what fell behind\n    concurrency:\n      group: r\n      cancel-in-progress: false/' "$BAD/dependabot-automerge.yml"
 check "and the rebase job is held to the same" \
 	"dependabot-automerge.yml: rebase is in a concurrency group, and a group can cancel it" "$(violations never-cancelled "$BAD")"
 
 # --- a run is cancelled only on a pull request ---------------------------------
 check "nothing that can run on a push, a schedule or a call cancels whatever the event" "" "$(violations cancel-outside-pr)"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i "s/^  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\$/  cancel-in-progress: true/" "$BAD/reusable-workflow-lint.yml"
 check "the fixture did go back to cancelling always" "1" "$(grep -c '^  cancel-in-progress: true$' "$BAD/reusable-workflow-lint.yml")"
 check "a reusable that its push caller can reach, cancelling always, is named" \
 	"reusable-workflow-lint.yml: workflow cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i "s/^  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\$/  cancel-in-progress: true/" "$BAD/reusable-line-limit.yml"
 check "the same change to a reusable that only pull request callers use is accepted" "" "$(violations cancel-outside-pr "$BAD")"
 sed -i 's/^  pull_request:$/  push:\n    branches: ["main"]\n  pull_request:/' "$BAD/line-limit.yml"
 check "the fixture did give its caller a push trigger" "1" "$(grep -c '^  push:$' "$BAD/line-limit.yml")"
 check "and is named once a caller can run it on a push" \
 	"reusable-line-limit.yml: workflow cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 rm "$BAD/dco.yml"
 check "a reusable that nothing calls is read as able to run on anything" \
 	"reusable-dco.yml: workflow cancels a run whatever the event, and the workflow also runs on unknown caller" "$(violations cancel-outside-pr "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^  pull_request:$/  push:\n    branches: ["main"]\n  pull_request:/' "$BAD/build-check.yml"
 check "a workflow of its own that gains a push trigger and cancels always is named" \
 	"build-check.yml: workflow cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i "s/ == 'pull_request_target' && github.event.pull_request.user.login/ != 'x' \&\& github.event.pull_request.user.login/" "$BAD/dependabot-automerge.yml"
 check "the fixture did free the arm job from its event" "0" "$(grep -c "event_name == 'pull_request_target' && github.event.pull_request.user" "$BAD/dependabot-automerge.yml")"
 check "a job that stopped naming a pull request event, in a workflow that has a push, is named" \
@@ -295,10 +295,10 @@ check "a job that stopped naming a pull request event, in a workflow that has a 
 
 # --- a watcher does not run on a pull request ------------------------------------
 check "the watchdog and the keyring watch do not trigger on a pull request" "" "$(violations watchers)"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^  push:$/  pull_request:\n    branches: ["main"]\n  push:/' "$BAD/watchdog.yml"
 check "a pull_request trigger on the watchdog is named" "watchdog.yml: triggers on pull_request, and a pull request cannot change what it reads" "$(violations watchers "$BAD")"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i '/^  schedule:$/,/^    - cron: /d' "$BAD/watchdog.yml"
 check "the fixture did lose its schedule" "0" "$(grep -c '^  schedule:$' "$BAD/watchdog.yml")"
 check "a watchdog without its schedule is named, and so is the alarm that waits for it" \
@@ -307,14 +307,21 @@ check "a watchdog without its schedule is named, and so is the alarm that waits 
 
 # --- a timeout says what it was measured from ------------------------------------
 check "every timeout-minutes has its measurement, or says it is a ceiling" "" "$(violations timeouts)"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i '/Ceiling, not measured: two gh calls\./d' "$BAD/release.yml"
 check "a timeout with no comment above it is named, with its line" "release.yml:N: timeout-minutes has no 'Measured' or 'Ceiling, not measured' comment above it" \
 	"$(violations timeouts "$BAD" | sed 's/^\([a-z.-]*\):[0-9]*:/\1:N:/')"
-cp "$HERE"/.github/workflows/*.yml "$BAD/"
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^    # Measured in this repository.s runs: 6 to 8 seconds, with the six ls-remote calls$/    # The plan is quick, with the six ls-remote calls/' "$BAD/release.yml"
 check "a comment that says neither is named" "release.yml:N: timeout-minutes has no 'Measured' or 'Ceiling, not measured' comment above it" \
 	"$(violations timeouts "$BAD" | sed 's/^\([a-z.-]*\):[0-9]*:/\1:N:/')"
+
+# --- a workflow named .yaml is read too -----------------------------------------
+# GitHub runs .yaml files as well as .yml, so a rule that globbed one would not see
+# a workflow that a pull request adds under the other. Last, since the copy keeps it.
+cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
+printf 'on:\n  push:\n    branches: ["develop"]\njobs: {}\n' > "$BAD/extra.yaml"
+check "a .yaml workflow is held to the rules" "extra.yaml: push triggers on branch develop" "$(violations branches "$BAD")"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
