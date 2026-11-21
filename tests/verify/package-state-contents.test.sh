@@ -116,6 +116,12 @@ FAKE_PODMAN_FAILS=1 FAKE_VERSION=6.2.0 run version 6.2.0
 check "a podman that cannot say its version is refused for that" "1 1" "$rc $(said 'podman --version failed')"
 run version
 check "version without the version built is a usage error" 2 "$rc"
+for c in listed provides; do
+	FAKE_LIST="$list" FAKE_STATUS="$status" run "$c" extra
+	check "$c with an argument is a usage error, and says so" "2 1" "$rc $(said "$c takes no argument")"
+done
+run ships extra
+check "and so is ships, by name" "2 1" "$rc $(said 'ships takes no argument')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

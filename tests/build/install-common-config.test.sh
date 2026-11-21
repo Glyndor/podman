@@ -59,12 +59,21 @@ while IFS= read -r path; do
 done <<< "$required"
 check "every file the smoke test requires is installed by this script" "" "${missing# }"
 
+# Each refusal is asserted by what it says: install would fail on a missing file too,
+# and that is a crash of the build, not the check that names what is missing.
+refused() { rc=0; err="$("$SCRIPT" "$WORK/src" "$@" 2>&1 >/dev/null)" || rc=$?; }
 rm "$WORK/mods/common/rpm/policy.json"
-"$SCRIPT" "$WORK/src" "$WORK/stage2" "$WORK/short.conf" >/dev/null 2>&1; check "a module without policy.json is refused" 1 "$?"
+refused "$WORK/stage2" "$WORK/short.conf"
+check "a module without policy.json is refused, and named" "1 1" "$rc $(printf '%s\n' "$err" | grep -c -x -F "the module has no $WORK/mods/common/rpm/policy.json")"
+: > "$WORK/mods/common/rpm/policy.json"
+refused "$WORK/stage2b" "$WORK/short.conf"
+check "and so is one whose policy.json is empty" "1 1" "$rc $(printf '%s\n' "$err" | grep -c -x -F "the module has no $WORK/mods/common/rpm/policy.json")"
 echo '{}' > "$WORK/mods/common/rpm/policy.json"
-"$SCRIPT" "$WORK/src" "$WORK/stage3" "$WORK/nothing.conf" >/dev/null 2>&1; check "a missing short-name list is refused" 1 "$?"
+refused "$WORK/stage3" "$WORK/nothing.conf"
+check "a missing short-name list is refused, and named" "1 1" "$rc $(printf '%s\n' "$err" | grep -c -x -F "no short-name list at $WORK/nothing.conf")"
 printf 'module x\n' > "$WORK/src/go.mod"
-"$SCRIPT" "$WORK/src" "$WORK/stage4" "$WORK/short.conf" >/dev/null 2>&1; check "a go.mod without the modules is refused" 1 "$?"
+refused "$WORK/stage4" "$WORK/short.conf"
+check "a go.mod without the modules is refused, and says so" "1 1" "$rc $(printf '%s\n' "$err" | grep -c 'cannot read the containers modules from')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

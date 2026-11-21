@@ -53,10 +53,12 @@ check "and is shown as revoked" 1 "$(printf '%s' "$out" | grep -c 'revoked')"
 check "the two good keys are still counted" 1 "$(printf '%s' "$out" | grep -c '2 key(s) still valid')"
 
 mkdir "$WORK/broken"; printf 'not a key\n' > "$WORK/broken/x.asc"
-"$SCRIPT" "$WORK/broken" "$now" 60 1 >/dev/null 2>&1; check "an unreadable keyring is exit 2, not too few keys" 2 "$?"
+err="$("$SCRIPT" "$WORK/broken" "$now" 60 1 2>&1 >/dev/null)"; rc=$?
+check "an unreadable keyring is exit 2, not too few keys, and says so" "2 1" "$rc $(printf '%s\n' "$err" | grep -c "could not import the keys under $WORK/broken")"
 
 mkdir "$WORK/none"
-"$SCRIPT" "$WORK/none" "$now" 60 1 >/dev/null 2>&1; check "no keys is exit 2" 2 "$?"
+err="$("$SCRIPT" "$WORK/none" "$now" 60 1 2>&1 >/dev/null </dev/null)"; rc=$?
+check "no keys is exit 2, and says so" "2 1" "$rc $(printf '%s\n' "$err" | grep -c -x "no keys under $WORK/none")"
 "$SCRIPT" >/dev/null 2>&1; check "no arguments fails" 1 "$([ $? -ne 0 ] && echo 1 || echo 0)"
 
 echo "$pass passed, $fail failed"
