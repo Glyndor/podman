@@ -29,6 +29,23 @@ A good package prints `Signature Verified Successfully` and exits with status 0.
 
 The key is read from this repository, so this proves the package was signed by whoever holds the private key that matches it. To pin the key independently of GitHub, copy the file once and compare it against a copy you obtained from another channel.
 
+## The second signature, when a release has one
+
+Releases do not carry it yet. When they do, each package has a third file, `podman_<version>_<arch>.deb.mldsa65.sig`: an ML-DSA-65 (FIPS 204) signature over the same bytes, made with a second key whose public half will be in [`keyring/glyndor-release-mldsa65.b64`](../keyring/glyndor-release-mldsa65.b64). It is added beside the Ed25519 signature and never replaces it, so a package is good only when both verify.
+
+Checking it needs OpenSSL 3.5 or later. The key file holds a raw 1952-byte ML-DSA-65 public key in base64, and the steps below put the standard 22-byte DER header in front of it to get a key OpenSSL reads. The file has one key per line, and two during a key rotation; the steps take the first, and a package is good when either verifies it. With `deb` and `base` set as above:
+
+```bash
+key="$(curl -sSf https://raw.githubusercontent.com/Glyndor/podman/main/keyring/glyndor-release-mldsa65.b64 | grep -v '^#' | head -n 1)"
+{ printf '\x30\x82\x07\xb2\x30\x0b\x06\x09\x60\x86\x48\x01\x65\x03\x04\x03\x12\x03\x82\x07\xa1\x00'
+  printf '%s' "$key" | base64 -d; } | openssl pkey -pubin -inform DER -out glyndor-release-mldsa65.pem
+
+curl -sSfLO "$base/$deb.mldsa65.sig"
+openssl pkeyutl -verify -pubin -inkey glyndor-release-mldsa65.pem -rawin -in "$deb" -sigfile "$deb.mldsa65.sig"
+```
+
+The answers are the same two as for the first signature.
+
 ## Check the build provenance
 
 Releases also carry a build provenance attestation, which says which workflow run of this repository built the package:
