@@ -178,3 +178,30 @@ jobs:
           gh release create "$TAG" --target "$GITHUB_SHA" --title "Podman ${TAG#v}" \
             --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \
             podman_*.deb podman_*.deb.sig components.txt
+
+  # A failed release leaves no other trace until the watchdog notices a day
+  # later, so this opens the issue at once. A manual dispatch is somebody
+  # watching the run, so it does not open one.
+  alert:
+    name: alert
+    needs: [plan, build, publish]
+    if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    timeout-minutes: 5
+    steps:
+      - name: Open an issue, or add to the one that is open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Release run failed"
+          body="A release run failed. Read the run: $RUN_URL"
+          open="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --label type:bug --label prio:P1 --label area:release --body "$body"
+          fi

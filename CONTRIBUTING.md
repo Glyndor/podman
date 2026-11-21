@@ -64,7 +64,7 @@ reason it names. Assert which failure fired, never that some failure did.
 | `tests.yml` | the suite and shellcheck |
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
 | `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |
-| `release.yml` | the scheduled plan, build, smoke test, signing and publish; also runs when `scripts/build`, `keyring` or the workflow itself changes, and only publishes from `main` |
+| `release.yml` | the scheduled plan, build, smoke test, signing and publish; also runs when `scripts/build`, `keyring` or the workflow itself changes, and only publishes from `main`; opens an issue when a scheduled or push run fails |
 | `reusable-build.yml` | the build, the smoke test on Debian 13 and Ubuntu 24.04 and 26.04, and the check that Ubuntu 22.04 refuses the package, for one architecture; called by `release.yml` and `build-check.yml` |
 | `build-check.yml` | `package builds`: a pull request that touches `scripts/build/`, `scripts/verify/`, `scripts/upstream/`, `keyring/podman/` or the build workflows compiles the package on both architectures; any other pull request skips the build and passes |
 | `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it |
