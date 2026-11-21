@@ -55,13 +55,16 @@ export SOURCE_DATE_EPOCH
 make -C "$podman_src" PREFIX=/usr EXTRA_BUILDTAGS=containers_image_openpgp \
 	BUILD_INFO="$SOURCE_DATE_EPOCH" BUILD_ORIGIN="Glyndor" >&2
 # The binary has to carry what was asked for; a Makefile that stops passing a flag
-# along would otherwise ship without it and nothing would say so.
-if command -v go >/dev/null && [ -f "$podman_src/bin/podman" ]; then
-	built="$(go version -m "$podman_src/bin/podman" 2>/dev/null || true)"
-	for want in '-trimpath=true' '-buildmode=pie' 'apparmor' 'seccomp' 'systemd'; do
-		printf '%s' "$built" | grep -q -- "$want" || { echo "the built podman lacks $want" >&2; exit 1; }
-	done
-fi
+# along would otherwise ship without it and nothing would say so. A build that
+# cannot read the build info is refused too: skipping the check when go or the
+# binary is missing would ship exactly the package this exists to stop.
+command -v go >/dev/null || { echo "no go to read the build info of the built podman" >&2; exit 1; }
+[ -f "$podman_src/bin/podman" ] || { echo "make left no bin/podman to check" >&2; exit 1; }
+built="$(go version -m "$podman_src/bin/podman")" \
+	|| { echo "cannot read the build info of bin/podman" >&2; exit 1; }
+for want in '-trimpath=true' '-buildmode=pie' 'apparmor' 'seccomp' 'systemd'; do
+	printf '%s' "$built" | grep -q -- "$want" || { echo "the built podman lacks $want" >&2; exit 1; }
+done
 make -C "$podman_src" install PREFIX=/usr DESTDIR="$stage" >&2
 # `install` does not put the shell completions in place; Debian's own package ships
 # them, so a customer who moves to this one would otherwise lose tab completion.

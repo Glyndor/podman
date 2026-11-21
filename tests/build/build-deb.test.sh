@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Tests for scripts/build/build-deb.sh against a fake source tree: the .deb must
-# be named for the package and version, and a malformed version is refused.
+# be named for the package and version, a malformed version is refused, and so is
+# a build whose flags cannot be read.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -28,11 +29,19 @@ for f in common/pkg/config/containers.conf common/rpm/policy.json image/registri
 echo '{"syscalls":[{"names":["futex_waitv"]}]}' > "$WORK/mods/common/pkg/seccomp/seccomp.json"
 echo '[aliases]' > "$WORK/short.conf"
 export GLYNDOR_PASST_SRC="$WORK/passt" GLYNDOR_MODULES_DIR="$WORK/mods" GLYNDOR_SHORTNAMES="$WORK/short.conf"
-printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags; echo "$$CGO_CFLAGS" > %s/cflags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" "$WORK" > "$WORK/src/Makefile"
+printf 'all:\n\t@echo "$(EXTRA_BUILDTAGS)" > %s/tags; echo "$$CGO_CFLAGS" > %s/cflags\n\trm -f bin/podman; [ -n "$$FAKE_NO_BIN" ] || install -D -m755 /bin/true bin/podman\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/bin/podman\ninstall.completions:\n\tinstall -D -m644 /dev/null $(DESTDIR)$(PREFIX)/share/bash-completion/completions/podman\n' "$WORK" "$WORK" > "$WORK/src/Makefile"
 printf 'all:\n\t@echo "$(CARGO)" > %s/cargo-nv\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/netavark\n' "$WORK" > "$WORK/nv/Makefile"; touch "$WORK/nv/Cargo.lock" "$WORK/aa/Cargo.lock"
 printf '[package]\nname = "netavark"\nversion = "2.1.0"\n' > "$WORK/nv/Cargo.toml"
 printf '[package]\nname = "aardvark-dns"\nversion = "2.1.3"\n' > "$WORK/aa/Cargo.toml"
 printf 'all:\n\t@true\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/aardvark-dns\n' > "$WORK/aa/Makefile"
+# The build reads the Go build info of bin/podman. This go prints $WORK/info, in the
+# shape `go version -m` has, so a case can take one flag out of it.
+mkdir "$WORK/fakebin"
+printf '#!/bin/sh\n[ "$1 $2" = "version -m" ] && [ -f "$3" ] && [ -z "$FAKE_GO_FAILS" ] || exit 1\ncat "%s/info"\n' "$WORK" > "$WORK/fakebin/go"
+chmod +x "$WORK/fakebin/go"
+full_info="$(printf '\tbuild\t-buildmode=pie\n\tbuild\t-tags=apparmor,seccomp,selinux,systemd,containers_image_openpgp\n\tbuild\t-trimpath=true\n')"
+printf '%s\n' "$full_info" > "$WORK/info"
+PATH="$WORK/fakebin:$PATH"
 build() { "$SCRIPT" "$WORK/src" "$WORK/nv" "$WORK/aa" "$@"; }
 arch="$(dpkg --print-architecture)"
 
@@ -85,6 +94,35 @@ check "a rebuild version is accepted" "6.2.0+r2" \
 	"$(dpkg-deb -f "$(build 6.2.0+r2 "$WORK/out2" 2>/dev/null)" Version 2>/dev/null)"
 build v6.2.0 "$WORK/out" >/dev/null 2>&1; check "version with a v is refused" 1 "$?"
 build 6.2.0-rc1 "$WORK/out" >/dev/null 2>&1; check "pre-release version is refused" 1 "$?"
+
+# The build info check refuses rather than skips. Each case is a build that is
+# fine in every other respect, and asserts the refusal it expects.
+refused() { # <out-dir>: sets $rc to the exit code and $err to what it printed on stderr
+	rc=0; build 6.2.0 "$1" >/dev/null 2>"$WORK/err" || rc=$?
+	err="$(cat "$WORK/err")"
+}
+for flag in -trimpath=true -buildmode=pie apparmor seccomp systemd; do
+	printf '%s\n' "$full_info" | sed "s/$flag//" > "$WORK/info"
+	refused "$WORK/out-$flag"
+	check "a podman built without $flag is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c -- "the built podman lacks $flag")"
+done
+printf '%s\n' "$full_info" > "$WORK/info"
+
+# No go on the PATH at all: every other command the build runs, linked one by one.
+mkdir "$WORK/nogo"
+IFS=: read -r -a dirs <<< "$PATH"
+for d in "${dirs[@]}"; do
+	for f in "$d"/*; do
+		n="${f##*/}"
+		[ "$n" != go ] && [ -f "$f" ] && [ -x "$f" ] && [ ! -e "$WORK/nogo/$n" ] && ln -s "$f" "$WORK/nogo/$n"
+	done
+done
+PATH="$WORK/nogo" refused "$WORK/out-nogo"
+check "a build with no go to read the build info is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'no go to read the build info')"
+FAKE_GO_FAILS=1 refused "$WORK/out-gofails"
+check "a build info that cannot be read is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'cannot read the build info')"
+FAKE_NO_BIN=1 refused "$WORK/out-nobin"
+check "a make that leaves no bin/podman is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'left no bin/podman')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
