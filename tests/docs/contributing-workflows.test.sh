@@ -101,7 +101,7 @@ template, guide = (open(p).read() for p in sys.argv[1:3])
 lines = set()
 for block in re.findall(r"^```sh\n(.*?)^```", guide, re.S | re.M):
     lines.update(l.strip() for l in block.split("\n") if l.strip())
-spans = [s for s in re.findall(r"`([^`]+)`", template) if re.search(r"\.test\.sh|shellcheck|check-test-coverage|sign-requirements", s)]
+spans = [s for s in re.findall(r"`([^`]+)`", template) if re.search(r"\.test\.sh|shellcheck|check-[a-z]+-coverage|sign-requirements", s)]
 if not spans:
     print("the template gives no command to run")
 for s in spans:

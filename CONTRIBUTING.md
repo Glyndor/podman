@@ -53,6 +53,7 @@ branch.
 ```sh
 find scripts tests -name '*.sh' -print0 | xargs -0 shellcheck -S warning
 bash scripts/quality/check-test-coverage.sh
+bash scripts/quality/check-mutation-coverage.sh
 python3 -m venv /tmp/podman-mldsa && /tmp/podman-mldsa/bin/python -m pip install --quiet --require-hashes --only-binary=:all: -r .github/scripts/release/sign-requirements.txt
 status=0; for t in $(find tests -name '*.test.sh' | sort); do case "$t" in *-mldsa.test.sh) PATH="/tmp/podman-mldsa/bin:$PATH" bash "$t" ;; *) bash "$t" ;; esac </dev/null || { echo "FAILED $t"; status=1; }; done; [ "$status" -eq 0 ]
 ```
@@ -91,7 +92,7 @@ reason it names. Assert which failure fired, never that some failure did.
 
 | file | what fails there |
 |---|---|
-| `tests.yml` | the suite and shellcheck |
+| `tests.yml` | the suite and shellcheck, every script has a test, and every refusal has a mutation entry or an exemption |
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
 | `reusable-dco.yml`, `reusable-line-limit.yml`, `reusable-workflow-lint.yml` | the rule behind each of the three above, which only call them. They live in this repository and are edited here, so a fix made to the organisation's workflow of the same name does not arrive by itself |
 | `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |

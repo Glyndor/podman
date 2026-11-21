@@ -1,0 +1,183 @@
+# The catalogue of mutations: one entry per line, five fields separated by TAB.
+#
+#   id <TAB> file to mutate <TAB> exact text to replace <TAB> text that replaces it
+#        <TAB> tests of tests/ that must fail when the mutation is applied
+#
+# The text to replace has to appear EXACTLY ONCE in the file: a text that appears
+# nowhere changes nothing and proves nothing, and one that appears twice is
+# ambiguous. The runner refuses both, and so does the coverage check, so an inert
+# entry cannot sit in this file unnoticed. A text holds no TAB: the line carries
+# exactly four, and a fifth would move every field after it. The text of a shell
+# guard therefore starts after the indentation, never inside it.
+#
+# A mutation removes the whole refusal, not only its exit: a guard that still
+# prints its message is often refused again by the next one, and a survivor of that
+# kind says nothing. In Python a call of fail() becomes `pass`, never a print that
+# would keep the message.
+#
+# The tests named by an entry are the ones that went red when it was applied. A
+# suite that fails in a copy of the tree without any mutation is excluded by the
+# runner: it fails there whatever the mutant is, and it would count as a kill that
+# never happened.
+#
+# THE SUITES LEFT OUT, AND WHY
+#
+# On the machine this catalogue was measured on (2026-11-21), one:
+#
+#   tests/release/release-signing-mldsa.test.sh
+#       Makes and verifies real ML-DSA-65 signatures, which needs cryptography
+#       50.0.2, and python3-cryptography 46.0.5 there has no ML-DSA. It fails
+#       before it reaches a guard, so no entry names it, and the two guards of
+#       verify-sig.py only it reaches are in tests/mutation/exemptions.txt.
+#
+# Every entry below was measured there: with the mutation applied, each suite it
+# names goes red, and with the tree unmutated every suite that can run there passes.
+#
+# THE GUARDS THAT ARE NOT IN THIS CATALOGUE
+#
+# A guard with no entry here is not measured by the sweep, so every refusal of the
+# scripts under scripts/ and .github/scripts/ and of the run: blocks of every
+# workflow has an entry, or a line in tests/mutation/exemptions.txt that says why it
+# has none. scripts/quality/check-mutation-coverage.sh fails a pull request that
+# leaves one with neither. scripts/build/ is held to the same, and a test for one of
+# its guards uses fakes around the script, never a change to it: a change there
+# publishes a new release.
+#
+# Run: tests/mutation/run-mutations.sh [--list] [<id>...]
+build-deb-bad-version	scripts/build/build-deb.sh	[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] || { echo "bad version: $version" >&2; exit 1; }	[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] || true	tests/build/build-deb.test.sh
+build-deb-no-go-to-read-the-build-info	scripts/build/build-deb.sh	command -v go >/dev/null || { echo "no go to read the build info of the built podman" >&2; exit 1; }	command -v go >/dev/null || true	tests/build/build-deb.test.sh
+build-deb-make-left-no-binary	scripts/build/build-deb.sh	[ -f "$podman_src/bin/podman" ] || { echo "make left no bin/podman to check" >&2; exit 1; }	[ -f "$podman_src/bin/podman" ] || true	tests/build/build-deb.test.sh
+build-deb-build-info-unreadable	scripts/build/build-deb.sh	|| { echo "cannot read the build info of bin/podman" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
+build-deb-binary-lacks-a-flag	scripts/build/build-deb.sh	printf '%s' "$built" | grep -q -- "$want" || { echo "the built podman lacks $want" >&2; exit 1; }	printf '%s' "$built" | grep -q -- "$want" || true	tests/build/build-deb.test.sh
+build-deb-debug-sections-left	scripts/build/build-deb.sh	! readelf -S "$f" 2>/dev/null | grep -q '\.debug_' || { echo "$f still has debug sections" >&2; exit 1; }	! readelf -S "$f" 2>/dev/null | grep -q '\.debug_' || true	tests/build/build-deb.test.sh
+build-deb-glibc-floor-unreadable	scripts/build/build-deb.sh	|| { echo "could not read the glibc symbols the binaries ask for" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
+build-deb-links-a-library-renamed-between-releases	scripts/build/build-deb.sh	*gpgme*|*assuan*|*subid*|*sqlite*|*apparmor*|*btrfs*)	__never__)	tests/build/build-deb.test.sh
+build-deb-no-cargo-lock	scripts/build/build-deb.sh	[ -f "$src/Cargo.lock" ] || { echo "$src has no Cargo.lock to build against" >&2; exit 1; }	[ -f "$src/Cargo.lock" ] || true	tests/build/build-deb.test.sh
+build-deb-no-passt-source	scripts/build/build-deb.sh	[ -f "$passt_src/Makefile" ] || { echo "no passt source at $passt_src" >&2; exit 1; }	[ -f "$passt_src/Makefile" ] || true	tests/build/build-deb.test.sh
+build-deb-crate-version-unreadable	scripts/build/build-deb.sh	|| { echo "cannot read the netavark or aardvark-dns version from Cargo.toml" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
+install-common-config-modules-unreadable	scripts/build/install-common-config.sh	[[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "cannot read the containers modules from $src/go.mod" >&2; exit 1; }	[[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || true	tests/build/install-common-config.test.sh
+install-common-config-no-short-names	scripts/build/install-common-config.sh	[ -s "$shortnames" ] || { echo "no short-name list at $shortnames" >&2; exit 1; }	[ -s "$shortnames" ] || true	tests/build/install-common-config.test.sh
+install-common-config-module-lacks-a-file	scripts/build/install-common-config.sh	[ -s "$1" ] || { echo "the module has no $1" >&2; exit 1; }	[ -s "$1" ] || true	tests/build/install-common-config.test.sh
+recipe-id-no-such-directory	scripts/build/recipe-id.sh	[ -d "$dir" ] || { echo "no such directory: $dir" >&2; exit 2; }	[ -d "$dir" ] || true	tests/build/recipe-id.test.sh
+delivery-lag-no-date-known	scripts/monitoring/delivery-lag.sh	[ -n "$when" ] || { echo "no date known for $name $value" >&2; exit 2; }	[ -n "$when" ] || true	tests/monitoring/delivery-lag.test.sh
+delivery-lag-behind-for-too-long	scripts/monitoring/delivery-lag.sh	if [ "$hours" -gt "$max_hours" ]; then	if false; then	tests/monitoring/delivery-lag.test.sh
+delivery-lag-release-unreadable	scripts/monitoring/delivery-lag.sh	|| { echo "cannot tell what the newest release carries" >&2; exit 2; }	|| true	tests/monitoring/delivery-lag.test.sh
+schedule-freshness-newest-run-too-old	scripts/monitoring/schedule-freshness.sh	if [ "$hours" -gt "$max_hours" ]; then	if false; then	tests/monitoring/schedule-freshness.test.sh
+schedule-freshness-start-is-not-before-now	scripts/monitoring/schedule-freshness.sh	[[ "$since" =~ ^[0-9]+$ ]] && [ "$since" -le "$now" ] \	true \	tests/monitoring/schedule-freshness.test.sh,tests/workflows/watchdog-freshness.test.sh
+schedule-freshness-no-run-finished	scripts/monitoring/schedule-freshness.sh	if [ "$newest" = none ]; then	if false; then	tests/monitoring/schedule-freshness.test.sh,tests/workflows/watchdog-freshness.test.sh
+check-commit-identity-personal-address	scripts/quality/check-commit-identity.sh	[ "$bad" -eq 0 ] || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }	[ "$bad" -eq 0 ] || true	tests/quality/check-commit-identity.test.sh
+check-mutation-coverage-a-finding-fails	scripts/quality/check-mutation-coverage.sh	if errors:	if False:	tests/quality/check-mutation-coverage.test.sh
+check-secrets-a-credential-found	scripts/quality/check-secrets.sh	if [ "$bad" -ne 0 ]; then	if false; then	tests/quality/check-secrets.test.sh
+check-test-coverage-no-scripts-directory	scripts/quality/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true	tests/quality/check-test-coverage.test.sh
+check-test-coverage-a-script-without-test	scripts/quality/check-test-coverage.sh	if [ ${#missing[@]} -gt 0 ]; then	if false; then	tests/quality/check-test-coverage.test.sh
+keyring-diff-arguments-not-directories	scripts/upstream/keyring-diff.sh	[ -d "$ours" ] && [ -d "$upstream" ] || { echo "both arguments must be directories" >&2; exit 2; }	[ -d "$ours" ] && [ -d "$upstream" ] || true	tests/upstream/keyring-diff.test.sh
+keyring-health-import-failed	scripts/upstream/keyring-health.sh	|| { echo "could not import the keys under $keys" >&2; exit 2; }	|| true	tests/upstream/keyring-health.test.sh
+keyring-health-no-keys	scripts/upstream/keyring-health.sh	[ ${#files[@]} -gt 0 ] || { echo "no keys under $keys" >&2; exit 2; }	[ ${#files[@]} -gt 0 ] || true	tests/upstream/keyring-health.test.sh
+plan-release-tags-without-released-components	scripts/upstream/plan-release.sh	if [ ! -s "$released" ] && [ -s "$tags" ]; then	if false; then	tests/upstream/plan-release.test.sh
+plan-release-no-podman-tag	scripts/upstream/plan-release.sh	[[ "$podman" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no podman tag in $fresh" >&2; exit 1; }	[[ "$podman" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || true	tests/upstream/plan-release.test.sh
+read-released-assets-usage	scripts/upstream/read-released.sh	[ "$#" -eq 3 ] || { echo "usage: read-released.sh --assets <tag> <assets>" >&2; exit 2; }	[ "$#" -eq 3 ] || true	tests/upstream/read-released.test.sh
+read-released-cannot-list-assets	scripts/upstream/read-released.sh	|| { echo "cannot list the assets of release $tag" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh,tests/workflows/release-plan.test.sh
+read-released-assets-without-components	scripts/upstream/read-released.sh	|| { echo "the asset list of release $tag does not name components.txt" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
+read-released-usage	scripts/upstream/read-released.sh	[ "$#" -eq 1 ] || { echo "usage: read-released.sh <out>" >&2; exit 2; }	[ "$#" -eq 1 ] || true	tests/upstream/read-released.test.sh
+read-released-components-unreadable	scripts/upstream/read-released.sh	|| { echo "release $latest has no readable components.txt" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
+read-released-components-without-podman	scripts/upstream/read-released.sh	|| { echo "components.txt of $latest names no podman version" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
+verify-tag-not-annotated	scripts/upstream/verify-tag.sh	|| { echo "$tag is not an annotated tag" >&2; exit 1; }	|| true	tests/upstream/verify-tag.test.sh
+verify-tag-object-names-another-tag	scripts/upstream/verify-tag.sh	|| { echo "ref $tag points at a signed tag object named '$named'" >&2; exit 1; }	|| true	tests/upstream/verify-tag.test.sh
+verify-tag-no-keys	scripts/upstream/verify-tag.sh	[ ${#files[@]} -gt 0 ] || { echo "no keys under $keys" >&2; exit 1; }	[ ${#files[@]} -gt 0 ] || true	tests/upstream/verify-tag.test.sh
+verify-tag-bad-signature-status	scripts/upstream/verify-tag.sh	if grep -q "\[GNUPG:\] $bad" <<<"$status"; then	if false; then	tests/upstream/verify-tag.test.sh
+verify-tag-no-good-signature	scripts/upstream/verify-tag.sh	if ! { grep -q '\[GNUPG:\] GOODSIG' <<<"$status" && grep -q '\[GNUPG:\] VALIDSIG' <<<"$status"; }; then	if false; then	tests/upstream/verify-tag.test.sh
+package-state-ships-usage	scripts/verify/package-state.sh	[ "$#" -eq 0 ] || { echo "ships takes no argument" >&2; exit 2; }	[ "$#" -eq 0 ] || true	tests/verify/package-state-contents.test.sh
+package-state-a-file-not-shipped	scripts/verify/package-state.sh	[ -e "$root$f" ] || { echo "the package does not ship $f" >&2; exit 1; }	[ -e "$root$f" ] || true	tests/verify/package-state-contents.test.sh
+package-state-a-helper-not-executable	scripts/verify/package-state.sh	[ -x "$root/usr/libexec/podman/$helper" ] || { echo "missing $helper in the package" >&2; exit 1; }	[ -x "$root/usr/libexec/podman/$helper" ] || true	tests/verify/package-state-contents.test.sh
+package-state-a-configuration-file-empty	scripts/verify/package-state.sh	[ -s "$root$f" ] || { echo "the package does not ship $f" >&2; exit 1; }	[ -s "$root$f" ] || true	tests/verify/package-state-contents.test.sh
+package-state-dpkg-cannot-list	scripts/verify/package-state.sh	files="$(dpkg -L podman)" || { echo "dpkg cannot list the files of podman" >&2; exit 1; }	files="$(dpkg -L podman)" || true	tests/verify/package-state-contents.test.sh
+package-state-no-man-pages	scripts/verify/package-state.sh	grep -q '^/usr/share/man/man1/podman-run\.1' <<< "$files" || { echo "the package does not ship the man pages" >&2; exit 1; }	grep -q '^/usr/share/man/man1/podman-run\.1' <<< "$files" || true	tests/verify/package-state-contents.test.sh
+package-state-dpkg-does-not-know-podman	scripts/verify/package-state.sh	status="$(dpkg -s podman)" || { echo "dpkg does not know podman" >&2; exit 1; }	status="$(dpkg -s podman)" || true	tests/verify/package-state-contents.test.sh
+package-state-version-usage	scripts/verify/package-state.sh	[ "$#" -eq 1 ] || { echo "version takes the version that was built" >&2; exit 2; }	[ "$#" -eq 1 ] || true	tests/verify/package-state-contents.test.sh
+package-state-podman-version-failed	scripts/verify/package-state.sh	got="$(podman --version)" || { echo "podman --version failed" >&2; exit 1; }	got="$(podman --version)" || true	tests/verify/package-state-contents.test.sh
+package-state-seccomp-usage	scripts/verify/package-state.sh	[ "$#" -eq 0 ] || { echo "seccomp takes no package" >&2; exit 2; }	[ "$#" -eq 0 ] || true	tests/verify/package-state.test.sh
+package-state-replaced-usage	scripts/verify/package-state.sh	[ "$#" -eq 1 ] || { echo "replaced takes one package" >&2; exit 2; }	[ "$#" -eq 1 ] || true	tests/verify/package-state.test.sh
+package-state-kept-usage	scripts/verify/package-state.sh	[ "$#" -ge 1 ] || { echo "kept takes at least one package" >&2; exit 2; }	[ "$#" -ge 1 ] || true	tests/verify/package-state.test.sh
+package-state-a-kept-package-removed	scripts/verify/package-state.sh	installed "$pkg" || { echo "$pkg was removed by the upgrade" >&2; exit 1; }	installed "$pkg" || true	tests/verify/package-state.test.sh
+package-state-pasta-option-usage	scripts/verify/package-state.sh	[ "$#" -eq 0 ] || { echo "pasta-option takes no argument" >&2; exit 2; }	[ "$#" -eq 0 ] || true	tests/verify/package-state.test.sh
+package-state-pasta-help-empty	scripts/verify/package-state.sh	[ -n "$help" ] || { echo "pasta --help printed nothing" >&2; exit 1; }	[ -n "$help" ] || true	tests/verify/package-state.test.sh
+package-state-dns-usage	scripts/verify/package-state.sh	[ "$#" -eq 2 ] || { echo "dns takes a network and a root directory" >&2; exit 2; }	[ "$#" -eq 2 ] || true	tests/verify/package-state.test.sh
+package-state-dns-first-container-down	scripts/verify/package-state.sh	|| { echo "could not start a container on the network $1" >&2; exit 1; }	|| true	tests/verify/package-state.test.sh
+package-state-no-pasta-listed	scripts/verify/package-state.sh	grep -q -x '/usr/bin/pasta' <<< "$files" || { echo "the package does not ship pasta" >&2; exit 1; } ;;	grep -q -x '/usr/bin/pasta' <<< "$files" || true ;;	tests/verify/package-state-contents.test.sh
+package-state-no-containers-common-provided	scripts/verify/package-state.sh	|| { echo "the package does not provide containers-common" >&2; exit 1; } ;;	|| true ;;	tests/verify/package-state-contents.test.sh
+package-state-version-mismatch	scripts/verify/package-state.sh	[ "$got" = "podman version $1" ] || { echo "version mismatch: $got" >&2; exit 1; } ;;	[ "$got" = "podman version $1" ] || true ;;	tests/verify/package-state-contents.test.sh
+package-state-old-seccomp-profile	scripts/verify/package-state.sh	|| { echo "the seccomp profile is not this release's" >&2; exit 1; } ;;	|| true ;;	tests/verify/package-state.test.sh
+package-state-distribution-copy-installed	scripts/verify/package-state.sh	! installed "$1" || { echo "the distribution's $1 is installed next to this package" >&2; exit 1; } ;;	! installed "$1" || true ;;	tests/verify/package-state.test.sh
+package-state-pasta-lacks-the-option	scripts/verify/package-state.sh	|| { echo "pasta lacks --map-guest-addr, which Podman passes" >&2; exit 1; } ;;	|| true ;;	tests/verify/package-state.test.sh
+package-state-dns-name-not-resolved	scripts/verify/package-state.sh	[ -n "$found" ] || { echo "a container on the bridge network could not resolve another by name" >&2; exit 1; } ;;	[ -n "$found" ] || true ;;	tests/verify/package-state.test.sh
+package-state-unknown-check-is-a-usage-error	scripts/verify/package-state.sh	*)	__never__)	tests/verify/package-state.test.sh
+package-state-listed-usage	scripts/verify/package-state.sh	[ "$#" -eq 0 ] || { echo "listed takes no argument" >&2; exit 2; }	[ "$#" -eq 0 ] || true	tests/verify/package-state-contents.test.sh
+package-state-provides-usage	scripts/verify/package-state.sh	[ "$#" -eq 0 ] || { echo "provides takes no argument" >&2; exit 2; }	[ "$#" -eq 0 ] || true	tests/verify/package-state-contents.test.sh
+refuse-test-no-such-file	scripts/verify/refuse-test.sh	[ -f "$deb" ] || { echo "no such file: $deb" >&2; exit 2; }	[ -f "$deb" ] || true	tests/verify/refuse-test.test.sh
+refuse-test-package-installed	scripts/verify/refuse-test.sh	if apt-get install -y --no-install-recommends "$deb" > "$log" 2>&1; then	if false; then	tests/verify/refuse-test.test.sh
+refuse-test-failed-for-another-reason	scripts/verify/refuse-test.sh	grep -q 'libc6' "$log" || { echo "the install failed, but not because of libc6:" >&2; cat "$log" >&2; exit 1; }	grep -q 'libc6' "$log" || true	tests/verify/refuse-test.test.sh
+rootless-test-no-such-file	scripts/verify/rootless-test.sh	[ -f "$deb" ] || { echo "no such file: $deb" >&2; exit 2; }	[ -f "$deb" ] || true	tests/verify/rootless-test.test.sh
+rootless-test-run-as-root	scripts/verify/rootless-test.sh	[ "$(id -u)" -ne 0 ] || { echo "run this as an unprivileged user that has sudo, not as root" >&2; exit 2; }	[ "$(id -u)" -ne 0 ] || true	tests/verify/rootless-test.test.sh
+rootless-test-version-mismatch	scripts/verify/rootless-test.sh	[ "$got" = "podman version $version" ] || { echo "version mismatch: $got" >&2; exit 1; }	[ "$got" = "podman version $version" ] || true	tests/verify/rootless-test.test.sh
+rootless-test-pasta-not-the-package	scripts/verify/rootless-test.sh	|| { echo "pasta on this machine does not come from the package" >&2; exit 1; }	|| true	tests/verify/rootless-test.test.sh
+rootless-test-container-did-not-start	scripts/verify/rootless-test.sh	|| { echo "a rootless container on pasta did not start: $out" >&2; exit 1; }	|| true	tests/verify/rootless-test.test.sh
+rootless-test-container-did-not-run	scripts/verify/rootless-test.sh	*) echo "a rootless container on pasta did not run: $out" >&2; exit 1 ;;	*) ;;	tests/verify/rootless-test.test.sh
+rootless-test-listener-down	scripts/verify/rootless-test.sh	[ -n "$ready" ] || { echo "the listener for the network check did not come up on port $port" >&2; exit 1; }	[ -n "$ready" ] || true	tests/verify/rootless-test.test.sh
+rootless-test-host-unreachable	scripts/verify/rootless-test.sh	|| { echo "a rootless container could not reach the host through pasta: $got $(cat "$work/wget.err")" >&2; exit 1; }	|| true	tests/verify/rootless-test.test.sh
+rootless-test-wrong-answer	scripts/verify/rootless-test.sh	[ "$got" = pasta-ok ] || { echo "the answer through pasta was not the expected one: $got $(cat "$work/wget.err")" >&2; exit 1; }	[ "$got" = pasta-ok ] || true	tests/verify/rootless-test.test.sh
+smoke-test-no-such-file	scripts/verify/smoke-test.sh	[ -f "$deb" ] || { echo "no such file: $deb" >&2; exit 2; }	[ -f "$deb" ] || true	tests/verify/smoke-test.test.sh
+sign-seed-not-32-bytes	.github/scripts/release/sign.py	if len(seed) != 32:	if False:	tests/release/release-signing-hybrid.test.sh
+sign-seed-not-base64	.github/scripts/release/sign.py	print(f"{env} is not valid base64: {exc}", file=sys.stderr)	return bytes(32)	tests/release/release-signing-hybrid.test.sh
+sign-no-mldsa-in-the-library	.github/scripts/release/sign.py	except (ImportError, UnsupportedAlgorithm) as exc:	except KeyError as exc:	tests/release/release-signing-hybrid.test.sh
+sign-usage	.github/scripts/release/sign.py	if len(sys.argv) < 2:	if False:	tests/release/release-signing.test.sh
+sign-no-key	.github/scripts/release/sign.py	if not seed_b64:	if False:	tests/release/release-signing.test.sh
+verify-sig-key-file-not-found	.github/scripts/release/verify-sig.py	fail(TRUST_ANCHOR, f"{what} key file {path} not found")	pass	tests/release/release-signing-hybrid.test.sh
+verify-sig-key-file-bytes	.github/scripts/release/verify-sig.py	if outside:	if False:	tests/release/release-signing-hybrid.test.sh,tests/release/verify-sig-key-bytes.test.sh
+verify-sig-key-not-base64	.github/scripts/release/verify-sig.py	fail(TRUST_ANCHOR, f"malformed {what} public key on line {number} of {path}: not base64 ({exc})")	pass	tests/release/release-signing-hybrid.test.sh
+verify-sig-key-wrong-length	.github/scripts/release/verify-sig.py	if len(raw) != size:	if False:	tests/release/release-signing-hybrid.test.sh
+verify-sig-no-key-verifies	.github/scripts/release/verify-sig.py	fail(REFUSED, f"no release key verifies {args.file}")	pass	tests/release/release-signing-hybrid.test.sh,tests/release/release-signing.test.sh,tests/release/verify-sig-key-bytes.test.sh
+verify-sig-second-signature-required	.github/scripts/release/verify-sig.py	if args.require_mldsa:	if False:	tests/release/release-signing-hybrid.test.sh
+verify-sig-second-signature-too-large	.github/scripts/release/verify-sig.py	if len(sig) > MAX_MLDSA65_SIG_BYTES:	if False:	tests/release/release-signing-hybrid.test.sh
+verify-sig-second-signature-wrong-length	.github/scripts/release/verify-sig.py	if len(sig) != MLDSA65_SIG_BYTES:	if False:	tests/release/release-signing-hybrid.test.sh
+verify-sig-ed25519-file-holds-no-key	.github/scripts/release/verify-sig.py	fail(TRUST_ANCHOR, f"no public keys to verify against in {args.keys}")	pass	tests/release/release-signing-hybrid.test.sh
+verify-sig-no-library-for-mldsa	.github/scripts/release/verify-sig.py	except (ImportError, UnsupportedAlgorithm) as exc:	except KeyError as exc:	tests/release/release-signing-hybrid.test.sh
+verify-sig-a-second-signature-and-no-key	.github/scripts/release/verify-sig.py	if not raw_keys:  # a second signature, and no key to check it against	if False:	tests/release/release-signing-hybrid.test.sh
+verify-sig-key-file-unreadable	.github/scripts/release/verify-sig.py	fail(TRUST_ANCHOR, f"cannot read the {what} key file {path}: {exc}")	pass	tests/release/verify-sig-key-bytes.test.sh
+verify-sig-no-signature	.github/scripts/release/verify-sig.py	fail(REFUSED, f"no Ed25519 signature for {args.file}: {exc}")	pass	tests/release/release-signing.test.sh,tests/release/release-signing-hybrid.test.sh
+verify-sig-second-signature-unreadable	.github/scripts/release/verify-sig.py	fail(REFUSED, f"cannot read the ML-DSA-65 signature file {args.mldsa_sig}: {exc}")	pass	tests/release/release-signing-hybrid.test.sh
+verify-sig-file-unreadable	.github/scripts/release/verify-sig.py	fail(REFUSED, f"cannot read {args.file}: {exc}")	pass	tests/release/release-signing.test.sh
+build-check-plan-lightweight-tag	.github/workflows/build-check.yml	[ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }	[ -n "$sha" ] || true	tests/workflows/build-check-gate.test.sh
+build-check-gate-decide-did-not-succeed	.github/workflows/build-check.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/workflows/build-check-gate.test.sh
+build-check-gate-built-when-not-needed	.github/workflows/build-check.yml	[ "$BUILD" = skipped ] || { echo "::error::decide said no build is needed but build ended as $BUILD"; exit 1; }	[ "$BUILD" = skipped ] || true	tests/workflows/build-check-gate.test.sh
+build-check-gate-plan-did-not-succeed	.github/workflows/build-check.yml	[ "$PLAN" = success ] || { echo "::error::plan ended as $PLAN, so nothing was built"; exit 1; }	[ "$PLAN" = success ] || true	tests/workflows/build-check-gate.test.sh
+build-check-gate-build-did-not-succeed	.github/workflows/build-check.yml	[ "$BUILD" = success ] || { echo "::error::build ended as $BUILD"; exit 1; }	[ "$BUILD" = success ] || true	tests/workflows/build-check-gate.test.sh
+build-check-gate-decide-gave-no-answer	.github/workflows/build-check.yml	*)	__never__)	tests/workflows/build-check-gate.test.sh
+dependabot-automerge-commits-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not read the commits of this pull request"; exit 1; }	|| true	tests/workflows/dependabot-automerge.test.sh
+dependabot-automerge-a-commit-not-dependabot	.github/workflows/dependabot-automerge.yml	if [ "$verdict" != "only-dependabot" ]; then	if false; then	tests/workflows/dependabot-automerge.test.sh
+dependabot-automerge-files-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not read the files of this pull request"; exit 1; }	|| true	tests/workflows/dependabot-automerge.test.sh
+dependabot-automerge-rebase-list-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not list the open pull requests"; exit 1; }	|| true	tests/workflows/dependabot-rebase-only-behind.test.sh
+dependabot-automerge-files-unknown-answer	.github/workflows/dependabot-automerge.yml	*) echo "::error::unexpected answer reading the files: '$signing'"; exit 1 ;;	*) ;;	tests/workflows/dependabot-automerge.test.sh
+dependabot-automerge-disarm-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not read the pull request"; exit 1; }	|| true	tests/workflows/dependabot-automerge.test.sh
+keyring-watch-no-podman-directory	.github/workflows/keyring-watch.yml	[ -d "$dir" ] || { echo "::error::upstream has no podman/ directory"; exit 1; }	[ -d "$dir" ] || true	tests/workflows/workflows-contract.test.sh
+keyring-watch-comparison-failed	.github/workflows/keyring-watch.yml	[ "$rc" -le 1 ] || { echo "::error::could not compare the keyrings"; exit 1; }	[ "$rc" -le 1 ] || true	tests/workflows/keyring-watch-copy.test.sh
+keyring-watch-health-run-is-red-beside-the-issue	.github/workflows/keyring-watch.yml	echo "::error::$title"; exit 1	echo "::error::$title"	tests/workflows/keyring-watch-health.test.sh
+release-plan-lightweight-tag	.github/workflows/release.yml	[ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }	[ -n "$sha" ] || true	tests/workflows/release-plan.test.sh
+release-no-signing-key	.github/workflows/release.yml	if [ -z "$GLYNDOR_RELEASE_ED25519_KEY" ]; then	if false; then	tests/workflows/workflows-contract.test.sh
+release-not-one-package-per-architecture	.github/workflows/release.yml	[ "$(find . -maxdepth 1 -name 'podman_*.deb' | wc -l)" -eq 2 ] || { echo "::error::expected one package per architecture"; exit 1; }	[ "$(find . -maxdepth 1 -name 'podman_*.deb' | wc -l)" -eq 2 ] || true	tests/workflows/workflows-contract.test.sh
+release-previous-signature-unknown	.github/workflows/release.yml	*) echo "::error::the plan did not say whether the newest release carries the second signature ('$PREVIOUS_MLDSA'); refusing to guess."; exit 1 ;;	*) ;;	tests/workflows/release-contract.test.sh
+release-a-keyring-file-missing	.github/workflows/release.yml	[ -f "$f" ] || { echo "::error::$f is missing; refusing to publish without the keys and the switch it reads."; exit 1; }	[ -f "$f" ] || true	tests/workflows/release-contract.test.sh,tests/workflows/release-second-signature.test.sh
+release-a-keyring-file-byte	.github/workflows/release.yml	if [ "$outside" -ne 0 ]; then	if false; then	tests/workflows/release-contract.test.sh,tests/workflows/release-second-signature.test.sh
+release-switch-unreadable-line	.github/workflows/release.yml	elif ! [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]]; then	elif false; then	tests/workflows/release-second-signature.test.sh
+release-switch-on-without-a-key	.github/workflows/release.yml	if [ "$switched" = true ] && [ "$anchored" = false ]; then	if false; then	tests/workflows/release-second-signature.test.sh
+release-second-signature-dropped	.github/workflows/release.yml	if [ "$PREVIOUS_MLDSA" = true ] && [ "$anchored" = false ]; then	if false; then	tests/workflows/release-contract.test.sh
+release-key-without-secret	.github/workflows/release.yml	if [ "$anchored" = true ] && [ -z "$GLYNDOR_RELEASE_MLDSA65_KEY" ]; then	if false; then	tests/workflows/release-contract.test.sh,tests/workflows/release-second-signature.test.sh
+release-required-second-signature-missing	.github/workflows/release.yml	elif [ "$REQUIRE_MLDSA" = true ]; then	elif false; then	tests/workflows/release-contract.test.sh
+reusable-build-tag-moved	.github/workflows/reusable-build.yml	[ "$commit" = "$4" ] || { echo "$2 $3 is at $commit, the plan saw $4" >&2; exit 1; }	[ "$commit" = "$4" ] || true	tests/workflows/workflows-contract.test.sh
+reusable-dco-range-unreadable	.github/workflows/reusable-dco.yml	|| { echo "::error::could not list ${BASE_SHA}..${HEAD_SHA}; the range could not be checked"; exit 1; }	|| true	tests/workflows/dco-contract.test.sh
+reusable-dco-missing-sign-off	.github/workflows/reusable-dco.yml	if [ "$missing" -ne 0 ]; then	if false; then	tests/workflows/dco-contract.test.sh
+reusable-dco-merge-commit	.github/workflows/reusable-dco.yml	if [ "$bad" -ne 0 ]; then	if false; then	tests/workflows/dco-contract.test.sh
+reusable-dco-merges-cannot-be-listed	.github/workflows/reusable-dco.yml	merges="$(git rev-list --merges "${BASE_SHA}..${HEAD_SHA}")" || {	merges="$(git rev-list --merges "${BASE_SHA}..${HEAD_SHA}")" || true || {	tests/workflows/dco-contract.test.sh
+reusable-line-limit-over-the-hard-limit	.github/workflows/reusable-line-limit.yml	if [ "$fail" -ne 0 ]; then	if false; then	tests/workflows/line-limit-measures-workflows.test.sh
+reusable-workflow-lint-tooling-beside-a-secret	.github/workflows/reusable-workflow-lint.yml	if violations:	if False:	tests/workflows/workflow-lint-pins-actionlint.test.sh
+tests-no-suite-found	.github/workflows/tests.yml	[ "$count" -gt 0 ] || { echo "::error::no suite found under tests/"; exit 1; }	[ "$count" -gt 0 ] || true	tests/workflows/tests-run-every-suite.test.sh
+watchdog-keyring-watch-runs-cannot-be-listed	.github/workflows/watchdog.yml	if ! gh run list --workflow keyring-watch.yml --event schedule --limit 20 \	if false && gh run list --workflow keyring-watch.yml --event schedule --limit 20 \	tests/workflows/watchdog-freshness.test.sh
