@@ -32,7 +32,10 @@ permissions:
 
 concurrency:
   group: line-limit-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and a reusable workflow
+  # runs on the events of the workflow that calls it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   line-limit:
@@ -41,6 +44,9 @@ jobs:
     # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
     # commit; the arm64 build keeps its own label, so the rootless test covers both.
     runs-on: ubuntu-26.04
+    # Measured 9 s in this repository's pull requests on 2026-11-21. The limit is
+    # there for a hang, which would otherwise cost the six-hour default.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

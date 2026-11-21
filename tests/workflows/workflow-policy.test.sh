@@ -83,6 +83,41 @@ for path in sorted(glob.glob(f"{root}/*.yml")):
                 print(f"{name}: {job} runs on a pull request with no concurrency")
             elif not cancels(block):
                 print(f"{name}: {job} concurrency does not cancel a superseded run")
+    elif rule == "cancel-outside-pr":
+        # A run that a newer one cancels is a verdict nobody gets. On a pull request the
+        # newer push makes it moot; on a push to main each commit is its own, and two
+        # merges in a row would leave the first without one. So a workflow that can run
+        # on any event but a pull request cancels only when the event is one. A reusable
+        # workflow runs on the events of its callers, read here from the files that use
+        # it; one nobody calls is read as able to run on anything. A job whose own `if`
+        # names only pull request events is read as running on them alone.
+        pr_events = {"pull_request", "pull_request_target"}
+        def only_pr(cfg):
+            named = set(re.findall(r"github\.event_name\s*==\s*'([a-z_]+)'", str(cfg.get("if", ""))))
+            return bool(named) and named <= pr_events
+        def events_of(doc, fname):
+            ev = set(triggers(doc))
+            if "workflow_call" not in ev:
+                return ev
+            ev.discard("workflow_call")
+            called = False
+            for other in sorted(glob.glob(f"{root}/*.yml")):
+                with open(other) as fh:
+                    odoc = yaml.safe_load(fh)
+                for cfg in (odoc.get("jobs") or {}).values():
+                    if str(cfg.get("uses", "")) == f"./.github/workflows/{fname}" and not only_pr(cfg):
+                        called = True
+                        ev |= events_of(odoc, other.rsplit("/", 1)[1])
+            return ev if called else ev | {"unknown caller"}
+        def conditional(block):
+            value = str(block.get("cancel-in-progress", False)).strip()
+            return value.lower() == "false" or ("github.event_name" in value and "pull_request" in value)
+        blocks = [("workflow", doc.get("concurrency"), True)]
+        blocks += [(job, cfg.get("concurrency"), not only_pr(cfg)) for job, cfg in (doc.get("jobs") or {}).items()]
+        outside = sorted(events_of(doc, name) - pr_events)
+        for where, block, reachable in blocks:
+            if block is not None and reachable and outside and not conditional(block):
+                print(f"{name}: {where} cancels a run whatever the event, and the workflow also runs on {', '.join(outside)}")
     elif rule == "target-group":
         # On pull_request_target the ref is main for every pull request, so a group built
         # on it would let one pull request's run cancel another's.
@@ -229,6 +264,34 @@ cp "$HERE"/.github/workflows/*.yml "$BAD/"
 sed -i 's/^    name: rebase what fell behind$/    name: rebase what fell behind\n    concurrency:\n      group: r\n      cancel-in-progress: false/' "$BAD/dependabot-automerge.yml"
 check "and the rebase job is held to the same" \
 	"dependabot-automerge.yml: rebase is in a concurrency group, and a group can cancel it" "$(violations never-cancelled "$BAD")"
+
+# --- a run is cancelled only on a pull request ---------------------------------
+check "nothing that can run on a push, a schedule or a call cancels whatever the event" "" "$(violations cancel-outside-pr)"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i "s/^  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\$/  cancel-in-progress: true/" "$BAD/reusable-workflow-lint.yml"
+check "the fixture did go back to cancelling always" "1" "$(grep -c '^  cancel-in-progress: true$' "$BAD/reusable-workflow-lint.yml")"
+check "a reusable that its push caller can reach, cancelling always, is named" \
+	"reusable-workflow-lint.yml: workflow cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i "s/^  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\$/  cancel-in-progress: true/" "$BAD/reusable-line-limit.yml"
+check "the same change to a reusable that only pull request callers use is accepted" "" "$(violations cancel-outside-pr "$BAD")"
+sed -i 's/^  pull_request:$/  push:\n    branches: ["main"]\n  pull_request:/' "$BAD/line-limit.yml"
+check "the fixture did give its caller a push trigger" "1" "$(grep -c '^  push:$' "$BAD/line-limit.yml")"
+check "and is named once a caller can run it on a push" \
+	"reusable-line-limit.yml: workflow cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+rm "$BAD/dco.yml"
+check "a reusable that nothing calls is read as able to run on anything" \
+	"reusable-dco.yml: workflow cancels a run whatever the event, and the workflow also runs on unknown caller" "$(violations cancel-outside-pr "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i 's/^  pull_request:$/  push:\n    branches: ["main"]\n  pull_request:/' "$BAD/build-check.yml"
+check "a workflow of its own that gains a push trigger and cancels always is named" \
+	"build-check.yml: workflow cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
+cp "$HERE"/.github/workflows/*.yml "$BAD/"
+sed -i "s/ == 'pull_request_target' && github.event.pull_request.user.login/ != 'x' \&\& github.event.pull_request.user.login/" "$BAD/dependabot-automerge.yml"
+check "the fixture did free the arm job from its event" "0" "$(grep -c "event_name == 'pull_request_target' && github.event.pull_request.user" "$BAD/dependabot-automerge.yml")"
+check "a job that stopped naming a pull request event, in a workflow that has a push, is named" \
+	"dependabot-automerge.yml: arm cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
 
 # --- a watcher does not run on a pull request ------------------------------------
 check "the watchdog and the keyring watch do not trigger on a pull request" "" "$(violations watchers)"
