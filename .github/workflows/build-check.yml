@@ -49,7 +49,8 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-    # Checkout of the full history plus one git diff: seconds. The rest is slack.
+    # Measured in this repository's runs: 3 to 9 seconds, a checkout of the full history
+    # and one git diff. The five minutes is a ceiling.
     timeout-minutes: 5
     outputs:
       build: ${{ steps.d.outputs.build }}
@@ -86,7 +87,8 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-    # Six git ls-remote calls, as in the release plan.
+    # Measured in this repository's runs: 6 to 8 seconds for six git ls-remote calls, as
+    # in the release plan. The ten minutes is a ceiling.
     timeout-minutes: 10
     outputs:
       version: ${{ steps.p.outputs.version }}
@@ -147,7 +149,7 @@ jobs:
     # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest
     permissions: {}
-    # Reads four strings.
+    # Ceiling, not measured: it reads four strings.
     timeout-minutes: 5
     env:
       DECIDE: ${{ needs.decide.result }}

@@ -24,7 +24,8 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-    # Under two minutes locally; the suite builds a fake .deb and a few tags.
+    # Measured in this repository's runs: 11 to 13 seconds for the job. The fifteen
+    # minutes is a ceiling, not a measurement.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

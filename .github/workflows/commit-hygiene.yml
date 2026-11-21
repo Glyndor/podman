@@ -15,6 +15,14 @@ on:
 
 permissions: {}
 
+# Both jobs read the pull request's head commit and nothing else, so a newer push
+# makes the earlier run answer about a commit that no longer exists. It is cancelled.
+# There is no other event here, and nothing to merge or publish, so nothing is left
+# half done by the cancel.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   commit-identity:
     name: commit identity
@@ -24,6 +32,7 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+    # Ceiling, not measured: a checkout of the history and a loop over its commits.
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,6 +51,7 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+    # Ceiling, not measured: a checkout of the history and a scan of the added lines.
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
