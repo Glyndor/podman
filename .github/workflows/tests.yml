@@ -51,11 +51,27 @@ jobs:
           shellcheck -S warning scripts/*/*.sh tests/*/*.sh
       - name: every script has a test
         run: scripts/quality/check-test-coverage.sh
+      - name: Install the pinned cryptography wheel for the ML-DSA-65 suite
+        run: |
+          set -euo pipefail
+          # The runner's python3-cryptography has no ML-DSA, so the suite that
+          # makes and verifies real ML-DSA-65 signatures runs on the wheel
+          # release.yml signs with, pinned by hash and binary only, in a virtual
+          # environment of its own. The other suites keep the system python3.
+          venv="$RUNNER_TEMP/mldsa-venv"
+          python3 -m venv "$venv"
+          "$venv/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r .github/scripts/release/sign-requirements.txt
       - name: suites
         run: |
           status=0
           for t in tests/*/*.test.sh; do
             echo "== $t"
-            bash "$t" || status=1
+            case "$t" in
+              # The environment comes first on PATH for the suite and for the
+              # scripts it runs. Without it the suite fails and says what is
+              # missing; it is never skipped.
+              *-mldsa.test.sh) PATH="$RUNNER_TEMP/mldsa-venv/bin:$PATH" bash "$t" || status=1 ;;
+              *) bash "$t" || status=1 ;;
+            esac
           done
           exit "$status"
