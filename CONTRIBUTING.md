@@ -84,6 +84,14 @@ Ubuntu has no ML-DSA. `tests.yml` runs it in a virtual environment built from
 do the same. Run without that environment first on `PATH`, the suite fails and says what
 is missing; it does not skip.
 
+Every refusal of a script or a workflow (an `exit` with a status, a `fail`, a
+`sys.exit` with a message) has an entry in `tests/mutation/catalog.txt`: the text that
+removes it, and the suites that must go red when it is gone. `check-mutation-coverage.sh`
+names a refusal that has none, and one that cannot have one goes in
+`tests/mutation/exemptions.txt` with what was measured. `bash tests/mutation/run-mutations.sh <id>`
+applies one entry to a copy of the committed tree and runs its suites; with no id it
+runs them all, which `mutation.yml` does every week.
+
 **A test you have not watched fail is not a test.** Before claiming a check
 works, remove the control it covers, run it, and confirm it goes red for the
 reason it names. Assert which failure fired, never that some failure did.
@@ -100,6 +108,7 @@ reason it names. Assert which failure fired, never that some failure did.
 | `reusable-build.yml` | the build, the smoke test on Debian 13 and Ubuntu 24.04 and 26.04, the check that Ubuntu 22.04 refuses the package, and a rootless container on the runner itself, for one architecture; called by `release.yml` and `build-check.yml` |
 | `build-check.yml` | `package builds`: a pull request that touches `scripts/build/`, `scripts/verify/`, `scripts/upstream/`, `keyring/podman/`, the build workflows or `scripts/ci/decide-build.sh` compiles the package on both architectures; any other pull request skips the build and passes |
 | `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it; also fails when `keyring-watch.yml` has not finished a scheduled run in two days, and opens an issue for that too |
+| `mutation.yml` | `every catalogued guard is noticed`: each entry of `tests/mutation/catalog.txt` breaks one refusal of a script or workflow, and a suite it names has to go red. Weekly and on demand every entry; on a pull request only the entries the change can affect, decided from the base commit |
 | `dependabot-automerge.yml` | arms auto-merge on Dependabot's pull requests, which then merge when the required checks pass, and asks Dependabot to rebase the ones that fall behind |
 | `keyring-watch.yml` | the keys that sign Podman upstream are no longer the ones in `keyring/podman/`: it prepares a branch with the change and opens an issue, and it also opens one when fewer than two keys can still sign for the next sixty days |
 
