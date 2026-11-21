@@ -16,7 +16,9 @@ it on clean Debian 13, Ubuntu 24.04 and Ubuntu 26.04 and checks that Ubuntu
 22.04 refuses it, and only then signs and publishes it.
 
 Nothing is released by hand. A change to how the package is built, anything under
-`scripts/build/`, makes the next scheduled run publish a new `+rN` release.
+`scripts/build/`, makes the next scheduled run publish a new `+rN` release. The
+workflows call that content the recipe: its id is a hash of those files, and a
+release records the id it was built with in `components.txt`.
 
 ## Branch flow
 
@@ -75,6 +77,7 @@ reason it names. Assert which failure fired, never that some failure did.
 | `build-check.yml` | `package builds`: a pull request that touches `scripts/build/`, `scripts/verify/`, `scripts/upstream/`, `keyring/podman/`, the build workflows or `scripts/ci/decide-build.sh` compiles the package on both architectures; any other pull request skips the build and passes |
 | `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it; also fails when `keyring-watch.yml` has not finished a scheduled run in two days, and opens an issue for that too |
 | `dependabot-automerge.yml` | arms auto-merge on Dependabot's pull requests, which then merge when the required checks pass, and asks Dependabot to rebase the ones that fall behind |
+| `keyring-watch.yml` | the keys that sign Podman upstream are no longer the ones in `keyring/podman/`: it prepares a branch with the change and opens an issue, and it also opens one when fewer than two keys can still sign for the next sixty days |
 
 Job ids are load-bearing. A required status check is named
 `<caller job id> / <inner job name>`, so renaming a job renames its check and

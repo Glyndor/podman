@@ -10,7 +10,8 @@
 # It asserts one direction only: every script has a test. The reverse -- a test
 # with no script -- is a different failure with a different fix, and folding
 # both into one check would make the message ambiguous. tests/ also holds tests
-# for things that are not scripts at all, such as the README bootstrap.
+# for things that are not under scripts/ at all: the signing tools in
+# .github/scripts/release/ and the steps of the workflows.
 #
 # Usage: check-test-coverage.sh [repo-root]   (default: the repo this lives in)
 
