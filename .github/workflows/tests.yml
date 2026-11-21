@@ -53,7 +53,7 @@ jobs:
           shellcheck --version
           shellcheck -S warning scripts/*/*.sh tests/*/*.sh
       - name: every script has a test
-        run: scripts/quality/check-test-coverage.sh
+        run: bash scripts/quality/check-test-coverage.sh
       - name: Install the pinned cryptography wheel for the ML-DSA-65 suite
         run: |
           set -euo pipefail

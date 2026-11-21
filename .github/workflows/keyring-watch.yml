@@ -66,7 +66,7 @@ jobs:
         id: diff
         run: |
           set +e
-          scripts/upstream/keyring-diff.sh keyring/podman "$RUNNER_TEMP/release-keys/podman" > "$RUNNER_TEMP/diff.txt"
+          bash scripts/upstream/keyring-diff.sh keyring/podman "$RUNNER_TEMP/release-keys/podman" > "$RUNNER_TEMP/diff.txt"
           rc=$?
           set -e
           [ "$rc" -le 1 ] || { echo "::error::could not compare the keyrings"; exit 1; }
@@ -154,7 +154,7 @@ jobs:
         id: health
         run: |
           set +e
-          scripts/upstream/keyring-health.sh keyring/podman "$(date +%s)" 60 2 2>&1 | tee "$RUNNER_TEMP/health.txt"
+          bash scripts/upstream/keyring-health.sh keyring/podman "$(date +%s)" 60 2 2>&1 | tee "$RUNNER_TEMP/health.txt"
           rc="${PIPESTATUS[0]}"
           echo "code=$rc" >> "$GITHUB_OUTPUT"
 

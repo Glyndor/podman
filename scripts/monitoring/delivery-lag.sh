@@ -33,7 +33,7 @@ dates="${4:?dates}"; now="${5:?now}"; max_hours="${6:?max-hours}"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-plan="$("$here/../upstream/plan-release.sh" "$fresh" "$released" "$tags")" \
+plan="$(bash "$here/../upstream/plan-release.sh" "$fresh" "$released" "$tags")" \
 	|| { echo "cannot tell what the newest release carries" >&2; exit 2; }
 case "$plan" in
 	*build=false*) echo "the newest release carries everything upstream has"; exit 0 ;;

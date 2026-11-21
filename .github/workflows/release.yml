@@ -67,18 +67,18 @@ jobs:
         run: |
           w="$RUNNER_TEMP/plan"; mkdir -p "$w"
           for c in podman netavark aardvark-dns; do
-            echo "$c $(scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")" >> "$w/fresh"
+            echo "$c $(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")" >> "$w/fresh"
           done
           # How the package is built counts as a component: upstream tags cannot
           # see a packaging fix, so without this one never produces a release.
-          echo "recipe $(scripts/build/recipe-id.sh)" >> "$w/fresh"
+          echo "recipe $(bash scripts/build/recipe-id.sh)" >> "$w/fresh"
           # Every tag the repository has, from git rather than from the release
           # list: a tag can exist without a release, and a window of the newest
           # releases would one day miss the revision the planner has to step past.
           git ls-remote --tags "https://github.com/$GH_REPO.git" \
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
-          scripts/upstream/read-released.sh "$w/released"
-          scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
+          bash scripts/upstream/read-released.sh "$w/released"
+          bash scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
           # The package version is the tag without its leading v; the build
           # workflow takes it as given, since an expression cannot strip it.
           tag="$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT")"

@@ -58,7 +58,7 @@ jobs:
         run: |
           w="$RUNNER_TEMP/lag"; mkdir -p "$w"
           for c in podman netavark aardvark-dns; do
-            tag="$(scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")"
+            tag="$(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")"
             echo "$c $tag" >> "$w/fresh"
             # When upstream published it. A tag with no GitHub release has no
             # date, so it counts as appearing now rather than raising a false alarm.
@@ -66,16 +66,16 @@ jobs:
             epoch="$(date -d "${when:-now}" +%s)"
             echo "$c $tag $epoch" >> "$w/dates"
           done
-          recipe="$(scripts/build/recipe-id.sh)"
+          recipe="$(bash scripts/build/recipe-id.sh)"
           echo "recipe $recipe" >> "$w/fresh"
           echo "recipe $recipe $(git log -1 --format=%ct -- scripts/build)" >> "$w/dates"
           git ls-remote --tags "https://github.com/$GH_REPO.git" \
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
-          scripts/upstream/read-released.sh "$w/released"
+          bash scripts/upstream/read-released.sh "$w/released"
           # 1 means it is behind for too long; 2 means it could not tell, and the
           # alert says which, because they call for different things.
           set +e
-          scripts/monitoring/delivery-lag.sh "$w/fresh" "$w/released" "$w/tags" "$w/dates" "$(date +%s)" "$MAX_HOURS"
+          bash scripts/monitoring/delivery-lag.sh "$w/fresh" "$w/released" "$w/tags" "$w/dates" "$(date +%s)" "$MAX_HOURS"
           rc=$?
           set -e
           echo "code=$rc" >> "$GITHUB_OUTPUT"
