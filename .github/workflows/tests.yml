@@ -52,7 +52,9 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version
-          shellcheck -S warning scripts/*/*.sh tests/*/*.sh
+          # Every script and every suite at any depth, so a folder added under scripts/
+          # or tests/ is read without anyone editing this line.
+          find scripts tests -name '*.sh' -print0 | xargs -0 shellcheck -S warning
       - name: every script has a test
         run: bash scripts/quality/check-test-coverage.sh
       - name: Install the pinned cryptography wheel for the ML-DSA-65 suite
@@ -68,8 +70,13 @@ jobs:
       - name: suites
         run: |
           status=0
-          for t in tests/*/*.test.sh; do
+          count=0
+          # Every file named *.test.sh under tests/, at any depth: a suite in a new
+          # subfolder runs without anyone editing this step, and one that is named
+          # otherwise is refused by tests/workflows/tests-run-every-suite.test.sh.
+          while IFS= read -r t; do
             echo "== $t"
+            count=$((count + 1))
             case "$t" in
               # The environment comes first on PATH for the suite and for the
               # scripts it runs. Without it the suite fails and says what is
@@ -77,5 +84,7 @@ jobs:
               *-mldsa.test.sh) PATH="$RUNNER_TEMP/mldsa-venv/bin:$PATH" bash "$t" || status=1 ;;
               *) bash "$t" || status=1 ;;
             esac
-          done
+          done < <(find tests -name '*.test.sh' | LC_ALL=C sort)
+          echo "$count suites ran"
+          [ "$count" -gt 0 ] || { echo "::error::no suite found under tests/"; exit 1; }
           exit "$status"

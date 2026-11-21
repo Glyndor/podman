@@ -5,7 +5,7 @@
 # which one is refused before any cryptography runs, the refusal when the
 # library cannot check one, and sign.py with no second key or a bad one. The
 # cases that make and verify a real ML-DSA-65 signature are in
-# tests/ci/release-signing-mldsa.test.sh, which needs cryptography 50.0.2.
+# tests/release/release-signing-mldsa.test.sh, which needs cryptography 50.0.2.
 #
 # Every case asserts the reason of a refusal, not only the exit status, and the
 # ML-DSA-65 inputs are valid in every respect except the one under test: a
