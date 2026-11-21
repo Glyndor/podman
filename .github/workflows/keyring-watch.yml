@@ -185,4 +185,5 @@ jobs:
             } > "$RUNNER_TEMP/body.txt"
             gh issue create --title "$title" --label type:security --label prio:P1 --label area:upstream --body-file "$RUNNER_TEMP/body.txt"
           fi
-          exit 1
+          # The run is red beside the issue, and says why in its own log.
+          echo "::error::$title"; exit 1

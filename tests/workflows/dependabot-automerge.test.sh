@@ -49,6 +49,9 @@ cat > "$WORK/bin/gh" <<'GH'
 case "$1 $2" in
 	"pr view")
 		[ -z "${GH_FAILS:-}" ] || exit 1
+		# FILES_ANSWER stands for a gh that answers the files query with something its
+		# program cannot print, so the arm that refuses an answer it does not know runs.
+		case " $* " in *" --json files "*) [ -z "${FILES_ANSWER+set}" ] || { printf '%s' "$FILES_ANSWER"; exit 0; } ;; esac
 		while [ $# -gt 0 ]; do [ "$1" = --jq ] && { jq -r "$2" "$FIXTURE"; exit; }; shift; done
 		exit 1 ;;
 	"pr merge") echo "merge $*" >> "$GH_LOG" ;;
@@ -105,6 +108,12 @@ refused "a commit Dependabot shares with a person" "{\"commits\":[{\"authors\":[
 refused "an author linked to no account" '{"commits":[{"authors":[{"login":"","email":"x@example.org"}]}]}'
 refused "an author with a null login" '{"commits":[{"authors":[{"login":null}]}]}'
 
+for answer in "" "maybe" "untouched touched"; do
+	FILES_ANSWER="$answer" run_guard "{\"commits\":[{\"authors\":[$dep]}]}"
+	check "an answer about the files that is neither touched nor untouched ('$answer') is refused" "1 0 1" \
+		"$rc $merged $(printf '%s' "$out" | grep -c "unexpected answer reading the files: '$answer'")"
+done
+
 # A failed read stops the job by itself, and so does an answer jq cannot evaluate.
 GH_FAILS=1 run_guard '{}'
 check "a failed read is refused" "1 0 1" "$rc $merged $(printf '%s' "$out" | grep -c 'could not read the commits')"
@@ -156,6 +165,34 @@ check "a disarm that stops looking at who pushed also runs on Dependabot's own p
 sed "s/^    if: github.event_name == 'pull_request_target' && github.event.pull_request.user.login == 'dependabot\[bot\]' && github.actor != /    if: always() \&\& github.actor != /" "$WF" > "$swapped"
 check "a condition outside the form this reads is unreadable, not an answer" "disarm: unreadable condition \"always() && github.actor != 'dependabot[bot]'\"
 arm" "$(jobs_for "$swapped" pull_request_target "$bot" "$bot")"
+
+# --- disarm: auto-merge goes off when it was on, and a failed read is a refusal --------
+# shellcheck source=tests/lib/workflow-step.sh
+. "$HERE/tests/lib/workflow-step.sh"
+D="$WORK/disarm"
+if step dependabot-automerge.yml disarm "name=Turn auto-merge off" "$D"; then
+	check "the disarm step's run block has no expression in it" 0 "$(grep -c '\${{' "$D/run.sh")"
+	mkdir -p "$D/bin"
+	cat > "$D/bin/gh" <<'GH'
+#!/usr/bin/env bash
+case "$1 $2" in
+	"pr view") [ -z "${GH_FAILS:-}" ] || exit 1; printf '%s\n' "$ARMED" ;;
+	"pr merge") echo "merge $*" >> "$GH_LOG" ;;
+	*) exit 1 ;;
+esac
+GH
+	chmod +x "$D/bin/gh"
+	disarm() { : > "$D/gh.log"; run_step "$D" "$D" PATH="$D/bin:$PATH" GH_LOG="$D/gh.log" NUMBER=7 "$@"; }
+	disarm ARMED=true
+	check "armed: auto-merge is turned off for that pull request" "0 1" "$rc $(grep -c -x 'merge pr merge 7 --disable-auto' "$D/gh.log")"
+	disarm ARMED=false
+	check "not armed: nothing to turn off, and it says so" "0 0 1" "$rc $(grep -c . "$D/gh.log") $(says 'auto-merge was not on')"
+	disarm ARMED=true GH_FAILS=1
+	check "a pull request that cannot be read is refused, and nothing is turned off by guess" "1 1 0" \
+		"$rc $(says 'could not read the pull request') $(grep -c . "$D/gh.log")"
+else
+	fail=$((fail + 1)); echo "FAIL  dependabot-automerge.yml: cannot find the disarm step"
+fi
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

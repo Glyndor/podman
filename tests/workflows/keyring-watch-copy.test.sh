@@ -7,6 +7,7 @@
 # before it refuses links (workflows-contract.test.sh); this is the second layer, and
 # it is run here on its own, in a throwaway repository, with a link that step would
 # have refused. It also replaces the whole set, so a key upstream dropped is dropped.
+# And the comparison before it: a difference is handed on, a failure to compare stops.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -47,6 +48,24 @@ if step keyring-watch.yml compare "name=Commit the update to a branch" "$C"; the
 	check "the commit is signed off" 1 "$(g log -1 --format=%B | grep -c '^Signed-off-by: github-actions\[bot\] ')"
 else
 	fail=$((fail + 1)); echo "FAIL  keyring-watch.yml: cannot find the copy step"
+fi
+
+# --- the comparison: a difference is an answer, a failure to compare is not --------
+K="$WORK/compare"
+if step keyring-watch.yml compare "name=Compare with the copy here" "$K"; then
+	check "the compare step's run block has no expression in it" 0 "$(grep -c '\${{' "$K/run.sh")"
+	mkdir -p "$K/ws/scripts/upstream" "$K/rt"
+	printf '#!/bin/sh\necho "a difference, or none"\nexit "$DIFF_RC"\n' > "$K/ws/scripts/upstream/keyring-diff.sh"
+	compare() { : > "$K/out"; run_step "$K" "$K/ws" RUNNER_TEMP="$K/rt" GITHUB_OUTPUT="$K/out" DIFF_RC="$1"; }
+	compare 0
+	check "the same keys: no difference is handed on" "0 differs=false" "$rc $(cat "$K/out")"
+	compare 1
+	check "other keys: the difference is handed on" "0 differs=true" "$rc $(cat "$K/out")"
+	compare 2
+	check "a comparison that failed stops the run, says so, and hands on no answer" "1 1 0" \
+		"$rc $(says 'could not compare the keyrings') $(grep -c . "$K/out")"
+else
+	fail=$((fail + 1)); echo "FAIL  keyring-watch.yml: cannot find the compare step"
 fi
 
 echo "$pass passed, $fail failed"
