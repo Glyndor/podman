@@ -21,7 +21,7 @@ on:
       extensions:
         description: Space-separated source file extensions to check
         type: string
-        default: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte"
+        default: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte yml yaml"
       exclude-pattern:
         description: Optional extended regex; matching paths are skipped
         type: string
