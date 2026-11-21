@@ -27,7 +27,10 @@ printf 'v6.2.0\n' > "$WORK/t1"
 check "nothing changed, in any order" "build=false" "$("$SCRIPT" "$fresh" "$WORK/same" "$WORK/t1")"
 
 printf 'podman v6.2.0\nnetavark v2.0.0\naardvark-dns v2.1.0\n' > "$WORK/old"
-check "a component changed under the same podman" "build=true tag=v6.2.0+r2" \
+# The bare tag is the first build of a version and counts as revision 1 (the `:-1` in
+# plan-release.sh), so the second build is +r2 and no release is called +r1. Releases
+# from v6.2.0 to v6.2.0+r10 are published under that numbering, so it stays.
+check "a component changed under the same podman: the second build is +r2" "build=true tag=v6.2.0+r2" \
 	"$("$SCRIPT" "$fresh" "$WORK/old" "$WORK/t1" | paste -sd' ')"
 
 printf 'v6.2.0\nv6.2.0+r2\nv6.1.4\n' > "$WORK/t2"

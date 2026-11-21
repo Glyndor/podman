@@ -10,8 +10,8 @@
 
 <!-- How was this tested? Check all that apply. -->
 
-- [ ] `for t in tests/*/*.test.sh; do bash "$t"; done` passes locally
-- [ ] `shellcheck -S warning scripts/*/*.sh tests/*/*.sh` is clean
+- [ ] `for t in $(find tests -name '*.test.sh' | sort); do bash "$t"; done` passes locally
+- [ ] `find scripts tests -name '*.sh' -print0 | xargs -0 shellcheck -S warning` is clean (shellcheck v0.11.0, the version CI pins)
 - [ ] For changes to the build, the package was built and installed on Debian 13 and Ubuntu 24.04 and 26.04, and refused on Ubuntu 22.04
 
 <!--
@@ -26,7 +26,7 @@ check, say which control you removed to make it go red, and what it reported.
 - [ ] Targets `main` (this repository has no `develop` branch)
 - [ ] Commits are signed off (DCO, `git commit -s`)
 - [ ] Labels applied (`type:`, `prio:`, `effort:`, `area:` where applicable)
-- [ ] Every script under `scripts/` still has a test (`scripts/quality/check-test-coverage.sh`)
+- [ ] Every script under `scripts/` still has a test (`bash scripts/quality/check-test-coverage.sh`)
 - [ ] No secrets, keys or credentials in code, logs or fixtures
 - [ ] Docs updated if behaviour changed
 
