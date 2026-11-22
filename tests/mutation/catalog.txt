@@ -426,3 +426,6 @@ build-deb-postinst-says-nothing-of-a-profile-that-did-not-load	scripts/build/bui
 build-deb-signal-rule-without-a-space-is-not-counted	scripts/build/build-deb.sh	signal([[:space:]]|\()	signal[[:space:]]	tests/build/build-deb.test.sh
 build-deb-signal-rule-with-spaces-around-the-equals-is-not-counted	scripts/build/build-deb.sh	peer[[:space:]]*=[[:space:]]*"?podman	peer=podman	tests/build/build-deb.test.sh
 build-deb-a-peer-that-starts-with-podman-is-counted	scripts/build/build-deb.sh	"?podman"?([[:space:],]|$)	"?podman	tests/build/build-deb.test.sh
+rootless-stop-test-network-backend-is-not-named	scripts/verify/rootless-stop-test.sh	echo "network backend: $(podman info --format '{{.Host.NetworkBackend}} {{.Host.NetworkBackendInfo.Version}}' 2>&1 || true)"	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-steering-environment-is-not-named	scripts/verify/rootless-stop-test.sh	echo "environment: $(env | grep -E '^(NETAVARK|CONTAINERS)_' | tr '\n' ' ' || true)"	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-no-containers-conf-is-read	scripts/verify/rootless-stop-test.sh	/usr/share/containers /etc/containers "${XDG_CONFIG_HOME:-$HOME/.config}/containers"	/nonexistent	tests/verify/rootless-stop-test.test.sh

@@ -51,6 +51,7 @@ fake podman 'echo "podman $*" >> "$CALLS"
 start_pasta() { sleep 60 >/dev/null 2>&1 </dev/null & echo $! > "$STATE/pasta.pid"; }
 case "$1 $2" in
 	"ps -q") [ "$FAKE" != other-containers ] || echo 0a3c973d42c4; exit 0 ;;
+	"info --format") [ "$3" = "{{.Host.NetworkBackend}} {{.Host.NetworkBackendInfo.Version}}" ] || exit 9; echo "netavark netavark 2.1.0" ;;
 	"network create"|"network rm"|"rm -f") exit 0 ;;
 	"run -d")
 		[ "$FAKE" != no-start ] || { echo "Error: crun failed" >&2; exit 125; }
@@ -178,6 +179,16 @@ check "a profile the kernel does not report: refused with 2, and named" "2 1" "$
 run FAKE=no-start
 check "a container that does not start: refused, with what podman said" "1 1 1" \
 	"$rc $(said 'a rootless container on a bridge network did not start') $(said 'crun failed')"
+# What decides the firewall driver is named, so a container that did not start says why: the
+# backend, the variables that steer it, and the lines of a containers.conf that name a driver.
+mkdir -p "$WORK/xdg/containers"
+printf '[network]\nfirewall_driver = "iptables"\n' > "$WORK/xdg/containers/containers.conf"
+run FAKE=no-start XDG_CONFIG_HOME="$WORK/xdg" CONTAINERS_CONF_OVERRIDE=/nowhere/override.conf
+check "and the message names the network backend of this machine" 1 "$(said 'network backend: netavark netavark 2.1.0')"
+check "and the variables of the environment that steer it" "1 1" "$(said 'environment: ') $(printf '%s\n' "$out" | grep -c -F 'CONTAINERS_CONF_OVERRIDE=/nowhere/override.conf')"
+check "and the containers.conf line that names a firewall driver, with its file" 1 \
+	"$(printf '%s\n' "$out" | grep -c -F "$WORK/xdg/containers/containers.conf:2:firewall_driver = \"iptables\"")"
+run FAKE=no-start
 check "and the network is still removed" 1 "$(called '^podman network rm -f aa-pasta-net-')"
 run FAKE=no-pasta
 check "no pasta behind the namespace: refused, because the stop would not signal anything" "1 1 0" \
