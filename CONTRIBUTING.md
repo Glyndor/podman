@@ -23,9 +23,13 @@ release records the id it was built with in `components.txt`.
 Two files in `keyring/` decide the second, ML-DSA-65 signature of a release:
 `glyndor-release-mldsa65.b64` holds its public key, and the line `required` in
 `second-signature-required` makes it mandatory for every release. Each one changes
-in a pull request of its own. While that line is there, a key file left without a
-key stops the release instead of publishing Ed25519 alone, and taking the line out
-is what retires the second signature. `docs/verify.md` and the README say whether
+in a pull request of its own. The line is not the only thing that requires the
+second signature: so does the secret `GLYNDOR_RELEASE_MLDSA65_KEY` being set, and so
+does the newest release already carrying it. While any of the three holds, a key
+file left without a key stops the release instead of publishing Ed25519 alone, and
+a key in the file with no secret stops it too. Taking the line out therefore does
+not retire the second signature: it stays required for as long as the secret is
+set or the newest release carries it. `docs/verify.md` and the README say whether
 it is required, and a test holds them to the file.
 
 ## Branch flow
