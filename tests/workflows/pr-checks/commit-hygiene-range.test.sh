@@ -46,11 +46,29 @@ for pair in "commit-identity:Every commit uses a GitHub noreply address:check-co
 	if ! step commit-hygiene.yml "$job" "name=$name" "$S"; then
 		fail=$((fail + 1)); echo "FAIL  commit-hygiene.yml: cannot find the step of $job"; continue
 	fi
-	mkdir -p "$S/ws/scripts/quality"
-	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$#" "$@" > "$ASKED"\n' > "$S/ws/scripts/quality/$script"
-	run_step "$S" "$S/ws" ASKED="$S/asked" BASE=the-base HEAD=the-head
-	check "$job: the step passes when its script does" 0 "$rc"
-	check "$job: $script is given the base and the head, and nothing else" "2 the-base the-head" "$(paste -sd' ' "$S/asked")"
+	# A repository with the base commit, which holds the script as the base branch has
+	# it: it records what it was asked and refuses when VERDICT says no. The head's copy
+	# in the tree says ok to anything.
+	W="$S/ws"; mkdir -p "$W/scripts/quality" "$S/rt"
+	g() { git -C "$W" -c user.name=t -c user.email=t@example.invalid -c commit.gpgSign=false "$@"; }
+	g init -q
+	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$#" "$@" > "$ASKED"\n[ "${VERDICT:-ok}" = ok ] || { echo "the base script refuses"; exit 1; }\necho "the base script says ok"\n' > "$W/scripts/quality/$script"
+	g add -A; g commit -q -m base
+	base_sha="$(g rev-parse HEAD)"
+	printf '#!/usr/bin/env bash\necho "the head script says ok"\nexit 0\n' > "$W/scripts/quality/$script"
+	g add -A; g commit -q -m "a change that rewrote the script"
+	run_step "$S" "$W" ASKED="$S/asked" RUNNER_TEMP="$S/rt" BASE="$base_sha" HEAD=the-head
+	check "$job: the step passes when the script of the base does" 0 "$rc"
+	check "$job: $script is given the base and the head, and nothing else" "2 $base_sha the-head" "$(paste -sd' ' "$S/asked")"
+	check "$job: and the script that ran is the base's" "1 0" "$(says 'the base script says ok') $(says 'the head script says ok')"
+	run_step "$S" "$W" ASKED="$S/asked" RUNNER_TEMP="$S/rt" BASE="$base_sha" HEAD=the-head VERDICT=no
+	check "$job: a base script that refuses stops the step, whatever the head's copy says" "1 1 0" \
+		"$rc $(says 'the base script refuses') $(says 'the head script says ok')"
+	# The base has no copy yet: the commit that introduces the script is judged by it.
+	g checkout -q --orphan fresh; g rm -rq --cached . ; g commit -q --allow-empty -m "a base without the script"
+	rm -f "$S"/rt/*
+	run_step "$S" "$W" ASKED="$S/asked" RUNNER_TEMP="$S/rt" BASE="$(g rev-parse HEAD)" HEAD=the-head
+	check "$job: a base that has no copy of the script falls back to the tree's" "0 1" "$rc $(says 'the head script says ok')"
 	check "$job: the base and the head are the event's, read from a checkout of the whole history at the head" \
 		"$WANT" "$(wiring "$HERE/.github/workflows/commit-hygiene.yml" "$job")"
 done
