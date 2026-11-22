@@ -274,3 +274,4 @@ check-secrets-sample-words-are-read-in-the-whole-line	scripts/quality/check-secr
 check-secrets-sample-words-are-not-delimited	scripts/quality/check-secrets.sh	sample_word='(^|[^a-z0-9])(example|placeholder|dummy|fake|fixture|changeme|redacted|your)([^a-z0-9]|$)'	sample_word='(example|placeholder|dummy|fake|fixture|changeme|redacted|your)'	tests/quality/check-secrets.test.sh
 check-secrets-a-sample-word-in-the-value-excuses-nothing	scripts/quality/check-secrets.sh	if grep -qiE -- "$sample_word" <<< "$value"; then continue; fi	:	tests/quality/check-secrets.test.sh
 check-secrets-a-name-that-holds-a-path-is-not-a-secret	scripts/quality/check-secrets.sh	if grep -qiE -- "$named_path" <<< "$name$sep"; then continue; fi	:	tests/quality/check-secrets.test.sh
+check-secrets-a-file-the-base-already-holds-is-scanned-again	scripts/quality/check-secrets.sh	if [ -n "$new" ] && grep -qxF "$new" "$baseblobs"; then continue; fi	:	tests/quality/check-secrets.test.sh

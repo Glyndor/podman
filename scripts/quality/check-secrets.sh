@@ -37,8 +37,8 @@ export LC_ALL=C
 # record, and the text of a line is only ever matched after the second one.
 SEP=$'\037'
 
-names="$(mktemp)"; allowfile="$(mktemp)"; patchfile="$(mktemp)"
-trap 'rm -f "$names" "$allowfile" "$patchfile"' EXIT
+names="$(mktemp)"; allowfile="$(mktemp)"; patchfile="$(mktemp)"; baseblobs="$(mktemp)"
+trap 'rm -f "$names" "$allowfile" "$patchfile" "$baseblobs"' EXIT
 
 # Paths the repository declares as holding throwaway keys on purpose. The list is
 # read from <base>, the branch the change lands on, never from <head>: a change
@@ -70,6 +70,9 @@ git --literal-pathspecs diff --name-only -z "$base...$head" > "$names" || { echo
 # record is made. Bytes outside ASCII are names like any other.
 [ "$(tr -d '\000\040-\176\200-\377' < "$names" | wc -c)" -eq 0 ] || { echo "::error::a changed file has a control character in its name, so nothing was scanned" >&2; exit 1; }
 merge_base="$(git merge-base "$base" "$head")"
+# The content the base already holds: a file with one of these blobs adds nothing to the
+# history, whatever its path, so a move or a copy of a file is not scanned again.
+git ls-tree -r "$base" | awk '{ print $3 }' | sort -u > "$baseblobs"
 added=""
 while IFS= read -r -d '' file; do
 	if [ -s "$allowfile" ]; then
@@ -77,6 +80,8 @@ while IFS= read -r -d '' file; do
 		[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow, so nothing was scanned" >&2; exit 1; }
 		[ "$rc" -ne 0 ] || continue
 	fi
+	new="$(git rev-parse -q --verify "$head:$file" || true)"
+	if [ -n "$new" ] && grep -qxF "$new" "$baseblobs"; then continue; fi
 	# The tree being judged carries its own .gitattributes and, on a runner, its own
 	# configuration: a file marked -diff or binary, or given a text conversion or an
 	# external diff, would show no lines. The text of the file is what is read.
@@ -87,7 +92,7 @@ while IFS= read -r -d '' file; do
 	unread=false
 	if grep -aq '^Binary files .* differ$' "$patchfile"; then unread=true
 	elif ! grep -aq '^@@' "$patchfile"; then
-		new="$(git rev-parse -q --verify "$head:$file" || true)"; old="$(git rev-parse -q --verify "$merge_base:$file" || true)"
+		old="$(git rev-parse -q --verify "$merge_base:$file" || true)"
 		if [ -n "$new" ] && [ "$new" != "$old" ] && [ "$(git cat-file -s "$new")" -gt 0 ]; then unread=true; fi
 	fi
 	[ "$unread" = false ] || { echo "::error::git showed no added lines for a changed file that is not empty, so nothing was scanned" >&2; exit 1; }

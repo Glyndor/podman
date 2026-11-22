@@ -100,17 +100,27 @@ base2="$(git -C "$repo" rev-parse HEAD)"
 echo more >> "$repo/README"; gitc add -A; gitc commit -q -m "touch"
 (cd "$repo" && "$SCRIPT" "$base2" HEAD >/dev/null 2>&1); check "an old line in the base is not rescanned" 0 "$?"
 
-# A file that is moved, unchanged, carries its lines to a new path. With rename detection
-# the diff says only "renamed" and the scan reads nothing, so what entered before the scan
-# existed, or by a merge it does not read, would move for good: the scan reads a moved file
-# whole. The fixture repository asks for rename detection itself, since that is what the
-# default of git does and a machine's own configuration can turn it off.
+# A file whose content is already in the tree of the base adds nothing to the history, so
+# moving or copying it, an exempt file into another folder or a key that was already there
+# into a new path, is not a reason to fail. The fixture repository asks for rename
+# detection itself, since a machine's own configuration can turn it off. A moved file
+# that gains a line is a new file as far as that line goes, and is read whole.
 git -C "$repo" config diff.renames true
 mkdir -p "$repo/moved"; gitc mv old.txt moved/old.txt; gitc commit -q -m "move the old file"
 out="$( (cd "$repo" && "$SCRIPT" "$base2" HEAD 2>&1) )"; rc=$?
-check "a file moved unchanged is scanned whole, and a credential in it fails" 1 "$rc"
-check "and it is named at its new path" 1 "$(printf '%s' "$out" | grep -c 'moved/old.txt:1 long value assigned to a secret-like name')"
-check "and the moved value is not printed" 0 "$(printf '%s' "$out" | grep -cF -- "$(rep z 40)")"
+check "a file moved unchanged adds nothing and passes" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+gitc reset -q --hard "$base2"
+mkdir -p "$repo/copied"; cp "$repo/old.txt" "$repo/copied/old.txt"; gitc add -A; gitc commit -q -m "copy the old file"
+(cd "$repo" && "$SCRIPT" "$base2" HEAD >/dev/null 2>&1); check "a file copied unchanged passes" 0 "$?"
+gitc reset -q --hard "$base2"
+mkdir -p "$repo/moved"; gitc mv old.txt moved/old.txt
+printf 'second_token = "%s"\n' "$(rep y 40)" >> "$repo/moved/old.txt"; gitc add -A; gitc commit -q -m "move the old file and add a line"
+out="$( (cd "$repo" && "$SCRIPT" "$base2" HEAD 2>&1) )"; rc=$?
+check "the same move with one line added that holds a credential fails" 1 "$rc"
+check "and the file is read whole and named at its new path" 1 "$(printf '%s' "$out" | grep -c 'moved/old.txt:1 long value assigned to a secret-like name')"
+check "and the added line is named too" 1 "$(printf '%s' "$out" | grep -c 'moved/old.txt:2 long value assigned to a secret-like name')"
+check "and no value is printed" 0 "$(printf '%s' "$out" | grep -cF -e "$(rep z 40)" -e "$(rep y 40)")"
+gitc reset -q --hard "$base2"
 base3="$(git -C "$repo" rev-parse HEAD)"
 gitc mv README README.md; gitc commit -q -m "rename a harmless file"
 (cd "$repo" && "$SCRIPT" "$base3" HEAD >/dev/null 2>&1); check "a harmless file moved the same way passes" 0 "$?"
