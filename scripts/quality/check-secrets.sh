@@ -28,16 +28,28 @@ set -euo pipefail
 
 base="${1:?base}"; head="${2:?head}"
 
-# One "file:line:text" per added line. awk only parses the diff; the matching is
-# grep, whose interval expressions behave the same on every runner (mawk, which
-# some images ship as awk, does not always honour them). A diff that cannot be
-# taken stops the scan: reading nothing must never read as finding nothing.
-patch="$(git diff --no-color -U0 --no-renames "$base...$head")" || { echo "::error::could not take the diff $base...$head, so nothing was scanned" >&2; exit 1; }
-added="$(printf '%s\n' "$patch" | awk '
-	/^\+\+\+ / { file = substr($0, 7); sub(/^b\//, "", file); next }
-	/^@@/        { split($3, a, ","); line = substr(a[1], 2) + 0; next }
-	/^\+/        { print file ":" line ":" substr($0, 2); line++ }
-' | grep -v 'secret-scan:allow' || true)"
+# One "file:line:text" per added line. The files come from git's own list, and each
+# one is diffed on its own and reported under the name git gave: a path read out of
+# the patch would be read out of its text too, and a line a file adds that begins
+# "++ b/" is a "+++ b/" line inside the hunk. awk only parses the hunks of a single
+# file; the matching is grep, whose interval expressions behave the same on every
+# runner (mawk, which some images ship as awk, does not always honour them). A diff
+# that cannot be taken stops the scan: reading nothing must never read as finding
+# nothing.
+names="$(mktemp)"
+trap 'rm -f "$names"' EXIT
+git --literal-pathspecs diff --name-only -z "$base...$head" > "$names" || { echo "::error::could not take the diff $base...$head, so nothing was scanned" >&2; exit 1; }
+added=""
+while IFS= read -r -d '' file; do
+	# set -e: a file whose diff cannot be taken stops the scan, with git's own message
+	patch="$(git --literal-pathspecs diff --no-color -U0 "$base...$head" -- "$file")"
+	lines="$(printf '%s\n' "$patch" | FILE="$file" awk '
+		/^@@/        { inhunk = 1; split($3, a, ","); line = substr(a[1], 2) + 0; next }
+		inhunk && /^\+/ { print ENVIRON["FILE"] ":" line ":" substr($0, 2); line++ }
+	' | grep -v 'secret-scan:allow' || true)"
+	[ -z "$lines" ] || added+="$lines"$'\n'
+done < "$names"
+added="${added%$'\n'}"
 
 # Paths the repository declares as holding throwaway keys on purpose. The list is
 # read from <base>, the branch the change lands on, never from <head>: a change

@@ -112,6 +112,43 @@ out="$( (cd "$repo" && "$SCRIPT" "$listed" HEAD 2>&1) )"; rc=$?
 check "a key outside the listed paths still fails" 1 "$rc"
 check "and it is refused as a key block" 1 "$(printf '%s' "$out" | grep -c 'elsewhere.pem:1 private key block')"
 
+# The path a line is reported under comes from git, never from the text of the patch.
+# A file that adds a line reading "++ b/fixtures/x" makes the patch carry "+++ b/fixtures/x"
+# inside a hunk, which is not a header: the credential after it stays in the file that
+# added it, and is not taken for a line of a listed path.
+git -C "$repo" reset -q --hard "$listed"
+printf -- '++ b/fixtures/x\nAWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/evil.txt"
+gitc add -A; gitc commit -q -m "a line that looks like a header"
+out="$( (cd "$repo" && "$SCRIPT" "$listed" HEAD 2>&1) )"; rc=$?
+check "a line that looks like the header of a listed file does not move what follows to it" 1 "$rc"
+check "and the credential is named at the file that added it" 1 "$(printf '%s' "$out" | grep -c 'evil.txt:2 AWS access key')"
+git -C "$repo" reset -q --hard "$listed"
+mkdir -p "$repo/fixtures"
+printf -- '++ b/elsewhere\nAWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/fixtures/real.txt"
+gitc add -A; gitc commit -q -m "the same text in a file that is listed"
+(cd "$repo" && "$SCRIPT" "$listed" HEAD >/dev/null 2>&1); check "the same two lines in a file that is listed pass" 0 "$?"
+
+# A name with a backslash in it is reported as it is, so a list written for it matches.
+git -C "$repo" reset -q --hard "$listed"
+mkdir -p "$repo/fixtures"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/fixtures/a\\tb.txt"
+gitc add -A; gitc commit -q -m "a name with a backslash"
+(cd "$repo" && "$SCRIPT" "$listed" HEAD >/dev/null 2>&1); check "a listed file whose name holds a backslash passes" 0 "$?"
+git -C "$repo" reset -q --hard "$base"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/a\\tb.txt"
+gitc add -A; gitc commit -q -m "a name with a backslash, not listed"
+out="$( (cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1) )"
+check "an unlisted one is named with its backslash" 1 "$(printf '%s' "$out" | grep -c -F 'a\tb.txt:1 AWS access key')"
+
+# A file is diffed by its own name, taken literally: a file called "*" would otherwise
+# pull the lines of every other file under its label.
+git -C "$repo" reset -q --hard "$listed"
+mkdir -p "$repo/fixtures"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/fixtures/key.txt"
+printf 'hello\n' > "$repo/*"
+gitc add -A; gitc commit -q -m "a file called star beside a listed one"
+(cd "$repo" && "$SCRIPT" "$listed" HEAD >/dev/null 2>&1); check "a file named * does not take the lines of a listed file under its own name" 0 "$?"
+
 # A change cannot list its own exceptions: the same fixture with the list added by
 # the change itself is scanned, and an expression that matches everything is no
 # way to switch the scan off.
