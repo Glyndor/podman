@@ -149,6 +149,106 @@ printf 'hello\n' > "$repo/*"
 gitc add -A; gitc commit -q -m "a file called star beside a listed one"
 (cd "$repo" && "$SCRIPT" "$listed" HEAD >/dev/null 2>&1); check "a file named * does not take the lines of a listed file under its own name" 0 "$?"
 
+# A file name is part of what the scan prints and of what it compares against the list, so
+# a name with a line break in it could forge a record of a listed path: "x\nfixtures/y"
+# plus ":1:" and the credential reads as the line of fixtures/y. Names with a control
+# character are refused whole, before any record is made; a name with a space or a
+# letter outside ASCII is a name like any other.
+git -C "$repo" reset -q --hard "$listed"
+mkdir -p "$repo/$(printf 'x\nfixtures')"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/$(printf 'x\nfixtures/y')"
+gitc add -A; gitc commit -q -m "a name that forges a record"
+out="$( (cd "$repo" && "$SCRIPT" "$listed" HEAD 2>&1) )"; rc=$?
+check "a file name with a line break is refused" 1 "$rc"
+check "and the refusal says why" 1 "$(printf '%s' "$out" | grep -c '::error::a changed file has a control character in its name, so nothing was scanned')"
+git -C "$repo" reset -q --hard "$listed"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/$(printf 'a\tb.txt')"
+gitc add -A; gitc commit -q -m "a name with a tab"
+out="$( (cd "$repo" && "$SCRIPT" "$listed" HEAD 2>&1) )"; rc=$?
+check "a file name with a tab is refused" "1 1" "$rc $(printf '%s' "$out" | grep -c 'control character in its name')"
+git -C "$repo" reset -q --hard "$listed"
+printf 'nothing to see\n' > "$repo/a b é.txt"
+gitc add -A; gitc commit -q -m "a name with a space and a letter outside ASCII"
+out="$( (cd "$repo" && "$SCRIPT" "$listed" HEAD 2>&1) )"; rc=$?
+check "a file name with a space and a letter outside ASCII is scanned like any other" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+
+# The allow marker is looked for in the text of a line, and the skip words of the
+# generic rule too: neither is read out of the path, which the author of a change chooses.
+git -C "$repo" reset -q --hard "$base"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/secret-scan:allow.txt"
+printf 'release_secret = "%s"\n' "$(rep c 40)" > "$repo/fixture-example-dummy.env"
+gitc add -A; gitc commit -q -m "names with the marker and the skip words"
+out="$( (cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+check "a path that holds the allow marker does not skip its lines" 1 "$(printf '%s' "$out" | grep -c 'secret-scan:allow.txt:1 AWS access key')"
+check "a path that holds a skip word does not skip its lines" 1 "$(printf '%s' "$out" | grep -c 'fixture-example-dummy.env:1 long value assigned to a secret-like name')"
+check "and both fail the scan" 1 "$rc"
+
+# The list is compared with the path alone: an expression that happens to match the text
+# of a line does not skip it.
+git -C "$repo" reset -q --hard "$base"
+printf '.*AKIAIOSFOD.*\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "a list that matches text"
+textual="$(git -C "$repo" rev-parse HEAD)"
+printf 'AWS_KEY=AKIAIOSFODNN7EXAMPLE\n' > "$repo/c.txt"
+gitc add -A; gitc commit -q -m "a credential"
+out="$( (cd "$repo" && "$SCRIPT" "$textual" HEAD 2>&1) )"; rc=$?
+check "an expression that matches the text of a line and not its path does not skip it" "1 1" "$rc $(printf '%s' "$out" | grep -c 'c.txt:1 AWS access key')"
+git -C "$repo" reset -q --hard "$textual"
+mkdir -p "$repo/AKIAIOSFOD"; printf 'AWS_KEY=AKIAIOSFODNN7EXAMPLE\n' > "$repo/AKIAIOSFOD/c.txt"
+gitc add -A; gitc commit -q -m "the same line in a listed path"
+(cd "$repo" && "$SCRIPT" "$textual" HEAD >/dev/null 2>&1); check "the same expression skips a path it matches" 0 "$?"
+
+# What git shows of a file does not depend on the attributes or the drivers of the tree being
+# judged: a text file marked binary, or given a text conversion or an external diff, is
+# still read as the text it is. Each case has a twin without the credential that passes.
+attr_case() { # <description> <attribute line> [git config key=value]
+	local out rc
+	git -C "$repo" reset -q --hard "$base"; git -C "$repo" config --unset-all diff.drv.textconv 2>/dev/null; git -C "$repo" config --unset-all diff.drv.command 2>/dev/null
+	[ -z "${3:-}" ] || git -C "$repo" config "${3%%=*}" "${3#*=}"
+	printf '%s\n' "$2" > "$repo/.gitattributes"
+	printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/k.txt"
+	gitc add -A; gitc commit -q -m "$1"
+	out="$( (cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+	check "$1: the credential fails the scan" 1 "$rc"
+	check "$1: and is named at its file" 1 "$(printf '%s' "$out" | grep -c 'k.txt:1 AWS access key')"
+	printf 'nothing to see\n' > "$repo/k.txt"; gitc add -A; gitc commit -q --amend -m "$1, without it"
+	out="$( (cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+	check "$1: the same tree without the credential passes" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+	git -C "$repo" config --unset-all diff.drv.textconv 2>/dev/null; git -C "$repo" config --unset-all diff.drv.command 2>/dev/null
+}
+attr_case "a file marked -diff" '* -diff'
+attr_case "a file marked binary" '* binary'
+attr_case "a file with a text conversion" '* diff=drv' "diff.drv.textconv=echo converted #"
+attr_case "a file with an external diff" '* diff=drv' "diff.drv.command=true"
+
+# A changed file that shows no lines to read stops the scan, whatever the reason. The
+# fake git answers a diff of a file the way a driver could: with a line that says the files
+# differ, or with nothing. A change with no content to read passes: an empty file, a file
+# that is deleted, and one whose mode alone changed.
+mkdir -p "$WORK/gitbin"
+real_git="$(command -v git)"
+cat > "$WORK/gitbin/git" <<EOF
+#!/bin/sh
+case "\$*" in
+	*"--no-ext-diff"*) case "\$FAKE" in binary) echo "Binary files a/k.txt and b/k.txt differ" ;; both) echo "Binary files a/k.txt and b/k.txt differ"; exec $real_git "\$@" ;; nothing) ;; *) exec $real_git "\$@" ;; esac ;;
+	*) exec $real_git "\$@" ;;
+esac
+EOF
+chmod +x "$WORK/gitbin/git"
+git -C "$repo" reset -q --hard "$base"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/k.txt"; gitc add -A; gitc commit -q -m "a file git will not show"
+for fake in binary both nothing; do
+	out="$( (cd "$repo" && FAKE=$fake PATH="$WORK/gitbin:$PATH" "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+	check "a changed file that shows $fake stops the scan" "1 1" "$rc $(printf '%s' "$out" | grep -c '::error::git showed no added lines for a changed file that is not empty, so nothing was scanned')"
+	check "and gives no clean verdict ($fake)" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+done
+out="$( (cd "$repo" && FAKE=real PATH="$WORK/gitbin:$PATH" "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+check "the same fake git, passing the diff through, finds the credential by name" "1 1" "$rc $(printf '%s' "$out" | grep -c 'k.txt:1 AWS access key')"
+printf 'text\n' > "$repo/mode.sh"; : > "$repo/gone.txt"; gitc add -A; gitc commit -q -m "more files"; moved_base="$(git -C "$repo" rev-parse HEAD)"
+chmod +x "$repo/mode.sh"; : > "$repo/empty.txt"; gitc rm -q gone.txt; gitc add -A; gitc commit -q -m "a mode change, an empty file and a deletion"
+out="$( (cd "$repo" && FAKE=nothing PATH="$WORK/gitbin:$PATH" "$SCRIPT" "$moved_base" HEAD 2>&1) )"; rc=$?
+check "a mode change, an empty file and a deletion leave nothing to read and pass" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+
 # A change cannot list its own exceptions: the same fixture with the list added by
 # the change itself is scanned, and an expression that matches everything is no
 # way to switch the scan off.

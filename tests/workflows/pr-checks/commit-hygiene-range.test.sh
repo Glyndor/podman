@@ -73,6 +73,30 @@ for pair in "commit-identity:Every commit uses a GitHub noreply address:check-co
 		"$WANT" "$(wiring "$HERE/.github/workflows/commit-hygiene.yml" "$job")"
 done
 
+# The step that scans, run as it is with the scanner of the base commit, over a pull
+# request whose tree carries a .gitattributes that marks every file binary and hides it
+# from a diff. The attributes are read from the tree on disk, which is the pull request's,
+# so the scanner has to read the lines whatever they say. The twin without the credential
+# passes.
+H="$WORK/hostile"
+if step commit-hygiene.yml secret-scan "name=The change adds no credential-shaped line" "$H"; then
+	W="$H/ws"; mkdir -p "$W/scripts/quality" "$H/rt"
+	g() { git -C "$W" -c user.name=t -c user.email=t@example.invalid -c commit.gpgSign=false "$@"; }
+	g init -q
+	cp "$HERE/scripts/quality/check-secrets.sh" "$W/scripts/quality/check-secrets.sh"
+	printf 'readme\n' > "$W/README"; g add -A; g commit -q -m base; hostile_base="$(g rev-parse HEAD)"
+	printf '* binary\n* -diff\n' > "$W/.gitattributes"
+	printf 'AWS_KEY=AKI%s\n' "A$(printf '%*s' 16 '' | tr ' ' Q)" > "$W/k.txt"
+	g add -A; g commit -q -m "a hostile tree with a credential"; hostile_head="$(g rev-parse HEAD)"
+	run_step "$H" "$W" RUNNER_TEMP="$H/rt" BASE="$hostile_base" HEAD="$hostile_head"
+	check "a tree that hides its files from a diff still has its credential found" "1 1" "$rc $(says 'k.txt:1 AWS access key')"
+	printf 'nothing to see\n' > "$W/k.txt"; g add -A; g commit -q --amend -m "a hostile tree without one"
+	run_step "$H" "$W" RUNNER_TEMP="$H/rt" BASE="$hostile_base" HEAD="$(g rev-parse HEAD)"
+	check "the same tree without the credential passes" "0 1" "$rc $(says 'no credential-shaped lines added')"
+else
+	fail=$((fail + 1)); echo "FAIL  commit-hygiene.yml: cannot find the secret scan step"
+fi
+
 # The same reading over broken copies: each has to be seen.
 BAD="$WORK/bad.yml"
 sed 's/BASE: ${{ github.event.pull_request.base.sha }}/BASE: ${{ github.event.pull_request.head.sha }}/' \
