@@ -133,12 +133,12 @@ if [ -d "$passt_src/contrib/apparmor" ]; then
 	# and the API answers 500 "rootless netns: kill network process: permission denied".
 	# The rule goes inside the profile of pasta, after its one include of the abstraction,
 	# and not into abstractions/pasta, which is a list of rules that anything may include.
-	# upstream ships no local/usr.bin.pasta to hold it. It admits SIGTERM and SIGKILL, the
-	# two Podman uses, from that one peer; nothing wider. If upstream changes the shape of
+	# upstream ships no local/usr.bin.pasta to hold it. It admits SIGTERM, the only signal
+	# Podman 6.2 sends to that pasta, from that one peer; nothing wider. If upstream changes the shape of
 	# the profile, or starts carrying such a rule itself, the build stops and says so.
 	pasta_profile="$stage/etc/apparmor.d/usr.bin.pasta"
 	pasta_anchor="  include <abstractions/pasta>"
-	pasta_rule="  signal (receive) set=(term, kill) peer=podman,"
+	pasta_rule="  signal (receive) set=(term) peer=podman,"
 	[ -f "$pasta_profile" ] || { echo "passt ships no AppArmor profile for pasta to add the signal rule to" >&2; exit 1; }
 	[ "$(grep -c -x -F -- "$pasta_anchor" "$pasta_profile")" -eq 1 ] \
 		|| { echo "the pasta profile does not include its abstraction exactly once, so the signal rule has nowhere to go" >&2; exit 1; }

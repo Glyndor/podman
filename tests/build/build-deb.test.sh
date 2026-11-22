@@ -283,7 +283,7 @@ done
 PROF="$WORK/passt/contrib/apparmor/usr.bin.pasta"; ABS="$WORK/passt/contrib/apparmor/abstractions/pasta"
 cp "$PROF" "$WORK/pasta.orig"; cp "$ABS" "$WORK/abs.orig"
 restore() { cp "$WORK/pasta.orig" "$PROF"; cp "$WORK/abs.orig" "$ABS"; rm -f "$WORK/aa.calls" "$WORK/aa.profile"; }
-RULE='  signal (receive) set=(term, kill) peer=podman,'
+RULE='  signal (receive) set=(term) peer=podman,'
 restore
 rc=0; deb="$(build 6.2.0 "$WORK/out-rule" 2>/dev/null)" || rc=$?
 aa_calls="$(cat "$WORK/aa.calls" 2>/dev/null)"; aa_profile="$(cat "$WORK/aa.profile" 2>/dev/null)"

@@ -404,7 +404,7 @@ build-deb-pasta-profile-has-two-signal-rules	scripts/build/build-deb.sh	|| { ech
 build-deb-no-apparmor-parser	scripts/build/build-deb.sh	command -v apparmor_parser >/dev/null || { echo "no apparmor_parser to check the pasta profile with" >&2; exit 1; }	command -v apparmor_parser >/dev/null || true	tests/build/build-deb.test.sh
 build-deb-pasta-profile-does-not-compile	scripts/build/build-deb.sh	|| { echo "the pasta profile with the signal rule does not compile" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
 build-deb-pasta-rule-from-any-peer	scripts/build/build-deb.sh	peer=podman,"	peer=**,"	tests/build/build-deb.test.sh
-build-deb-pasta-rule-for-any-signal-set	scripts/build/build-deb.sh	set=(term, kill)	set=(term, kill, hup)	tests/build/build-deb.test.sh
+build-deb-pasta-rule-for-any-signal-set	scripts/build/build-deb.sh	set=(term)	set=(term, kill)	tests/build/build-deb.test.sh
 build-deb-pasta-rule-also-sends	scripts/build/build-deb.sh	pasta_rule="  signal (receive)	pasta_rule="  signal (send, receive)	tests/build/build-deb.test.sh
 build-deb-pasta-rule-is-never-inserted	scripts/build/build-deb.sh	$0 == anchor {	$0 == "" {	tests/build/build-deb.test.sh
 build-deb-pasta-rule-is-inserted-empty	scripts/build/build-deb.sh	print rule	print ""	tests/build/build-deb.test.sh
