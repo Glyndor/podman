@@ -77,6 +77,16 @@ commit "$noreply" "$(printf 'x\n\nSigned-off-by: t <%s>' "$noreply")"
 commit "$personal" "second, personal"
 run >/dev/null; check "one bad commit among good ones fails" 1 "$?"
 
+# A range that cannot be listed is a failure, not a clean pass; the same script over
+# a range that can be listed, with nothing in it, still passes.
+out="$( (cd "$repo" && "$SCRIPT" 0000000000000000000000000000000000000000 HEAD 2>&1) )"; rc=$?
+check "a range that cannot be listed fails" 1 "$rc"
+check "and says the range could not be checked" 1 "$(printf '%s' "$out" | grep -c 'could not list 0000000000000000000000000000000000000000..HEAD; the range could not be checked')"
+check "and gives no clean verdict" 0 "$(printf '%s' "$out" | grep -c 'every commit uses')"
+out="$( (cd "$repo" && "$SCRIPT" HEAD HEAD 2>&1) )"; rc=$?
+check "an empty range that can be listed passes" 0 "$rc"
+check "and gives the clean verdict" 1 "$(printf '%s' "$out" | grep -c 'every commit uses a GitHub noreply address')"
+
 "$SCRIPT" >/dev/null 2>&1; check "no arguments fails" 1 "$?"
 
 echo "$pass passed, $fail failed"
