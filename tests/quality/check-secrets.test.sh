@@ -186,15 +186,15 @@ check "and both fail the scan" 1 "$rc"
 # The list is compared with the path alone: an expression that happens to match the text
 # of a line does not skip it.
 git -C "$repo" reset -q --hard "$base"
-printf '.*AKIAIOSFOD.*\n' > "$repo/.secret-scan-allow"
+printf '.*AKIAQQQQ.*\n' > "$repo/.secret-scan-allow"
 gitc add -A; gitc commit -q -m "a list that matches text"
 textual="$(git -C "$repo" rev-parse HEAD)"
-printf 'AWS_KEY=AKIAIOSFODNN7EXAMPLE\n' > "$repo/c.txt"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/c.txt"
 gitc add -A; gitc commit -q -m "a credential"
 out="$( (cd "$repo" && "$SCRIPT" "$textual" HEAD 2>&1) )"; rc=$?
 check "an expression that matches the text of a line and not its path does not skip it" "1 1" "$rc $(printf '%s' "$out" | grep -c 'c.txt:1 AWS access key')"
 git -C "$repo" reset -q --hard "$textual"
-mkdir -p "$repo/AKIAIOSFOD"; printf 'AWS_KEY=AKIAIOSFODNN7EXAMPLE\n' > "$repo/AKIAIOSFOD/c.txt"
+mkdir -p "$repo/AKIAQQQQ"; printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/AKIAQQQQ/c.txt"
 gitc add -A; gitc commit -q -m "the same line in a listed path"
 (cd "$repo" && "$SCRIPT" "$textual" HEAD >/dev/null 2>&1); check "the same expression skips a path it matches" 0 "$?"
 
