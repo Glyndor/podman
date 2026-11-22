@@ -250,27 +250,41 @@ attr_case "a file marked binary" '* binary'
 attr_case "a file with a text conversion" '* diff=drv' "diff.drv.textconv=echo converted #"
 attr_case "a file with an external diff" '* diff=drv' "diff.drv.command=true"
 
-# A changed file that shows no lines to read stops the scan, whatever the reason. The
-# fake git answers a diff of a file the way a driver could: with a line that says the files
-# differ, or with nothing. A change with no content to read passes: an empty file, a file
-# that is deleted, and one whose mode alone changed.
+# A file that is binary for real, with NUL bytes in it, is read as the text it also is: a
+# credential inside one is named, and an image with none passes. Neither depends on a fake
+# git: this is what git itself shows with --text.
+git -C "$repo" reset -q --hard "$base"
+printf '\211PNG\r\n\032\n\000\000\000\rIHDR\000\000\001\000\n' > "$repo/logo.png"
+printf 'GH_TOKEN=gh%s_%s\n\000\001\377' "p" "$(rep A 36)" >> "$repo/logo.png"
+gitc add -A; gitc commit -q -m "an image with a token inside"
+out="$( (cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+check "a binary file with a credential inside is refused, and named" "1 1" "$rc $(printf '%s' "$out" | grep -c 'logo.png:[0-9]* GitHub token')"
+git -C "$repo" reset -q --hard "$base"
+printf '\211PNG\r\n\032\n\000\000\000\rIHDR\000\000\001\000\n' > "$repo/logo.png"
+printf 'nothing to see\n\000\001\377' >> "$repo/logo.png"
+gitc add -A; gitc commit -q -m "an image with nothing inside"
+out="$( (cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+check "a binary file with no credential in it passes" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+
+# A changed file that shows no lines to read stops the scan, whatever the reason. With
+# --text git always shows the lines of a file, so the fake git answers a diff of a file with
+# nothing, the way a driver or a future git could. A change with no content to read passes:
+# an empty file, a file that is deleted, and one whose mode alone changed.
 mkdir -p "$WORK/gitbin"
 real_git="$(command -v git)"
-cat > "$WORK/gitbin/git" <<EOF
+cat > "$WORK/gitbin/git" <<GITEND
 #!/bin/sh
 case "\$*" in
-	*"--no-ext-diff"*) case "\$FAKE" in binary) echo "Binary files a/k.txt and b/k.txt differ" ;; both) echo "Binary files a/k.txt and b/k.txt differ"; exec $real_git "\$@" ;; nothing) ;; *) exec $real_git "\$@" ;; esac ;;
+	*"--no-ext-diff"*) case "\$FAKE" in nothing) ;; *) exec $real_git "\$@" ;; esac ;;
 	*) exec $real_git "\$@" ;;
 esac
-EOF
+GITEND
 chmod +x "$WORK/gitbin/git"
 git -C "$repo" reset -q --hard "$base"
 printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/k.txt"; gitc add -A; gitc commit -q -m "a file git will not show"
-for fake in binary both nothing; do
-	out="$( (cd "$repo" && FAKE=$fake PATH="$WORK/gitbin:$PATH" "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
-	check "a changed file that shows $fake stops the scan" "1 1" "$rc $(printf '%s' "$out" | grep -c '::error::git showed no added lines for a changed file that is not empty, so nothing was scanned')"
-	check "and gives no clean verdict ($fake)" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
-done
+out="$( (cd "$repo" && FAKE=nothing PATH="$WORK/gitbin:$PATH" "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+check "a changed file that shows nothing stops the scan" "1 1" "$rc $(printf '%s' "$out" | grep -c '::error::git showed no added lines for a changed file that is not empty, so nothing was scanned')"
+check "and gives no clean verdict" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
 out="$( (cd "$repo" && FAKE=real PATH="$WORK/gitbin:$PATH" "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
 check "the same fake git, passing the diff through, finds the credential by name" "1 1" "$rc $(printf '%s' "$out" | grep -c 'k.txt:1 AWS access key')"
 printf 'text\n' > "$repo/mode.sh"; printf 'gone\n' > "$repo/gone.txt"; gitc add -A; gitc commit -q -m "more files"; moved_base="$(git -C "$repo" rev-parse HEAD)"
