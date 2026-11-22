@@ -89,14 +89,16 @@ while IFS= read -r -d '' file; do
 	if [ -n "$new" ] && grep -qxF "$new" "$baseblobs"; then continue; fi
 	# The tree being judged carries its own .gitattributes and, on a runner, its own
 	# configuration: a file marked -diff or binary, or given a text conversion or an
-	# external diff, would show no lines. The text of the file is what is read.
+	# external diff, would show no lines. With --text git reads every file as text, a
+	# binary one included, so it never answers "Binary files differ"; the text of the
+	# file is what is read.
 	# set -e: a file whose diff cannot be taken stops the scan, with git's own message.
 	git --literal-pathspecs diff --no-color --text --no-textconv --no-ext-diff -U0 "$base...$head" -- "$file" > "$patchfile"
-	# And if a changed file still shows nothing to read, the scan stops rather than pass it:
-	# a line saying the files differ, or no hunk for a file whose content is not empty.
+	# If a changed file still shows nothing to read, the scan stops rather than pass it: a
+	# diff with no hunk for a file whose content is not empty and is not the one the change
+	# started from. A mode change, a deletion and an empty file have nothing to read and pass.
 	unread=false
-	if grep -aq '^Binary files .* differ$' "$patchfile"; then unread=true
-	elif ! grep -aq '^@@' "$patchfile"; then
+	if ! grep -aq '^@@' "$patchfile"; then
 		old="$(git rev-parse -q --verify "$merge_base:$file" || true)"
 		if [ -n "$new" ] && [ "$new" != "$old" ] && [ "$(git cat-file -s "$new")" -gt 0 ]; then unread=true; fi
 	fi

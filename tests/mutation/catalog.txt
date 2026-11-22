@@ -97,8 +97,7 @@ check-secrets-the-skip-words-are-read-in-the-path	scripts/quality/check-secrets.
 check-secrets-git-reads-the-attributes-of-the-tree-as-text	scripts/quality/check-secrets.sh	--no-color --text --no-textconv --no-ext-diff -U0	--no-color --no-textconv --no-ext-diff -U0	tests/quality/check-secrets.test.sh
 check-secrets-git-applies-the-text-conversion-of-the-tree	scripts/quality/check-secrets.sh	--no-color --text --no-textconv --no-ext-diff -U0	--no-color --text --no-ext-diff -U0	tests/quality/check-secrets.test.sh
 check-secrets-git-runs-the-external-diff-of-the-tree	scripts/quality/check-secrets.sh	--no-color --text --no-textconv --no-ext-diff -U0	--no-color --text --no-textconv -U0	tests/quality/check-secrets.test.sh
-check-secrets-a-binary-diff-is-passed	scripts/quality/check-secrets.sh	if grep -aq '^Binary files .* differ$' "$patchfile"; then unread=true	if false; then unread=true	tests/quality/check-secrets.test.sh
-check-secrets-a-diff-with-no-hunk-is-passed	scripts/quality/check-secrets.sh	elif ! grep -aq '^@@' "$patchfile"; then	elif false; then	tests/quality/check-secrets.test.sh
+check-secrets-a-diff-with-no-hunk-is-passed	scripts/quality/check-secrets.sh	if ! grep -aq '^@@' "$patchfile"; then	if false; then	tests/quality/check-secrets.test.sh
 check-secrets-an-unchanged-blob-is-unread	scripts/quality/check-secrets.sh	[ -n "$new" ] && [ "$new" != "$old" ] &&	[ -n "$new" ] &&	tests/quality/check-secrets.test.sh
 check-secrets-an-empty-file-is-unread	scripts/quality/check-secrets.sh	"$(git cat-file -s "$new")" -gt 0 ]	"$(git cat-file -s "$new")" -ge 0 ]	tests/quality/check-secrets.test.sh
 check-secrets-a-file-that-shows-nothing-does-not-stop-the-scan	scripts/quality/check-secrets.sh	git showed no added lines for a changed file that is not empty, so nothing was scanned" >&2; exit 1; }	git showed no added lines for a changed file that is not empty, so nothing was scanned" >&2; }	tests/quality/check-secrets.test.sh
