@@ -18,8 +18,11 @@
 # another pasta of the same user. A run that cannot reach the code it checks would pass
 # whatever the package holds.
 #
-# It does not install anything: podman, curl and a busybox come from the machine.
-# AppArmor being off is said, not skipped; the stop is checked either way.
+# It does not install anything: podman, curl, busybox and aa-enabled come from the machine.
+# The rule it exists to check is only exercised where AppArmor is on and the Podman it
+# starts runs under the `podman` profile. On any other machine the stop would pass with
+# or without the rule, so there the script stops with status 2 and says so: a green that
+# never looked is not a result.
 #
 # The kernel line that names the denial is read with dmesg, then journalctl -k, and then
 # with `sudo -n dmesg` only when ROOTLESS_STOP_TEST_SUDO is set to 1, which is the case
@@ -31,7 +34,7 @@
 set -euo pipefail
 
 [ "$(id -u)" -ne 0 ] || { echo "run this as an unprivileged user, not as root" >&2; exit 2; }
-for tool in podman curl busybox pgrep; do
+for tool in podman curl busybox pgrep aa-enabled; do
 	command -v "$tool" >/dev/null 2>&1 || { echo "$tool is needed and is not installed" >&2; exit 2; }
 done
 uid="$(id -u)"
@@ -42,7 +45,9 @@ others="$(podman ps -q)"
 pasta_pids() { pgrep -u "$uid" '^pasta' || true; }
 [ -z "$(pasta_pids)" ] || { echo "this user already has a pasta process, so one left after the stop would prove nothing: $(pasta_pids | tr '\n' ' ')" >&2; exit 2; }
 
-echo "AppArmor: $(aa-enabled 2>&1 || true)"
+aa="$(aa-enabled 2>&1 || true)"
+[ "$aa" = Yes ] || { echo "AppArmor is not enabled on this machine (aa-enabled says: $aa), so the stop proves nothing about its profiles" >&2; exit 2; }
+echo "AppArmor: $aa"
 
 work="$(mktemp -d)"
 net="aa-pasta-net-$$"
@@ -95,7 +100,11 @@ for _ in $(seq 1 100); do
 	sleep 0.1
 done
 [ -n "$ready" ] || { echo "the Podman API did not answer on $sock: $(cat "$work/service.log")" >&2; exit 1; }
-echo "Podman API runs under AppArmor profile: $(cat "/proc/$service/attr/current" 2>/dev/null || echo unknown)"
+profile="$(cat "/proc/$service/attr/current" 2>/dev/null || echo unknown)"
+case "$profile" in
+	podman | "podman ("*) echo "Podman API runs under AppArmor profile: $profile" ;;
+	*) echo "podman system service runs under the AppArmor profile '$profile', not under podman, so on this machine the signal to pasta never comes from the peer the rule admits and the stop proves nothing" >&2; exit 2 ;;
+esac
 
 # The libpod routes of a container exist only under a version prefix; any version the
 # server supports reaches the same handler, so one that every Podman since 5.0 accepts.

@@ -38,7 +38,10 @@ mkdir "$B"
 fake() { printf '#!/bin/sh\n%s\n' "$2" > "$B/$1"; chmod +x "$B/$1"; }
 fake id 'echo "${FAKE_UID:-1000}"'
 fake busybox 'exit 0'
-fake aa-enabled 'echo Yes'
+fake aa-enabled 'case "$FAKE" in aa-off) echo "No - disabled at boot"; exit 1 ;; *) echo Yes ;; esac'
+# The profile the kernel reports for a process: the file is read with cat, which is faked to
+# answer it, and is the real cat for everything else.
+fake cat 'case "$1" in /proc/*/attr/current) echo "${FAKE_PROFILE:-podman (unconfined)}" ;; *) exec "${REAL_CAT:-/bin/cat}" "$@" ;; esac'
 # pasta is alive while the file names a process that is, and not a zombie of one.
 fake pgrep '[ -f "$STATE/pasta.pid" ] || exit 1
 pid="$(cat "$STATE/pasta.pid")"
@@ -89,7 +92,7 @@ fake sudo 'echo "sudo $*" >> "$CALLS"; [ "$1 $2" = "-n dmesg" ] || exit 9; [ "$F
 run() { # [NAME=value ...]: sets $rc and $out; every case starts from a machine at rest
 	rm -f "$STATE"/*; : > "$WORK/calls"; rm -rf "$WORK/tmp"; mkdir "$WORK/tmp"
 	rc=0
-	out="$(env PATH="$B:$PATH" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" DENIED="$DENIED" OTHER="$OTHER" \
+	out="$(env PATH="$B:$PATH" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" DENIED="$DENIED" OTHER="$OTHER" REAL_CAT="$(command -v cat)" \
 		FAKE= FAKE_KERNEL= "$@" bash "$SCRIPT" 2>&1 </dev/null)" || rc=$?
 }
 said() { printf '%s\n' "$out" | grep -c -F -- "$1"; }
@@ -100,16 +103,27 @@ run FAKE_UID=0
 check "root is refused with 2, for being root" "2 1" "$rc $(said 'not as root')"
 check "and nothing was touched" 0 "$(called '^podman')"
 
-# A PATH with every tool the script uses except curl: the case is refused for curl and
-# for nothing else, and the healthy run below has the same PATH with curl in it.
-NOCURL="$WORK/nocurl"
-mkdir "$NOCURL"
-for t in id busybox aa-enabled pgrep podman dmesg journalctl sudo; do cp "$B/$t" "$NOCURL/$t"; done
-for t in mktemp cp seq sleep tr grep tail date cat rm mkdir kill dirname; do ln -s "$(command -v "$t")" "$NOCURL/$t"; done
-rm -f "$STATE"/*; : > "$WORK/calls"
-rc=0; out="$(env PATH="$NOCURL" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" FAKE= FAKE_KERNEL= "$(command -v bash)" "$SCRIPT" 2>&1 </dev/null)" || rc=$?
+# A PATH with every tool the script uses except one: the case is refused for that tool and
+# for nothing else, and the healthy run below has the same PATH with it in.
+without() { # <tool>: sets $rc and $out for a run on a machine that lacks it
+	local dir="$WORK/without-$1" t
+	mkdir "$dir"
+	for t in id busybox aa-enabled curl pgrep podman dmesg journalctl sudo; do [ "$t" = "$1" ] || cp "$B/$t" "$dir/$t"; done
+	for t in mktemp cp seq sleep tr grep tail date cat rm mkdir kill dirname; do ln -s "$(command -v "$t")" "$dir/$t"; done
+	rm -f "$STATE"/*; : > "$WORK/calls"
+	rc=0; out="$(env PATH="$dir" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" FAKE= FAKE_KERNEL= "$(command -v bash)" "$SCRIPT" 2>&1 </dev/null)" || rc=$?
+}
+without curl
 check "a machine without curl: refused with 2, for curl" "2 1" "$rc $(said 'curl is needed and is not installed')"
 check "and nothing was touched" 0 "$(called '^podman')"
+without aa-enabled
+check "a machine without aa-enabled: refused with 2, for aa-enabled" "2 1" "$rc $(said 'aa-enabled is needed and is not installed')"
+check "and nothing was touched" 0 "$(called '^podman')"
+
+run FAKE=aa-off
+check "AppArmor off: refused with 2, and it says what aa-enabled said" "2 1 1" \
+	"$rc $(said 'AppArmor is not enabled on this machine') $(said 'No - disabled at boot')"
+check "and no network was created" 0 "$(called '^podman network create')"
 
 run FAKE=other-containers
 check "another container running: refused with 2, and it names it" "2 1 1" \
@@ -118,7 +132,7 @@ check "and no network was created" 0 "$(called '^podman network create')"
 
 rm -f "$STATE"/*; sleep 60 >/dev/null 2>&1 & echo $! > "$STATE/pasta.pid"
 : > "$WORK/calls"; rc=0
-out="$(env PATH="$B:$PATH" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" FAKE= FAKE_KERNEL= bash "$SCRIPT" 2>&1 </dev/null)" || rc=$?
+out="$(env PATH="$B:$PATH" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" REAL_CAT="$(command -v cat)" FAKE= FAKE_KERNEL= bash "$SCRIPT" 2>&1 </dev/null)" || rc=$?
 check "a pasta that was already there: refused with 2, and it names it" "2 1 1" \
 	"$rc $(said 'already has a pasta process') $(said "$(cat "$STATE/pasta.pid")")"
 check "and no network was created" 0 "$(called '^podman network create')"
@@ -147,6 +161,20 @@ check "and the API process it started is ended" "yes 0" "$([ "$pid" != 0 ] && ec
 check "and the work directory is gone" 0 "$(find "$WORK/tmp" -mindepth 1 | wc -l)"
 
 # --- what each failure says ---------------------------------------------------------
+check "and it says what AppArmor and the profile of the service are, as information" "1 1" \
+	"$(said 'AppArmor: Yes') $(said 'Podman API runs under AppArmor profile: podman (unconfined)')"
+run FAKE_PROFILE=podman
+check "a service under the podman profile with no flags is the same machine: it goes on" "0 1" "$rc $(said 'rootless stop test passed')"
+run FAKE_PROFILE=unconfined
+check "a service that runs unconfined: refused with 2, and named" "2 1" "$rc $(said "runs under the AppArmor profile 'unconfined', not under podman")"
+check "and the container and the network are still removed" "1 1" \
+	"$(called '^podman rm -f -t 0 aa-pasta-ctr-') $(called '^podman network rm -f aa-pasta-net-')"
+check "and the stop was never sent" 0 "$(called 'stop[?]')"
+run "FAKE_PROFILE=podman-other (enforce)"
+check "a profile that only starts with the name is another profile: refused with 2" "2 1" "$rc $(said "not under podman")"
+run FAKE_PROFILE=unknown
+check "a profile the kernel does not report: refused with 2, and named" "2 1" "$rc $(said "runs under the AppArmor profile 'unknown'")"
+
 run FAKE=no-start
 check "a container that does not start: refused, with what podman said" "1 1 1" \
 	"$rc $(said 'a rootless container on a bridge network did not start') $(said 'crun failed')"
