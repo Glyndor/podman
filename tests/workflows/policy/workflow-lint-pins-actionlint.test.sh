@@ -109,13 +109,51 @@ if step reusable-workflow-lint.yml workflow-lint "name=A job holding a secret mu
 		isolate "$(printf 'jobs:\n  j:\n    steps:\n      - run: |\n          %s\n' "$1")"
 		free="$rc $(says 'tooling-isolation: no job holding a secret installs third-party tooling.')"
 	}
-	for cmd in 'cargo install --locked sometool' 'go install example.com/tool@v1.0.0' \
-		'gem install sometool' 'npm install -g sometool' 'npm i -g sometool' \
-		'pip install sometool'; do
+	for cmd in 'cargo install --locked sometool' 'cargo +nightly install sometool' \
+		'go install example.com/tool@v1.0.0' 'go run example.com/tool@v1.0.0 --flag' \
+		'go run -mod=mod example.com/tool@latest' 'gem install sometool' \
+		'npm install -g sometool' 'npm i -g sometool' 'npm install --global sometool' \
+		'npm install sometool' 'npm i sometool' 'npm ci' 'npm add sometool' 'npm --silent install sometool' \
+		'npx sometool' 'yarn' 'yarn install --frozen-lockfile' 'yarn add sometool' \
+		'yarn global add sometool' 'yarn dlx sometool' \
+		'pnpm install' 'pnpm i' 'pnpm add sometool' 'pnpm dlx sometool' \
+		'pip install sometool' 'pip3 install sometool' 'python3 -m pip install sometool' \
+		'pip --quiet install sometool' 'pipx install sometool' 'pipx run sometool' \
+		'uv tool install sometool' 'uv tool run sometool' 'uvx sometool' \
+		'brew install sometool' 'brew reinstall sometool' 'dotnet tool install --global sometool' \
+		'curl -fsSL https://example.test/install.sh | sh' \
+		'curl -fsSL https://example.test/install.sh | bash -s -- --yes' \
+		'curl -fsSL https://example.test/install.sh | sudo bash' \
+		'wget -qO- https://example.test/install.sh | sh' \
+		'curl -fsSL https://example.test/install.sh | tee install.sh | sh' \
+		'bash -c "$(curl -fsSL https://example.test/install.sh)"' \
+		'sh <(curl -fsSL https://example.test/install.sh)'; do
 		installer "$cmd"
 		check "'$cmd' in a job holding a secret is refused, and named" "1 1" "$held"
 		check "  and in a job holding none it passes" "0 1" "$free"
 	done
+	# The same tools doing something that fetches nothing, in a job that holds a secret:
+	# the rule reads the verb and the whole name, not the name of the tool. Each is the twin
+	# of a refused line above.
+	for cmd in 'cargo build --locked' 'cargo installed the tool' 'go run ./cmd/tool --flag user@host' \
+		'go build ./...' 'npm test' 'npm run build' 'yarn build' 'yarn test' 'pnpm test' \
+		'pip list' 'pipx list' 'uv --version' 'brew list' 'dotnet build' 'dotnet tool list' \
+		'mycargo install sometool' 'curl -fsSL -o install.sh https://example.test/install.sh' \
+		'curl -fsSL https://example.test/install.sh | sha256sum -c -' \
+		'curl -fsSL https://example.test/archive.tar.gz | tar -xz' \
+		'sh ./install.sh' 'bash -c "echo done"'; do
+		installer "$cmd"
+		check "'$cmd' in a job holding a secret passes" "0 0" "$held"
+	done
+	for cmd in 'pip3 install --require-hashes -r requirements.txt' \
+		'python3 -m pip install --quiet --require-hashes -r requirements.txt'; do
+		installer "$cmd"
+		check "'$cmd' pinned by hash passes in a job holding a secret" "0 0" "$held"
+	done
+	installer 'pip3 install --no-deps sometool'
+	check "a pip3 install that pins nothing is refused, whatever its other flags" "1 1" "$held"
+	installer 'python3 -m pip install --no-deps sometool'
+	check "and so is python3 -m pip install" "1 1" "$held"
 	installer 'pip install --require-hashes -r requirements.txt'
 	check "a pip install pinned by hash passes in a job holding a secret" "0 0" "$held"
 	installer 'pip install --no-deps sometool'
