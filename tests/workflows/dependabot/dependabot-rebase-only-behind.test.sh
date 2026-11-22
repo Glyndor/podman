@@ -33,6 +33,13 @@ with open(f"{out}/env.sh", "w") as fh:
         if "${{" not in str(v):
             fh.write(f"export {k}={shlex.quote(str(v))}\n")
 PY
+# shellcheck source=tests/lib/workflow-step.sh
+. "$HERE/tests/lib/workflow-step.sh"
+
+# The job asks Dependabot to rebase on the push to main that made a branch fall behind.
+# On a pull request event it would comment on every Dependabot pull request, from a
+# trigger that runs with the repository's token.
+check "the job runs only on a push" "github.event_name == 'push'" "$(gate dependabot-automerge.yml rebase if)"
 check "the run block has no expression in it" 0 "$(grep -c '\${{' "$WORK/run.sh")"
 
 # gh: `pr list` runs the step's jq over $LIST; `api repos/<r>/compare/main...<sha>` answers

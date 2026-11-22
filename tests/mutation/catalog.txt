@@ -251,3 +251,4 @@ keyring-diff-a-change-is-the-exit-status	scripts/upstream/keyring-diff.sh	exit "
 release-build-runs-when-there-is-nothing-to-build	.github/workflows/release.yml	if: needs.plan.outputs.build == 'true'	if: always()	tests/workflows/release/release-contract.test.sh
 release-publish-does-not-wait-for-the-build	.github/workflows/release.yml	needs: [plan, build]	needs: [plan]	tests/workflows/release/release-contract.test.sh
 keyring-watch-branch-step-runs-when-the-keys-agree	.github/workflows/keyring-watch.yml	if: steps.diff.outputs.differs == 'true'	if: always()	tests/workflows/keyring/keyring-watch-copy.test.sh
+dependabot-rebase-runs-on-every-event	.github/workflows/dependabot-automerge.yml	if: github.event_name == 'push'	if: always()	tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh
