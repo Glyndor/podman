@@ -3,8 +3,9 @@
 # Tests that the build image takes everything it adds from Debian's signed archive.
 #
 # The package is compiled inside the image scripts/build/Dockerfile describes. What goes
-# into that image beside the base is a compiler, a short-name list and the source of
-# passt, and each comes through apt, which checks it against a signed Release file:
+# into that image beside the base is a compiler, a short-name list, the source of
+# passt and the AppArmor tools that compile its profile, and each comes through apt,
+# which checks it against a signed Release file:
 # Rust from trixie-backports instead of an installer piped into a shell, passt's source
 # from the archive because its tags carry no signature, the short names from Debian's
 # package because upstream's spec fetches the head of an unsigned branch. Replacing any
@@ -62,6 +63,7 @@ for need, what in (
     (r"apt-get install [^&]*-t trixie-backports cargo rustc\b", "Rust is not installed from trixie-backports"),
     (r"apt-get source [^&]*-t trixie-backports passt\b", "the source of passt is not taken from trixie-backports"),
     (r"apt-get download golang-github-containers-common\b", "the short-name list is not taken from Debian's package"),
+    (r"apt-get install [^&]*(?<![\w-])apparmor(?![\w-])", "apparmor_parser is not installed, and the build compiles the profile of pasta with it"),
 ):
     if not re.search(need, joined):
         print(what)
@@ -99,6 +101,9 @@ swap "deb http://deb.debian.org/debian trixie-backports main" "deb [trusted=yes]
 check "an apt source that is not Debian's, marked trusted, is named" "2" "$(violations "$B" | grep -c -e 'trusted=yes' -e "not Debian's trixie-backports")"
 swap "-t trixie-backports cargo rustc" "-t trixie-backports --allow-unauthenticated cargo rustc"
 check "telling apt to install what it cannot verify is named" "1" "$(violations "$B" | grep -c -F 'RUN tells apt to accept what it cannot verify (--allow-unauthenticated)')"
+swap "protobuf-compiler python3 apparmor" "protobuf-compiler python3 libapparmor-dev"
+check "an image with no apparmor package, only its headers, is named" \
+	"apparmor_parser is not installed, and the build compiles the profile of pasta with it" "$(violations "$B")"
 add "ADD https://example.invalid/tool /usr/local/bin/tool"
 check "a file added from a URL is named" "ADD takes a file from a URL" "$(violations "$B")"
 add "COPY --from=docker.io/library/rust:1 /usr/local/cargo /usr/local/cargo"

@@ -123,6 +123,52 @@ if [ -d "$passt_src/contrib/apparmor" ]; then
 	for f in "$passt_src"/contrib/apparmor/abstractions/*; do
 		[ -f "$f" ] && install -D -m 0644 "$f" "$stage/etc/apparmor.d/abstractions/$(basename "$f")"
 	done
+
+	# When the last container of a rootless bridge network stops, Podman sends SIGTERM to
+	# the pasta of the rootless network namespace. Ubuntu confines /usr/bin/podman under a
+	# profile named `podman` (flags=(unconfined)), and abstractions/base admits a signal
+	# only from peer=unconfined, so the kernel refuses it:
+	#   apparmor="DENIED" operation="signal" class="signal" profile="pasta" comm="podman"
+	#   requested_mask="receive" denied_mask="receive" signal=term peer="podman"
+	# and the API answers 500 "rootless netns: kill network process: permission denied".
+	# The rule goes inside the profile of pasta, after its one include of the abstraction,
+	# and not into abstractions/pasta, which is a list of rules that anything may include.
+	# upstream ships no local/usr.bin.pasta to hold it. It admits SIGTERM, the only signal
+	# Podman 6.2 sends to that pasta, from that one peer; nothing wider. If upstream changes the shape of
+	# the profile, or starts carrying such a rule itself, the build stops and says so.
+	pasta_profile="$stage/etc/apparmor.d/usr.bin.pasta"
+	pasta_anchor="  include <abstractions/pasta>"
+	pasta_rule="  signal (receive) set=(term) peer=podman,"
+	[ -f "$pasta_profile" ] || { echo "passt ships no AppArmor profile for pasta to add the signal rule to" >&2; exit 1; }
+	[ "$(grep -c -x -F -- "$pasta_anchor" "$pasta_profile")" -eq 1 ] \
+		|| { echo "the pasta profile does not include its abstraction exactly once, so the signal rule has nowhere to go" >&2; exit 1; }
+	awk -v anchor="$pasta_anchor" -v rule="$pasta_rule" '
+		$0 == anchor {
+			print
+			print ""
+			print "  # Podman stops the pasta of the rootless network namespace with SIGTERM from its own"
+			print "  # profile, which abstractions/base does not admit. Added by the Glyndor package:"
+			print "  #   apparmor=\"DENIED\" operation=\"signal\" profile=\"pasta\" comm=\"podman\" signal=term peer=\"podman\""
+			print rule
+			next
+		}
+		{ print }' "$pasta_profile" > "$work/usr.bin.pasta"
+	install -m 0644 "$work/usr.bin.pasta" "$pasta_profile"
+	# Counted over everything the profile can reach, so a rule of upstream's own is a
+	# second one and stops the build instead of sitting beside ours. The peer is read as a
+	# token, in any spelling the syntax allows (signal(receive), peer = podman), and a peer
+	# whose name only starts with podman is another peer.
+	[ "$(cat "$pasta_profile" "$stage"/etc/apparmor.d/abstractions/* | grep -c -E '^[[:space:]]*signal([[:space:]]|\().*peer[[:space:]]*=[[:space:]]*"?podman"?([[:space:],]|$)')" -eq 1 ] \
+		|| { echo "the pasta profile does not hold exactly one signal rule for peer=podman after the build added it" >&2; exit 1; }
+	command -v apparmor_parser >/dev/null || { echo "no apparmor_parser to check the pasta profile with" >&2; exit 1; }
+	# -Q does not load anything and -K writes no cache: the profile is only compiled, against
+	# the distribution's abi and abstractions with the package's own on top.
+	apparmor_parser -Q -K -b /etc/apparmor.d -I "$stage/etc/apparmor.d" "$pasta_profile" >/dev/null \
+		|| { echo "the pasta profile with the signal rule does not compile" >&2; exit 1; }
+else
+	# A passt tree that moved or dropped the folder would give a package with no AppArmor
+	# profile for pasta and no rule, and nothing would say so.
+	echo "passt has no contrib/apparmor directory, so the package would ship no AppArmor profiles" >&2; exit 1
 fi
 
 # Every ELF in the package, listed once. The checks below read binaries, and an executable
@@ -204,13 +250,15 @@ Description: Podman with its network stack, built from the upstream releases
 CONTROL
 
 # The AppArmor profiles of passt are loaded when the package is configured, as Debian's
-# package does; without it they would only apply after the next boot.
+# package does; without it they would only apply after the next boot. A profile that does
+# not load does not fail the installation, as in Debian's own snippet, but it says so.
 cat > "$stage/DEBIAN/postinst" <<'POSTINST'
 #!/bin/sh
 set -e
 if [ "$1" = configure ] && command -v apparmor_parser >/dev/null 2>&1 && aa-enabled >/dev/null 2>&1; then
 	for p in usr.bin.passt usr.bin.pasta usr.bin.passt-repair usr.bin.pesto; do
-		[ ! -f "/etc/apparmor.d/$p" ] || apparmor_parser -r -T -W "/etc/apparmor.d/$p" || true
+		[ ! -f "/etc/apparmor.d/$p" ] || apparmor_parser -r -T -W "/etc/apparmor.d/$p" \
+			|| echo "podman: the AppArmor profile $p did not load" >&2
 	done
 fi
 exit 0

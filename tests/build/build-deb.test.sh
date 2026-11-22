@@ -23,6 +23,12 @@ printf 'passt (0.0~git20260728.f8df3f1-1~bpo13+1) trixie-backports; urgency=medi
 printf 'all:\n\t@echo "$$CFLAGS" > %s/passt-cflags\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(prefix)/bin/passt\n\tinstall -D -m755 demo.sh $(DESTDIR)$(prefix)/share/doc/passt/demo.sh\n' "$WORK" > "$WORK/passt/Makefile"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/passt/demo.sh"
 echo p > "$WORK/passt/contrib/apparmor/usr.bin.passt"; echo p > "$WORK/passt/contrib/apparmor/abstractions/passt"
+# pasta's profile in the shape upstream ships it: the profile holds one include of the abstraction
+# and then its own rules. The abstraction is a bare list of rules, with no profile around it.
+printf '%s\n' 'abi <abi/4.0>,' '' 'include <tunables/global>' '' \
+	'profile pasta /usr/bin/pasta{,.avx2} flags=(attach_disconnected) {' '  include <abstractions/pasta>' '' \
+	'  /tmp/**                          rw,' '  owner @{HOME}/**                  w,' '}' > "$WORK/passt/contrib/apparmor/usr.bin.pasta"
+printf '%s\n' 'abi <abi/4.0>,' '' '  include <abstractions/passt>' '' '  ptrace r,' > "$WORK/passt/contrib/apparmor/abstractions/pasta"
 mkdir -p "$WORK/mods/common/pkg/config" "$WORK/mods/common/pkg/seccomp" "$WORK/mods/common/rpm" "$WORK/mods/image" "$WORK/mods/storage"
 printf 'module x\nrequire (\n\tgo.podman.io/common v0.70.0\n\tgo.podman.io/image/v5 v5.42.1\n\tgo.podman.io/storage v1.65.1\n)\n' > "$WORK/src/go.mod"
 for f in common/pkg/config/containers.conf common/rpm/policy.json image/registries.conf image/default.yaml storage/storage.conf; do echo x > "$WORK/mods/$f"; done
@@ -53,7 +59,18 @@ BUILDFLAGS
 for tool in dpkg-deb strip; do
 	printf '#!/bin/sh\necho "$*" >> "%s/%s.calls"\nexec "%s" "$@"\n' "$WORK" "$tool" "$(command -v "$tool")" > "$WORK/fakebin/$tool"
 done
-chmod +x "$WORK/fakebin/dpkg-buildflags" "$WORK/fakebin/dpkg-deb" "$WORK/fakebin/strip"
+# apparmor_parser compiles the profile of pasta and loads nothing. This one records how it was
+# called and the profile it was given, as it was when called, and fails when told to.
+cat > "$WORK/fakebin/apparmor_parser" <<'PARSER'
+#!/bin/sh
+echo "$*" >> "$AA_CALLS"
+for last; do :; done
+cp "$last" "$AA_PROFILE"
+[ -z "$FAKE_AA_FAILS" ] || { echo "AppArmor parser error: syntax error" >&2; exit 1; }
+PARSER
+printf '#!/bin/sh\nexit 0\n' > "$WORK/fakebin/aa-enabled"; chmod +x "$WORK/fakebin/aa-enabled"
+export AA_CALLS="$WORK/aa.calls" AA_PROFILE="$WORK/aa.profile"
+chmod +x "$WORK/fakebin/dpkg-buildflags" "$WORK/fakebin/dpkg-deb" "$WORK/fakebin/strip" "$WORK/fakebin/apparmor_parser"
 full_info="$(printf '\tbuild\t-buildmode=pie\n\tbuild\t-tags=apparmor,seccomp,selinux,systemd,containers_image_openpgp\n\tbuild\t-trimpath=true\n')"
 printf '%s\n' "$full_info" > "$WORK/info"
 PATH="$WORK/fakebin:$PATH"
@@ -87,7 +104,8 @@ check "the seccomp profile of this release is installed" ./usr/share/containers/
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/containers/seccomp.json')"
 check "policy.json is a conffile under /etc/containers" ./etc/containers/policy.json \
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './etc/containers/policy.json')"
-for f in ./usr/bin/passt ./usr/bin/pasta ./etc/apparmor.d/usr.bin.passt ./etc/apparmor.d/abstractions/passt; do
+for f in ./usr/bin/passt ./usr/bin/pasta ./etc/apparmor.d/usr.bin.passt ./etc/apparmor.d/abstractions/passt \
+	./etc/apparmor.d/usr.bin.pasta ./etc/apparmor.d/abstractions/pasta; do
 	check "passt ships $f" "$f" "$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "$f")"
 done
 check "an executable script in the tree does not stop the build" ./usr/share/doc/passt/demo.sh \
@@ -156,15 +174,15 @@ for flag in -trimpath=true -buildmode=pie apparmor seccomp systemd; do
 done
 printf '%s\n' "$full_info" > "$WORK/info"
 
-# No go on the PATH at all: every other command the build runs, linked one by one.
+# No go on the PATH at all: every other command the build runs, linked. Linking one file at a
+# time over every directory of the PATH took five seconds; one call of ln per directory, from the
+# last directory to the first so that the first one wins a name as it does on a PATH, takes a tenth.
 mkdir "$WORK/nogo"
 IFS=: read -r -a dirs <<< "$PATH"
-for d in "${dirs[@]}"; do
-	for f in "$d"/*; do
-		n="${f##*/}"
-		[ "$n" != go ] && [ -f "$f" ] && [ -x "$f" ] && [ ! -e "$WORK/nogo/$n" ] && ln -s "$f" "$WORK/nogo/$n"
-	done
+for ((i = ${#dirs[@]} - 1; i >= 0; i--)); do
+	[ ! -d "${dirs[i]}" ] || ln -sf "${dirs[i]}"/* "$WORK/nogo/" 2>/dev/null
 done
+rm -f "$WORK/nogo/go"
 PATH="$WORK/nogo" refused "$WORK/out-nogo"
 check "a build with no go to read the build info is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'no go to read the build info')"
 FAKE_GO_FAILS=1 refused "$WORK/out-gofails"
