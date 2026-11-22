@@ -101,6 +101,15 @@ if step reusable-workflow-lint.yml workflow-lint "name=A job holding a secret mu
 	check "one whose install is pinned by hash passes" "0 1" "$rc $(says 'tooling-isolation: no job holding a secret installs third-party tooling.')"
 	isolate "$(printf 'jobs:\n  j:\n    steps:\n      - run: cargo install something\n')"
 	check "an install in a job that holds no secret passes" 0 "$rc"
+	# The env: of the workflow reaches every job: a secret named there is held by a
+	# job that names none itself.
+	isolate "$(printf 'env:\n  T: ${{ secrets.TOKEN }}\njobs:\n  j:\n    steps:\n      - run: cargo install something\n')"
+	check "a secret in the env of the workflow is held by every job" "1 1" \
+		"$rc $(says 'job `j` installs third-party tooling while holding a secret: `cargo install something`')"
+	isolate "$(printf 'env:\n  LANG: C\njobs:\n  j:\n    steps:\n      - run: cargo install something\n')"
+	check "an env of the workflow that names no secret holds none" 0 "$rc"
+	isolate "$(printf 'env:\n  T: ${{ secrets.TOKEN }}\njobs:\n  j:\n    steps:\n      - run: echo nothing installed\n')"
+	check "and a secret there with nothing installed passes" 0 "$rc"
 	# One case per installer the rule knows, each paired with the same line in a job
 	# that holds no secret, so a refusal is the installer's and not the fixture's.
 	installer() { # <command>: the same step with and without a secret in its job
