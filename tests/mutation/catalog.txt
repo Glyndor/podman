@@ -358,3 +358,41 @@ watchdog-no-verdict-is-said-as-behind	.github/workflows/watchdog.yml	title="The 
 check-test-coverage-a-python-script-is-a-script	scripts/quality/check-test-coverage.sh	\( -name '*.sh' -o -name '*.py' \)	-name '*.sh'	tests/quality/check-test-coverage.test.sh
 check-test-coverage-the-test-is-named-after-the-script	scripts/quality/check-test-coverage.sh	[ -f "$root/tests/${rel%.*}.test.sh" ]	[ -f "$root/tests/${rel%.sh}.test.sh" ]	tests/quality/check-test-coverage.test.sh
 tooling-isolation-the-env-of-the-workflow-is-not-read	.github/workflows/reusable-workflow-lint.yml	job_text = yaml.safe_dump(job) + shared_env	job_text = yaml.safe_dump(job)	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+rootless-stop-test-run-as-root	scripts/verify/rootless-stop-test.sh	[ "$(id -u)" -ne 0 ] || { echo "run this as an unprivileged user, not as root" >&2; exit 2; }	[ "$(id -u)" -ne 0 ] || true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-tool-missing	scripts/verify/rootless-stop-test.sh	command -v "$tool" >/dev/null 2>&1 || { echo "$tool is needed and is not installed" >&2; exit 2; }	command -v "$tool" >/dev/null 2>&1 || true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-curl-not-asked-for	scripts/verify/rootless-stop-test.sh	for tool in podman curl busybox pgrep; do	for tool in podman busybox pgrep; do	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-other-containers-running	scripts/verify/rootless-stop-test.sh	[ -z "$others" ] || { echo "this user has running containers, so the network namespace would stay up and the stop proves nothing: $others" >&2; exit 2; }	[ -z "$others" ] || true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-pasta-already-there	scripts/verify/rootless-stop-test.sh	[ -z "$(pasta_pids)" ] || { echo "this user already has a pasta process, so one left after the stop would prove nothing: $(pasta_pids | tr '\n' ' ')" >&2; exit 2; }	[ -z "$(pasta_pids)" ] || true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-container-did-not-start	scripts/verify/rootless-stop-test.sh	|| { echo "a rootless container on a bridge network did not start" >&2; exit 1; }	|| true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-no-pasta-behind-the-namespace	scripts/verify/rootless-stop-test.sh	|| { echo "no pasta serves the rootless network namespace, so the stop would not signal anything" >&2; exit 1; }	|| true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-api-never-answers	scripts/verify/rootless-stop-test.sh	[ -n "$ready" ] || { echo "the Podman API did not answer on $sock: $(cat "$work/service.log")" >&2; exit 1; }	[ -n "$ready" ] || true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-api-is-not-waited-for	scripts/verify/rootless-stop-test.sh	if curl -s -o /dev/null --unix-socket "$sock" http://d/libpod/_ping; then	if true; then	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-any-answer-is-fine	scripts/verify/rootless-stop-test.sh	if [ "$code" != 204 ]; then	if false; then	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-a-running-container-is-fine	scripts/verify/rootless-stop-test.sh	if [ "$running" != false ]; then	if false; then	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-a-left-pasta-is-fine	scripts/verify/rootless-stop-test.sh	if [ -n "$left" ]; then	if false; then	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-problems-do-not-fail	scripts/verify/rootless-stop-test.sh	[ "$problems" -eq 0 ] || exit 1	[ "$problems" -eq 0 ] || true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-curl-failure-reads-as-success	scripts/verify/rootless-stop-test.sh	|| code="curl failed"	|| code=204	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-stop-is-a-get	scripts/verify/rootless-stop-test.sh	-X POST	-X GET	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-no-timeout-on-the-stop	scripts/verify/rootless-stop-test.sh	stop?timeout=1	stop	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-route-without-a-version	scripts/verify/rootless-stop-test.sh	http://d/v5.0.0/libpod/containers/	http://d/libpod/containers/	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-service-has-a-timeout	scripts/verify/rootless-stop-test.sh	podman system service --time=0	podman system service --time=5	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-container-is-in-the-foreground	scripts/verify/rootless-stop-test.sh	podman run -d --name	podman run --name	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-container-is-not-on-the-network	scripts/verify/rootless-stop-test.sh	--network "$net" --rootfs	--rootfs	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-no-network-is-created	scripts/verify/rootless-stop-test.sh	podman network create "$net" >/dev/null	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-container-state-is-not-read	scripts/verify/rootless-stop-test.sh	'{{.State.Running}}'	'{{.State.Status}}'	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-apparmor-is-not-said	scripts/verify/rootless-stop-test.sh	echo "AppArmor: $(aa-enabled 2>&1 || true)"	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-journal-is-not-limited-to-the-run	scripts/verify/rootless-stop-test.sh	 --since "$started"	 --since "yesterday"	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-denial-must-be-a-signal	scripts/verify/rootless-stop-test.sh	grep -E 'apparmor="DENIED".*operation="signal"	grep -E 'apparmor="DENIED".*operation="open"	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-denial-may-be-any-profile	scripts/verify/rootless-stop-test.sh	.*profile="[^"]*pasta'	.*profile="[^"]*'	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-sudo-is-never-asked	scripts/verify/rootless-stop-test.sh	[ "${ROOTLESS_STOP_TEST_SUDO:-}" != 1 ]	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-sudo-is-always-asked	scripts/verify/rootless-stop-test.sh	[ "${ROOTLESS_STOP_TEST_SUDO:-}" != 1 ]	false	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-sudo-reads-another-log	scripts/verify/rootless-stop-test.sh	sudo -n dmesg 2>/dev/null	sudo -n dmesg2 2>/dev/null	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-container-is-not-removed	scripts/verify/rootless-stop-test.sh	podman rm -f -t 0 "$ctr" >/dev/null 2>&1 || true	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-network-is-not-removed	scripts/verify/rootless-stop-test.sh	podman network rm -f "$net" >/dev/null 2>&1 || true	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-a-left-pasta-is-not-ended	scripts/verify/rootless-stop-test.sh	for p in $(pasta_pids); do kill "$p" 2>/dev/null || true; done	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-api-is-not-ended	scripts/verify/rootless-stop-test.sh	[ -z "$service" ] || kill "$service" 2>/dev/null || true	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-the-work-directory-stays	scripts/verify/rootless-stop-test.sh	rm -rf "$work"	true	tests/verify/rootless-stop-test.test.sh
+rootless-stop-test-no-cleanup-on-exit	scripts/verify/rootless-stop-test.sh	trap cleanup EXIT	trap : EXIT	tests/verify/rootless-stop-test.test.sh
+reusable-build-the-stop-test-runs-nothing	.github/workflows/reusable-build.yml	run: bash scripts/verify/rootless-stop-test.sh	run: "true"	tests/workflows/build/reusable-build-rootless-steps.test.sh
+reusable-build-the-stop-test-reads-no-kernel-log	.github/workflows/reusable-build.yml	ROOTLESS_STOP_TEST_SUDO: "1"	ROOTLESS_STOP_TEST_SUDO: "0"	tests/workflows/build/reusable-build-rootless-steps.test.sh
+reusable-build-the-rootless-test-runs-nothing	.github/workflows/reusable-build.yml	bash scripts/verify/rootless-test.sh "$RUNNER_TEMP/podman-under-test.deb" "${PODMAN#v}"	true	tests/workflows/build/reusable-build-rootless-steps.test.sh
