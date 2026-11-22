@@ -59,6 +59,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# What decides the network backend and its firewall driver on this machine, for the
+# message of a container that did not start: netavark refuses a driver it was not built
+# with, and the name it is given comes from the environment or from a containers.conf.
+network_settings() {
+	echo "network backend: $(podman info --format '{{.Host.NetworkBackend}} {{.Host.NetworkBackendInfo.Version}}' 2>&1 || true)"
+	echo "environment: $(env | grep -E '^(NETAVARK|CONTAINERS)_' | tr '\n' ' ' || true)"
+	echo "firewall_driver and network_backend lines in containers.conf:"
+	grep -rsn -E '^[[:space:]]*(firewall_driver|network_backend)[[:space:]]*=' \
+		/usr/share/containers /etc/containers "${XDG_CONFIG_HOME:-$HOME/.config}/containers" || echo "  none"
+}
+
 # The same one-binary container rootless-test.sh runs.
 root="$work/root"
 mkdir -p "$root/bin" "$root/etc" "$root/proc" "$root/sys" "$root/dev" "$root/tmp"
@@ -67,7 +78,7 @@ cp "$(command -v busybox)" "$root/bin/busybox"
 started="$(date '+%Y-%m-%d %H:%M:%S')"
 podman network create "$net" >/dev/null
 podman run -d --name "$ctr" --network "$net" --rootfs "$root" /bin/busybox sleep 300 >/dev/null \
-	|| { echo "a rootless container on a bridge network did not start" >&2; exit 1; }
+	|| { echo "a rootless container on a bridge network did not start" >&2; network_settings >&2; exit 1; }
 [ -n "$(pasta_pids)" ] \
 	|| { echo "no pasta serves the rootless network namespace, so the stop would not signal anything" >&2; exit 1; }
 
