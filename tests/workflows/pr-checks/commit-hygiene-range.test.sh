@@ -46,14 +46,56 @@ for pair in "commit-identity:Every commit uses a GitHub noreply address:check-co
 	if ! step commit-hygiene.yml "$job" "name=$name" "$S"; then
 		fail=$((fail + 1)); echo "FAIL  commit-hygiene.yml: cannot find the step of $job"; continue
 	fi
-	mkdir -p "$S/ws/scripts/quality"
-	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$#" "$@" > "$ASKED"\n' > "$S/ws/scripts/quality/$script"
-	run_step "$S" "$S/ws" ASKED="$S/asked" BASE=the-base HEAD=the-head
-	check "$job: the step passes when its script does" 0 "$rc"
-	check "$job: $script is given the base and the head, and nothing else" "2 the-base the-head" "$(paste -sd' ' "$S/asked")"
+	# A repository with the base commit, which holds the script as the base branch has
+	# it: it records what it was asked and refuses when VERDICT says no. The head's copy
+	# in the tree says ok to anything.
+	W="$S/ws"; mkdir -p "$W/scripts/quality" "$S/rt"
+	g() { git -C "$W" -c user.name=t -c user.email=t@example.invalid -c commit.gpgSign=false "$@"; }
+	g init -q
+	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$#" "$@" > "$ASKED"\n[ "${VERDICT:-ok}" = ok ] || { echo "the base script refuses"; exit 1; }\necho "the base script says ok"\n' > "$W/scripts/quality/$script"
+	g add -A; g commit -q -m base
+	base_sha="$(g rev-parse HEAD)"
+	printf '#!/usr/bin/env bash\necho "the head script says ok"\nexit 0\n' > "$W/scripts/quality/$script"
+	g add -A; g commit -q -m "a change that rewrote the script"
+	run_step "$S" "$W" ASKED="$S/asked" RUNNER_TEMP="$S/rt" BASE="$base_sha" HEAD=the-head
+	check "$job: the step passes when the script of the base does" 0 "$rc"
+	check "$job: $script is given the base and the head, and nothing else" "2 $base_sha the-head" "$(paste -sd' ' "$S/asked")"
+	check "$job: and the script that ran is the base's" "1 0" "$(says 'the base script says ok') $(says 'the head script says ok')"
+	run_step "$S" "$W" ASKED="$S/asked" RUNNER_TEMP="$S/rt" BASE="$base_sha" HEAD=the-head VERDICT=no
+	check "$job: a base script that refuses stops the step, whatever the head's copy says" "1 1 0" \
+		"$rc $(says 'the base script refuses') $(says 'the head script says ok')"
+	# The base has no copy yet: the commit that introduces the script is judged by it.
+	g checkout -q --orphan fresh; g rm -rq --cached . ; g commit -q --allow-empty -m "a base without the script"
+	rm -f "$S"/rt/*
+	run_step "$S" "$W" ASKED="$S/asked" RUNNER_TEMP="$S/rt" BASE="$(g rev-parse HEAD)" HEAD=the-head
+	check "$job: a base that has no copy of the script falls back to the tree's" "0 1" "$rc $(says 'the head script says ok')"
 	check "$job: the base and the head are the event's, read from a checkout of the whole history at the head" \
 		"$WANT" "$(wiring "$HERE/.github/workflows/commit-hygiene.yml" "$job")"
 done
+
+# The step that scans, run as it is with the scanner of the base commit, over a pull
+# request whose tree carries a .gitattributes that marks every file binary and hides it
+# from a diff. The attributes are read from the tree on disk, which is the pull request's,
+# so the scanner has to read the lines whatever they say. The twin without the credential
+# passes.
+H="$WORK/hostile"
+if step commit-hygiene.yml secret-scan "name=The change adds no credential-shaped line" "$H"; then
+	W="$H/ws"; mkdir -p "$W/scripts/quality" "$H/rt"
+	g() { git -C "$W" -c user.name=t -c user.email=t@example.invalid -c commit.gpgSign=false "$@"; }
+	g init -q
+	cp "$HERE/scripts/quality/check-secrets.sh" "$W/scripts/quality/check-secrets.sh"
+	printf 'readme\n' > "$W/README"; g add -A; g commit -q -m base; hostile_base="$(g rev-parse HEAD)"
+	printf '* binary\n* -diff\n' > "$W/.gitattributes"
+	printf 'AWS_KEY=AKI%s\n' "A$(printf '%*s' 16 '' | tr ' ' Q)" > "$W/k.txt"
+	g add -A; g commit -q -m "a hostile tree with a credential"; hostile_head="$(g rev-parse HEAD)"
+	run_step "$H" "$W" RUNNER_TEMP="$H/rt" BASE="$hostile_base" HEAD="$hostile_head"
+	check "a tree that hides its files from a diff still has its credential found" "1 1" "$rc $(says 'k.txt:1 AWS access key')"
+	printf 'nothing to see\n' > "$W/k.txt"; g add -A; g commit -q --amend -m "a hostile tree without one"
+	run_step "$H" "$W" RUNNER_TEMP="$H/rt" BASE="$hostile_base" HEAD="$(g rev-parse HEAD)"
+	check "the same tree without the credential passes" "0 1" "$rc $(says 'no credential-shaped lines added')"
+else
+	fail=$((fail + 1)); echo "FAIL  commit-hygiene.yml: cannot find the secret scan step"
+fi
 
 # The same reading over broken copies: each has to be seen.
 BAD="$WORK/bad.yml"

@@ -54,3 +54,28 @@ run_step() {
 	)" || rc=$?
 }
 says() { printf '%s\n' "$out" | grep -c -F -- "$1"; }
+
+# gate <workflow> <job> <if|needs> [step name]: prints the condition of a job, or of
+# one of its steps when a name is given, or the jobs a job waits for (sorted, with a
+# comma between them). Prints "no such job", "no such step" or nothing at all for an
+# absent field, never a crash, so a missing gate reads as a difference.
+gate() {
+	python3 - "$HERE/.github/workflows/$1" "$2" "$3" "${4:-}" <<'PY' 2>&1 || echo "gate failed"
+import sys, yaml
+path, job, field, step = sys.argv[1:5]
+with open(path) as fh:
+    jobs = yaml.safe_load(fh)["jobs"]
+if job not in jobs:
+    print("no such job"); sys.exit(0)
+node = jobs[job]
+if step:
+    hits = [s for s in node.get("steps") or [] if s.get("name") == step]
+    if len(hits) != 1:
+        print("no such step"); sys.exit(0)
+    node = hits[0]
+value = node.get(field)
+if field == "needs":
+    value = ",".join(sorted([value] if isinstance(value, str) else value or []))
+print("" if value is None else str(value).strip())
+PY
+}

@@ -87,5 +87,27 @@ check "on and a page that says not yet is named" "notyet.md must say '$REQUIRED'
 check "a page that says both is named" "both.md must say '$NOT_YET' and only that, while the switch is off" "$(claim "$WORK/off" "$WORK/both.md")"
 check "a page that says neither is named" "none.md must say '$REQUIRED' and only that, while the switch is on" "$(claim "$WORK/on" "$WORK/none.md")"
 
+# --- what CONTRIBUTING.md says the line does, held to what release.yml does ---------
+# The release requires the second signature when the line is there, when the secret is
+# set, or when the newest release carries it (release.yml, the step that signs), so the
+# line is one of three and taking it out alone retires nothing. The guide says so, and
+# does not say the line is what retires it.
+RETIRES='taking the line out is what retires the second signature'
+guide() { # <file>: what is wrong with what the guide says about the line, or nothing
+	local flat
+	flat="$(tr '\n' ' ' < "$1" | tr -s ' ' | tr 'A-Z' 'a-z')"
+	case "$flat" in *"$RETIRES"*) echo "it says taking the line out retires the second signature" ;; esac
+	case "$flat" in *glyndor_release_mldsa65_key*) ;; *) echo "it does not name the secret as a second requirement" ;; esac
+	case "$flat" in *"newest release"*) ;; *) echo "it does not name the newest release as a third requirement" ;; esac
+}
+check "CONTRIBUTING.md says what the line does and what else requires the second signature" "" "$(guide "$HERE/CONTRIBUTING.md")"
+printf 'The line is one of three: the secret GLYNDOR_RELEASE_MLDSA65_KEY and the newest release also require it.\n' > "$WORK/guide-good.md"
+printf 'While that line is there it is required, and taking the line\nout is what retires the second signature.\n' > "$WORK/guide-old.md"
+printf 'The line requires it.\n' > "$WORK/guide-short.md"
+check "a guide that names the secret and the newest release is accepted" "" "$(guide "$WORK/guide-good.md")"
+check "a guide that says the line retires the signature is named" "it says taking the line out retires the second signature" "$(guide "$WORK/guide-old.md" | head -n 1)"
+check "a guide that names neither other requirement is named" "it does not name the secret as a second requirement it does not name the newest release as a third requirement" \
+	"$(guide "$WORK/guide-short.md" | paste -sd' ')"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
