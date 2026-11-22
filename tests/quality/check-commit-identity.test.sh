@@ -77,6 +77,27 @@ commit "$noreply" "$(printf 'x\n\nSigned-off-by: t <%s>' "$noreply")"
 commit "$personal" "second, personal"
 run >/dev/null; check "one bad commit among good ones fails" 1 "$?"
 
+# A trailer in a paragraph that is not the last is a trailer too: the lines of the whole
+# message are read, in any position and in any case. Each refusal has a twin with a noreply
+# address in the same place that passes.
+for key in Signed-off-by Co-authored-by signed-off-by CO-AUTHORED-BY; do
+	git -C "$repo" reset -q --hard "$base"
+	commit "$noreply" "$(printf 'x\n\n%s: t <%s>\n\nthe rest of the message, a last paragraph' "$key" "$personal")"
+	out="$(run)"; rc=$?
+	check "a personal $key in a paragraph that is not the last fails" 1 "$rc"
+	check "and the message names the trailer ($key)" 1 "$(printf '%s' "$out" | grep -c -i 'a \(Signed-off-by\|Co-authored-by\) address')"
+	check "and the address is not printed ($key)" 0 "$(printf '%s' "$out" | grep -c "$personal")"
+	git -C "$repo" reset -q --hard "$base"
+	commit "$noreply" "$(printf 'x\n\n%s: t <%s>\n\nthe rest of the message, a last paragraph' "$key" "$noreply")"
+	run >/dev/null; check "a noreply $key in a paragraph that is not the last passes" 0 "$?"
+done
+git -C "$repo" reset -q --hard "$base"
+commit "$noreply" "$(printf 'x\n\nSigned-off-by: t <%s>\n\nbetween\n\nSigned-off-by: u <%s>\n' "$personal" "$noreply")"
+run >/dev/null; check "a personal sign-off above a noreply one fails" 1 "$?"
+git -C "$repo" reset -q --hard "$base"
+commit "$noreply" "$(printf 'x\n\nnote that Signed-off-by: t <%s> is not a trailer when it is not at the start of a line\n' "$personal")"
+run >/dev/null; check "a line that only mentions the key mid-sentence is not read" 0 "$?"
+
 # A range that cannot be listed is a failure, not a clean pass; the same script over
 # a range that can be listed, with nothing in it, still passes.
 out="$( (cd "$repo" && "$SCRIPT" 0000000000000000000000000000000000000000 HEAD 2>&1) )"; rc=$?
