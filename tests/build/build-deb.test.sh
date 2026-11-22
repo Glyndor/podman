@@ -68,6 +68,7 @@ for last; do :; done
 cp "$last" "$AA_PROFILE"
 [ -z "$FAKE_AA_FAILS" ] || { echo "AppArmor parser error: syntax error" >&2; exit 1; }
 PARSER
+printf '#!/bin/sh\nexit 0\n' > "$WORK/fakebin/aa-enabled"; chmod +x "$WORK/fakebin/aa-enabled"
 export AA_CALLS="$WORK/aa.calls" AA_PROFILE="$WORK/aa.profile"
 chmod +x "$WORK/fakebin/dpkg-buildflags" "$WORK/fakebin/dpkg-deb" "$WORK/fakebin/strip" "$WORK/fakebin/apparmor_parser"
 full_info="$(printf '\tbuild\t-buildmode=pie\n\tbuild\t-tags=apparmor,seccomp,selinux,systemd,containers_image_openpgp\n\tbuild\t-trimpath=true\n')"
@@ -352,6 +353,24 @@ check "a passt tree with no contrib/apparmor: refused, and named" "1 1" \
 no_package "$WORK/out-no-apparmor-dir"
 mv "$WORK/passt/contrib/apparmor.away" "$WORK/passt/contrib/apparmor"
 restore
+
+# The postinst loads the profiles on configure. A copy of it with /etc pointed at a fixture runs
+# with a parser that loads them and one that cannot: the installation goes on either way, as
+# Debian's own snippet does, and the second says which profile did not load.
+restore
+rm -rf "$WORK/ctl" "$WORK/etc-aa"; mkdir -p "$WORK/etc-aa"
+dpkg-deb -e "$(build 6.2.0 "$WORK/out-postinst" 2>/dev/null)" "$WORK/ctl" 2>/dev/null
+sed "s|/etc/apparmor.d|$WORK/etc-aa|g" "$WORK/ctl/postinst" > "$WORK/postinst"
+: > "$WORK/etc-aa/usr.bin.passt"; : > "$WORK/etc-aa/usr.bin.pasta"
+rm -f "$WORK/aa.calls"
+rc=0; err="$(sh "$WORK/postinst" configure 2>&1 >/dev/null)" || rc=$?
+check "configure loads the profiles that are there, and says nothing when they load" "0 2 0" \
+	"$rc $(grep -c -E '^-r -T -W ' "$WORK/aa.calls") $(printf '%s' "$err" | grep -c .)"
+rm -f "$WORK/aa.calls"
+rc=0; err="$(FAKE_AA_FAILS=1 sh "$WORK/postinst" configure 2>&1 >/dev/null)" || rc=$?
+check "a profile that does not load does not fail the installation, and each one is named" "0 1 1" \
+	"$rc $(printf '%s\n' "$err" | grep -c -x 'podman: the AppArmor profile usr.bin.passt did not load') $(printf '%s\n' "$err" | grep -c -x 'podman: the AppArmor profile usr.bin.pasta did not load')"
+check "and the profile that is not there is not named" 0 "$(printf '%s\n' "$err" | grep -c 'usr.bin.pesto')"
 
 # No apparmor_parser on the PATH at all, which is an image that does not have the package. The
 # directory of every tool the build needs is kept; only the ones that hold the parser are left out.

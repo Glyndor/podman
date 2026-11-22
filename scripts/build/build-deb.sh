@@ -248,13 +248,15 @@ Description: Podman with its network stack, built from the upstream releases
 CONTROL
 
 # The AppArmor profiles of passt are loaded when the package is configured, as Debian's
-# package does; without it they would only apply after the next boot.
+# package does; without it they would only apply after the next boot. A profile that does
+# not load does not fail the installation, as in Debian's own snippet, but it says so.
 cat > "$stage/DEBIAN/postinst" <<'POSTINST'
 #!/bin/sh
 set -e
 if [ "$1" = configure ] && command -v apparmor_parser >/dev/null 2>&1 && aa-enabled >/dev/null 2>&1; then
 	for p in usr.bin.passt usr.bin.pasta usr.bin.passt-repair usr.bin.pesto; do
-		[ ! -f "/etc/apparmor.d/$p" ] || apparmor_parser -r -T -W "/etc/apparmor.d/$p" || true
+		[ ! -f "/etc/apparmor.d/$p" ] || apparmor_parser -r -T -W "/etc/apparmor.d/$p" \
+			|| echo "podman: the AppArmor profile $p did not load" >&2
 	done
 fi
 exit 0
