@@ -61,9 +61,9 @@ status=0; for t in $(find tests -name '*.test.sh' | sort); do case "$t" in *-mld
 
 The suites run on Debian or Ubuntu with bash, git, gpg, make, file, binutils, dpkg-dev,
 shellcheck 0.11.0 (the version CI pins), and `python3` with `python3-yaml`,
-`python3-cryptography` and `python3-venv`. The third line needs network access once, to
-fetch the pinned wheel; the last one runs every suite, says which failed, and exits
-non-zero when one did.
+`python3-cryptography` and `python3-venv`. The line that builds the virtual environment
+needs network access once, to fetch the pinned wheel; the last one runs every suite, says
+which failed, and exits non-zero when one did.
 
 A folder holds at most twenty tracked files directly, and `check-folder-size.sh` fails when one
 holds more: split it into subfolders by what each file is for. `.github/workflows` is left out, because
