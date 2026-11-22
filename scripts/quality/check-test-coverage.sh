@@ -28,9 +28,8 @@ root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 missing=()
 while IFS= read -r -d '' script; do
 	rel="${script#"$root"/scripts/}"
-	rel="${rel%.sh}"
-	[ -f "$root/tests/$rel.test.sh" ] || missing+=("scripts/$rel.sh")
-done < <(find "$root/scripts" -type f -name '*.sh' -print0 | LC_ALL=C sort -z)
+	[ -f "$root/tests/${rel%.*}.test.sh" ] || missing+=("scripts/$rel")
+done < <(find "$root/scripts" -type f \( -name '*.sh' -o -name '*.py' \) -print0 | LC_ALL=C sort -z)
 
 if [ ${#missing[@]} -gt 0 ]; then
 	echo "::error::${#missing[@]} script(s) have no test in the matching folder of tests/:" >&2

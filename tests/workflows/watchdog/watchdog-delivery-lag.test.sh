@@ -120,6 +120,16 @@ GH
 	alarm CODE=2
 	check "could not decide: an issue that says that instead" "0 1" \
 		"$rc $(grep -c "^create .*--title The release pipeline's delivery check could not decide " "$A/log")"
+	# The step that hands the code on can die before the check runs (gh does not
+	# answer, the release cannot be read): there is no verdict then, and an issue
+	# that said "behind upstream" would send its reader to look at the wrong thing.
+	alarm CODE=
+	check "no verdict at all: the issue says the check could not decide, not that the release is behind" "0 1 0" \
+		"$rc $(grep -c "^create .*--title The release pipeline's delivery check could not decide " "$A/log") $(grep -c -- '--title Release pipeline is behind upstream' "$A/log")"
+	check "and its body says the check may not have run" "1" "$(grep -c 'did not get as far as deciding' "$A/log")"
+	alarm CODE=7
+	check "a code the check never gives is not read as behind either" "0 1 0" \
+		"$rc $(grep -c "^create .*--title The release pipeline's delivery check could not decide " "$A/log") $(grep -c -- '--title Release pipeline is behind upstream' "$A/log")"
 	alarm CODE=1 OPEN_ISSUE=9
 	check "an issue already open gets a comment, not a second issue" "0 1 0" \
 		"$rc $(grep -c '^comment issue comment 9 ' "$A/log") $(grep -c '^create' "$A/log")"

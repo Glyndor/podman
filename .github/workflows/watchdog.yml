@@ -112,12 +112,15 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CODE: ${{ needs.delivery-lag.outputs.code }}
         run: |
-          if [ "$CODE" = "2" ]; then
-            title="The release pipeline's delivery check could not decide"
-            body="The delivery check could not tell whether the newest release is behind upstream: it could not read what the release carries, or an upstream date. Read the run: $RUN_URL"
-          else
+          # Only a verdict of 1 says the release is behind. Anything else, the 2 of a
+          # check that could not decide or no verdict at all because the step died
+          # before the check ran, is said as it is: the release may be up to date.
+          if [ "$CODE" = "1" ]; then
             title="Release pipeline is behind upstream"
             body="The newest release is missing something upstream, or this repository's build recipe, has had for more than a day. Run: $RUN_URL"
+          else
+            title="The release pipeline's delivery check could not decide"
+            body="The delivery check could not tell whether the newest release is behind upstream: it could not read what the release carries or an upstream date, or it did not get as far as deciding. Read the run: $RUN_URL"
           fi
           open="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
           if [ -n "$open" ]; then

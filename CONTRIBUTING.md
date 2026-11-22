@@ -73,7 +73,7 @@ A folder holds at most twenty tracked files directly, and `check-folder-size.sh`
 holds more: split it into subfolders by what each file is for. `.github/workflows` is left out, because
 GitHub only reads it flat, and so is any `testdata` folder.
 
-Every script in `scripts/` needs a test; `check-test-coverage.sh` fails when one
+Every script in `scripts/`, shell or Python, needs a test; `check-test-coverage.sh` fails when one
 does not. A script `scripts/<area>/x.sh` is tested by `tests/<area>/x.test.sh`. The
 other folders of `tests/` are named for what they test: `tests/workflows` reads
 `.github/workflows`, in one folder for each thing it holds (`release`, `build`, `dependabot`, `keyring`, `watchdog`,
