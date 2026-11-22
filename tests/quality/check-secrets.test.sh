@@ -273,10 +273,20 @@ for fake in binary both nothing; do
 done
 out="$( (cd "$repo" && FAKE=real PATH="$WORK/gitbin:$PATH" "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
 check "the same fake git, passing the diff through, finds the credential by name" "1 1" "$rc $(printf '%s' "$out" | grep -c 'k.txt:1 AWS access key')"
-printf 'text\n' > "$repo/mode.sh"; : > "$repo/gone.txt"; gitc add -A; gitc commit -q -m "more files"; moved_base="$(git -C "$repo" rev-parse HEAD)"
+printf 'text\n' > "$repo/mode.sh"; printf 'gone\n' > "$repo/gone.txt"; gitc add -A; gitc commit -q -m "more files"; moved_base="$(git -C "$repo" rev-parse HEAD)"
 chmod +x "$repo/mode.sh"; : > "$repo/empty.txt"; gitc rm -q gone.txt; gitc add -A; gitc commit -q -m "a mode change, an empty file and a deletion"
 out="$( (cd "$repo" && FAKE=nothing PATH="$WORK/gitbin:$PATH" "$SCRIPT" "$moved_base" HEAD 2>&1) )"; rc=$?
 check "a mode change, an empty file and a deletion leave nothing to read and pass" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+# A mode change of a file whose content the base has since dropped: the blob is not in the
+# tree of the base, there is no hunk, and the content is the one the change started from.
+git -C "$repo" reset -q --hard "$moved_base"
+git -C "$repo" checkout -q -b stale
+chmod +x "$repo/mode.sh"; gitc add -A; gitc commit -q -m "a mode change on an old base"
+git -C "$repo" checkout -q -; gitc rm -q mode.sh; gitc commit -q -m "main drops the file"
+tip="$(git -C "$repo" rev-parse HEAD)"
+out="$( (cd "$repo" && "$SCRIPT" "$tip" stale 2>&1) )"; rc=$?
+check "a mode change of content the base has dropped has nothing to read and passes" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+git -C "$repo" branch -q -D stale
 
 # A change cannot list its own exceptions: the same fixture with the list added by
 # the change itself is scanned, and an expression that matches everything is no
