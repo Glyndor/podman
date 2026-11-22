@@ -49,3 +49,4 @@ build/
 # Source folders named build are code here, not output.
 !scripts/build/
 !tests/build/
+!tests/workflows/build/
