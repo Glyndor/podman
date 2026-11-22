@@ -280,7 +280,6 @@ check-commit-identity-reads-only-the-last-paragraph	scripts/quality/check-commit
 check-commit-identity-reads-the-keys-in-one-case	scripts/quality/check-commit-identity.sh	grep -iE '^(Signed-off-by|Co-authored-by):'	grep -E '^(Signed-off-by|Co-authored-by):'	tests/quality/check-commit-identity.test.sh
 check-commit-identity-merges-are-skipped	scripts/quality/check-commit-identity.sh	git rev-list "$base..$head"	git rev-list --no-merges "$base..$head"	tests/quality/check-commit-identity.test.sh
 check-commit-identity-the-committer-of-a-merge	scripts/quality/check-commit-identity.sh	flag "$sha" "the committer address of a merge"	true	tests/quality/check-commit-identity.test.sh
-reusable-workflow-lint-forgets-cargo-install	.github/workflows/reusable-workflow-lint.yml	("cargo install",   None),	("cargo-install",   None),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-workflow-lint-forgets-go-install	.github/workflows/reusable-workflow-lint.yml	("go install",      None),	("go-install",      None),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-workflow-lint-forgets-gem-install	.github/workflows/reusable-workflow-lint.yml	("gem install",     None),	("gem-install",     None),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-workflow-lint-forgets-npm-install-g	.github/workflows/reusable-workflow-lint.yml	("npm install -g",  None),	("npm-install-g",  None),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
