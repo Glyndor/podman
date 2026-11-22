@@ -398,34 +398,34 @@ reusable-build-the-stop-test-reads-no-kernel-log	.github/workflows/reusable-buil
 reusable-build-the-override-names-a-driver-netavark-lacks	.github/workflows/reusable-build.yml	firewall_driver = "nftables"	firewall_driver = "iptables"	tests/workflows/build/reusable-build-rootless-steps.test.sh
 reusable-build-the-override-is-never-exported	.github/workflows/reusable-build.yml	echo "CONTAINERS_CONF_OVERRIDE=$RUNNER_TEMP/netavark-firewall.conf" >> "$GITHUB_ENV"	true	tests/workflows/build/reusable-build-rootless-steps.test.sh
 reusable-build-the-rootless-test-runs-nothing	.github/workflows/reusable-build.yml	bash scripts/verify/rootless-test.sh "$RUNNER_TEMP/podman-under-test.deb" "${PODMAN#v}"	true	tests/workflows/build/reusable-build-rootless-steps.test.sh
-build-deb-no-pasta-profile	scripts/build/build-deb.sh	[ -f "$pasta_profile" ] || { echo "passt ships no AppArmor profile for pasta to add the signal rule to" >&2; exit 1; }	[ -f "$pasta_profile" ] || true	tests/build/build-deb.test.sh
-build-deb-pasta-profile-has-no-single-include	scripts/build/build-deb.sh	|| { echo "the pasta profile does not include its abstraction exactly once, so the signal rule has nowhere to go" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
-build-deb-pasta-profile-has-two-signal-rules	scripts/build/build-deb.sh	|| { echo "the pasta profile does not hold exactly one signal rule for peer=podman after the build added it" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
-build-deb-no-apparmor-parser	scripts/build/build-deb.sh	command -v apparmor_parser >/dev/null || { echo "no apparmor_parser to check the pasta profile with" >&2; exit 1; }	command -v apparmor_parser >/dev/null || true	tests/build/build-deb.test.sh
-build-deb-pasta-profile-does-not-compile	scripts/build/build-deb.sh	|| { echo "the pasta profile with the signal rule does not compile" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
-build-deb-pasta-rule-from-any-peer	scripts/build/build-deb.sh	peer=podman,"	peer=**,"	tests/build/build-deb.test.sh
-build-deb-pasta-rule-for-any-signal-set	scripts/build/build-deb.sh	set=(term)	set=(term, kill)	tests/build/build-deb.test.sh
-build-deb-pasta-rule-also-sends	scripts/build/build-deb.sh	pasta_rule="  signal (receive)	pasta_rule="  signal (send, receive)	tests/build/build-deb.test.sh
-build-deb-pasta-rule-is-never-inserted	scripts/build/build-deb.sh	$0 == anchor {	$0 == "" {	tests/build/build-deb.test.sh
-build-deb-pasta-rule-is-inserted-empty	scripts/build/build-deb.sh	print rule	print ""	tests/build/build-deb.test.sh
-build-deb-pasta-profile-is-executable	scripts/build/build-deb.sh	install -m 0644 "$work/usr.bin.pasta"	install -m 0755 "$work/usr.bin.pasta"	tests/build/build-deb.test.sh
-build-deb-pasta-profile-is-loaded-by-the-check	scripts/build/build-deb.sh	apparmor_parser -Q -K -b /etc/apparmor.d	apparmor_parser -b /etc/apparmor.d	tests/build/build-deb.test.sh
-build-deb-pasta-profile-compiled-without-the-package-abstractions	scripts/build/build-deb.sh	-I "$stage/etc/apparmor.d" "$pasta_profile"	"$pasta_profile"	tests/build/build-deb.test.sh
-build-deb-signal-rules-of-the-abstractions-not-counted	scripts/build/build-deb.sh	cat "$pasta_profile" "$stage"/etc/apparmor.d/abstractions/*	cat "$pasta_profile"	tests/build/build-deb.test.sh
-build-deb-pasta-include-is-matched-as-a-substring	scripts/build/build-deb.sh	grep -c -x -F -- "$pasta_anchor"	grep -c -F -- "$pasta_anchor"	tests/build/build-deb.test.sh
-build-deb-pasta-include-may-be-repeated	scripts/build/build-deb.sh	"$pasta_profile")" -eq 1 ]	"$pasta_profile")" -ge 1 ]	tests/build/build-deb.test.sh
-build-deb-pasta-signal-rule-may-be-repeated	scripts/build/build-deb.sh	|$)')" -eq 1 ]	|$)')" -ge 1 ]	tests/build/build-deb.test.sh
+build-deb-no-pasta-profile	scripts/build/build-deb.sh	[ -f "$pasta_profile" ] || { echo "passt ships no AppArmor profile for pasta to add the signal rule to" >&2; exit 1; }	[ -f "$pasta_profile" ] || true	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-profile-has-no-single-include	scripts/build/build-deb.sh	|| { echo "the pasta profile does not include its abstraction exactly once, so the signal rule has nowhere to go" >&2; exit 1; }	|| true	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-profile-has-two-signal-rules	scripts/build/build-deb.sh	|| { echo "the pasta profile does not hold exactly one signal rule for peer=podman after the build added it" >&2; exit 1; }	|| true	tests/build/build-deb-pasta-profile.test.sh
+build-deb-no-apparmor-parser	scripts/build/build-deb.sh	command -v apparmor_parser >/dev/null || { echo "no apparmor_parser to check the pasta profile with" >&2; exit 1; }	command -v apparmor_parser >/dev/null || true	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-profile-does-not-compile	scripts/build/build-deb.sh	|| { echo "the pasta profile with the signal rule does not compile" >&2; exit 1; }	|| true	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-rule-from-any-peer	scripts/build/build-deb.sh	peer=podman,"	peer=**,"	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-rule-for-any-signal-set	scripts/build/build-deb.sh	set=(term)	set=(term, kill)	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-rule-also-sends	scripts/build/build-deb.sh	pasta_rule="  signal (receive)	pasta_rule="  signal (send, receive)	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-rule-is-never-inserted	scripts/build/build-deb.sh	$0 == anchor {	$0 == "" {	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-rule-is-inserted-empty	scripts/build/build-deb.sh	print rule	print ""	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-profile-is-executable	scripts/build/build-deb.sh	install -m 0644 "$work/usr.bin.pasta"	install -m 0755 "$work/usr.bin.pasta"	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-profile-is-loaded-by-the-check	scripts/build/build-deb.sh	apparmor_parser -Q -K -b /etc/apparmor.d	apparmor_parser -b /etc/apparmor.d	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-profile-compiled-without-the-package-abstractions	scripts/build/build-deb.sh	-I "$stage/etc/apparmor.d" "$pasta_profile"	"$pasta_profile"	tests/build/build-deb-pasta-profile.test.sh
+build-deb-signal-rules-of-the-abstractions-not-counted	scripts/build/build-deb.sh	cat "$pasta_profile" "$stage"/etc/apparmor.d/abstractions/*	cat "$pasta_profile"	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-include-is-matched-as-a-substring	scripts/build/build-deb.sh	grep -c -x -F -- "$pasta_anchor"	grep -c -F -- "$pasta_anchor"	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-include-may-be-repeated	scripts/build/build-deb.sh	"$pasta_profile")" -eq 1 ]	"$pasta_profile")" -ge 1 ]	tests/build/build-deb-pasta-profile.test.sh
+build-deb-pasta-signal-rule-may-be-repeated	scripts/build/build-deb.sh	|$)')" -eq 1 ]	|$)')" -ge 1 ]	tests/build/build-deb-pasta-profile.test.sh
 dockerfile-no-apparmor-parser	scripts/build/Dockerfile	protobuf-compiler python3 apparmor \	protobuf-compiler python3 \	tests/build/dockerfile-sources.test.sh
 rootless-stop-test-aa-enabled-not-asked-for	scripts/verify/rootless-stop-test.sh	for tool in podman curl busybox pgrep aa-enabled; do	for tool in podman curl busybox pgrep; do	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-apparmor-off-is-fine	scripts/verify/rootless-stop-test.sh	[ "$aa" = Yes ] || { echo "AppArmor is not enabled on this machine (aa-enabled says: $aa), so the stop proves nothing about its profiles" >&2; exit 2; }	[ "$aa" = Yes ] || true	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-any-service-profile-is-fine	scripts/verify/rootless-stop-test.sh	podman | "podman ("*) echo	*) echo	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-a-profile-starting-with-podman-is-fine	scripts/verify/rootless-stop-test.sh	podman | "podman ("*)	podman*)	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-an-unconfined-service-is-fine	scripts/verify/rootless-stop-test.sh	*) echo "podman system service runs under the AppArmor profile '$profile', not under podman, so on this machine the signal to pasta never comes from the peer the rule admits and the stop proves nothing" >&2; exit 2 ;;	*) ;;	tests/verify/rootless-stop-test.test.sh
-build-deb-no-passt-apparmor-directory	scripts/build/build-deb.sh	echo "passt has no contrib/apparmor directory, so the package would ship no AppArmor profiles" >&2; exit 1	true	tests/build/build-deb.test.sh
-build-deb-postinst-says-nothing-of-a-profile-that-did-not-load	scripts/build/build-deb.sh	|| echo "podman: the AppArmor profile $p did not load" >&2	|| true	tests/build/build-deb.test.sh
-build-deb-signal-rule-without-a-space-is-not-counted	scripts/build/build-deb.sh	signal([[:space:]]|\()	signal[[:space:]]	tests/build/build-deb.test.sh
-build-deb-signal-rule-with-spaces-around-the-equals-is-not-counted	scripts/build/build-deb.sh	peer[[:space:]]*=[[:space:]]*"?podman	peer=podman	tests/build/build-deb.test.sh
-build-deb-a-peer-that-starts-with-podman-is-counted	scripts/build/build-deb.sh	"?podman"?([[:space:],]|$)	"?podman	tests/build/build-deb.test.sh
+build-deb-no-passt-apparmor-directory	scripts/build/build-deb.sh	echo "passt has no contrib/apparmor directory, so the package would ship no AppArmor profiles" >&2; exit 1	true	tests/build/build-deb-pasta-profile.test.sh
+build-deb-postinst-says-nothing-of-a-profile-that-did-not-load	scripts/build/build-deb.sh	|| echo "podman: the AppArmor profile $p did not load" >&2	|| true	tests/build/build-deb-pasta-profile.test.sh
+build-deb-signal-rule-without-a-space-is-not-counted	scripts/build/build-deb.sh	signal([[:space:]]|\()	signal[[:space:]]	tests/build/build-deb-pasta-profile.test.sh
+build-deb-signal-rule-with-spaces-around-the-equals-is-not-counted	scripts/build/build-deb.sh	peer[[:space:]]*=[[:space:]]*"?podman	peer=podman	tests/build/build-deb-pasta-profile.test.sh
+build-deb-a-peer-that-starts-with-podman-is-counted	scripts/build/build-deb.sh	"?podman"?([[:space:],]|$)	"?podman	tests/build/build-deb-pasta-profile.test.sh
 rootless-stop-test-network-backend-is-not-named	scripts/verify/rootless-stop-test.sh	echo "network backend: $(podman info --format '{{.Host.NetworkBackend}} {{.Host.NetworkBackendInfo.Version}}' 2>&1 || true)"	true	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-the-steering-environment-is-not-named	scripts/verify/rootless-stop-test.sh	echo "environment: $(env | grep -E '^(NETAVARK|CONTAINERS)_' | tr '\n' ' ' || true)"	true	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-no-containers-conf-is-read	scripts/verify/rootless-stop-test.sh	/usr/share/containers /etc/containers "${XDG_CONFIG_HOME:-$HOME/.config}/containers"	/nonexistent	tests/verify/rootless-stop-test.test.sh

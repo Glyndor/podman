@@ -174,15 +174,15 @@ for flag in -trimpath=true -buildmode=pie apparmor seccomp systemd; do
 done
 printf '%s\n' "$full_info" > "$WORK/info"
 
-# No go on the PATH at all: every other command the build runs, linked one by one.
+# No go on the PATH at all: every other command the build runs, linked. Linking one file at a
+# time over every directory of the PATH took five seconds; one call of ln per directory, from the
+# last directory to the first so that the first one wins a name as it does on a PATH, takes a tenth.
 mkdir "$WORK/nogo"
 IFS=: read -r -a dirs <<< "$PATH"
-for d in "${dirs[@]}"; do
-	for f in "$d"/*; do
-		n="${f##*/}"
-		[ "$n" != go ] && [ -f "$f" ] && [ -x "$f" ] && [ ! -e "$WORK/nogo/$n" ] && ln -s "$f" "$WORK/nogo/$n"
-	done
+for ((i = ${#dirs[@]} - 1; i >= 0; i--)); do
+	[ ! -d "${dirs[i]}" ] || ln -sf "${dirs[i]}"/* "$WORK/nogo/" 2>/dev/null
 done
+rm -f "$WORK/nogo/go"
 PATH="$WORK/nogo" refused "$WORK/out-nogo"
 check "a build with no go to read the build info is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c 'no go to read the build info')"
 FAKE_GO_FAILS=1 refused "$WORK/out-gofails"
@@ -271,131 +271,6 @@ for lib in libgpgme11t64 libassuan9 libsubid5 libsqlite3-0 libapparmor1 libbtrfs
 	check "a build that also links $lib is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c -- "^build links a library that differs between releases: .*\\<$lib\\>")"
 	check "and no package is written for $lib" 0 "$(find "$last_out" -name '*.deb' 2>/dev/null | wc -l)"
 done
-
-# --- the signal rule in pasta's AppArmor profile ----------------------------------------------
-# Podman signals pasta with SIGTERM from the profile Ubuntu gives /usr/bin/podman, and the profile
-# of pasta has to admit it or stopping the last container of a bridge network fails. The build
-# adds one rule inside the profile and stops when it cannot: the shape of upstream's file is
-# read, not assumed. The kernel is not here, so what these show is the text of the profile, that
-# it was handed to apparmor_parser, and every way the build refuses; the profile loaded and the
-# signal admitted are what the step "Stop the last container of a bridge network through the
-# API, on the runner itself" of reusable-build.yml sees on the real package.
-PROF="$WORK/passt/contrib/apparmor/usr.bin.pasta"; ABS="$WORK/passt/contrib/apparmor/abstractions/pasta"
-cp "$PROF" "$WORK/pasta.orig"; cp "$ABS" "$WORK/abs.orig"
-restore() { cp "$WORK/pasta.orig" "$PROF"; cp "$WORK/abs.orig" "$ABS"; rm -f "$WORK/aa.calls" "$WORK/aa.profile"; }
-RULE='  signal (receive) set=(term) peer=podman,'
-restore
-rc=0; deb="$(build 6.2.0 "$WORK/out-rule" 2>/dev/null)" || rc=$?
-aa_calls="$(cat "$WORK/aa.calls" 2>/dev/null)"; aa_profile="$(cat "$WORK/aa.profile" 2>/dev/null)"
-mkdir "$WORK/x-rule"; dpkg-deb -x "$deb" "$WORK/x-rule" 2>/dev/null
-got="$WORK/x-rule/etc/apparmor.d/usr.bin.pasta"
-check "a pasta profile of upstream's shape is accepted" 0 "$rc"
-check "the rule is in the profile, once" 1 "$(grep -c -x -F -- "$RULE" "$got")"
-check "and inside the profile, after its include of the abstraction" "inside, after the include" \
-	"$(awk '/^profile pasta /{inp=1} /^}/{inp=0} $0=="  include <abstractions/pasta>"{inc=NR} $0==rule{at=NR; ins=inp}
-		END{print (inc > 0 && at > inc && ins) ? "inside, after the include" : "elsewhere"}' rule="$RULE" "$got")"
-check "and the only line added that is not a comment or a blank is the rule" "> $RULE" \
-	"$(diff "$WORK/pasta.orig" "$got" | grep '^>' | grep -v -e '^> *#' -e '^> *$')"
-check "and nothing of upstream's profile was taken out" 0 "$(diff "$WORK/pasta.orig" "$got" | grep -c '^<')"
-check "and it admits no other signal, no other peer and no complain mode" 0 \
-	"$(grep -v '^ *#' "$got" | grep -c -E 'peer=(\*|unconfined)|complain|signal \((send|receive,)|set=\(\*')"
-check "and the abstraction is as upstream ships it" "" "$(cmp "$WORK/abs.orig" "$WORK/x-rule/etc/apparmor.d/abstractions/pasta" 2>&1)"
-check "and the profile is not writable by others" "-rw-r--r--" \
-	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '$6 == "./etc/apparmor.d/usr.bin.pasta" {print $1}')"
-check "apparmor_parser compiled it once, without loading it and without a cache" 1 \
-	"$(printf '%s\n' "$aa_calls" | grep -c -E '^-Q -K -b /etc/apparmor.d -I [^ ]+/etc/apparmor.d [^ ]+/etc/apparmor.d/usr.bin.pasta$')"
-check "and what it was given is the profile with the rule" 1 "$(printf '%s\n' "$aa_profile" | grep -c -x -F -- "$RULE")"
-check "and the directory with the package's abstractions is the one on its include path" "same directory" \
-	"$(printf '%s\n' "$aa_calls" | awk '{print ($6 != "" && $7 == $6 "/usr.bin.pasta") ? "same directory" : "different"}')"
-
-# Each way the build cannot add the rule is a refusal that names it, and writes no package. The
-# case before each shows the same build accepted, so a refusal is for the thing it names.
-no_package() { check "and no package is written" 0 "$(find "$1" -name '*.deb' 2>/dev/null | wc -l)"; }
-restore; rm "$PROF"
-refused "$WORK/out-no-profile"
-check "no profile for pasta in passt's tree: refused, and named" "1 1" "$rc $(printf '%s' "$err" | grep -c 'passt ships no AppArmor profile for pasta')"
-no_package "$WORK/out-no-profile"
-restore; sed -i 's|^  include <abstractions/pasta>$|  include <abstractions/passt>|' "$PROF"
-refused "$WORK/out-no-include"
-check "a profile that no longer includes the abstraction: refused, and named" "1 1" \
-	"$rc $(printf '%s' "$err" | grep -c 'does not include its abstraction exactly once')"
-no_package "$WORK/out-no-include"
-restore; sed -i 's|^  include <abstractions/pasta>$|&\n  include <abstractions/pasta>|' "$PROF"
-refused "$WORK/out-two-includes"
-check "a profile that includes it twice: refused, and named" "1 1" \
-	"$rc $(printf '%s' "$err" | grep -c 'does not include its abstraction exactly once')"
-no_package "$WORK/out-two-includes"
-restore; sed -i 's|^  include <abstractions/pasta>$|& # the pasta rules|' "$PROF"
-refused "$WORK/out-include-with-comment"
-check "an include that carries a comment is not the one the rule follows: refused, and named" "1 1" \
-	"$rc $(printf '%s' "$err" | grep -c 'does not include its abstraction exactly once')"
-no_package "$WORK/out-include-with-comment"
-restore; echo '  signal (receive) set=(term) peer=podman,' >> "$ABS"
-refused "$WORK/out-upstream-has-it"
-check "a rule for that peer that upstream now ships: refused, and named" "1 1" \
-	"$rc $(printf '%s' "$err" | grep -c 'does not hold exactly one signal rule for peer=podman')"
-no_package "$WORK/out-upstream-has-it"
-for variant in '  signal(receive) peer=podman,' '  signal (receive) peer = podman,' '  signal (receive) peer="podman",' "$(printf '\tsignal\t(send) peer=podman')"; do
-	restore; printf '%s\n' "$variant" >> "$ABS"
-	refused "$WORK/out-upstream-spelling"
-	check "upstream's rule spelled '$(printf '%s' "$variant" | tr '\t' ' ' | sed 's/^ *//')': refused, and named" "1 1" \
-		"$rc $(printf '%s' "$err" | grep -c 'does not hold exactly one signal rule for peer=podman')"
-	no_package "$WORK/out-upstream-spelling"
-	rm -rf "$WORK/out-upstream-spelling"
-done
-restore; echo '  signal (receive) set=(term) peer=podman-other,' >> "$ABS"
-refused "$WORK/out-other-podman"
-check "a peer whose name only starts with podman is not that peer: accepted, and the rule added once" "0 1" \
-	"$rc $(grep -c -x -F -- "$RULE" "$WORK/aa.profile")"
-restore; echo '  signal (receive) set=(term) peer=unconfined,' >> "$ABS"
-refused "$WORK/out-other-peer"
-check "a rule of upstream's for another peer is not in the way: accepted, and the rule added once" "0 1" \
-	"$rc $(grep -c -x -F -- "$RULE" "$WORK/aa.profile")"
-restore; FAKE_AA_FAILS=1 refused "$WORK/out-no-compile"
-check "a profile apparmor_parser cannot compile: refused, and named" "1 1" "$rc $(printf '%s' "$err" | grep -c 'with the signal rule does not compile')"
-no_package "$WORK/out-no-compile"
-
-# A passt tree that has no contrib/apparmor at all, as when upstream moves the folder: the same
-# build is accepted a moment before, and the package would otherwise ship without profiles.
-restore
-mv "$WORK/passt/contrib/apparmor" "$WORK/passt/contrib/apparmor.away"
-refused "$WORK/out-no-apparmor-dir"
-check "a passt tree with no contrib/apparmor: refused, and named" "1 1" \
-	"$rc $(printf '%s' "$err" | grep -c 'passt has no contrib/apparmor directory')"
-no_package "$WORK/out-no-apparmor-dir"
-mv "$WORK/passt/contrib/apparmor.away" "$WORK/passt/contrib/apparmor"
-restore
-
-# The postinst loads the profiles on configure. A copy of it with /etc pointed at a fixture runs
-# with a parser that loads them and one that cannot: the installation goes on either way, as
-# Debian's own snippet does, and the second says which profile did not load.
-restore
-rm -rf "$WORK/ctl" "$WORK/etc-aa"; mkdir -p "$WORK/etc-aa"
-dpkg-deb -e "$(build 6.2.0 "$WORK/out-postinst" 2>/dev/null)" "$WORK/ctl" 2>/dev/null
-sed "s|/etc/apparmor.d|$WORK/etc-aa|g" "$WORK/ctl/postinst" > "$WORK/postinst"
-: > "$WORK/etc-aa/usr.bin.passt"; : > "$WORK/etc-aa/usr.bin.pasta"
-rm -f "$WORK/aa.calls"
-rc=0; err="$(sh "$WORK/postinst" configure 2>&1 >/dev/null)" || rc=$?
-check "configure loads the profiles that are there, and says nothing when they load" "0 2 0" \
-	"$rc $(grep -c -E '^-r -T -W ' "$WORK/aa.calls") $(printf '%s' "$err" | grep -c .)"
-rm -f "$WORK/aa.calls"
-rc=0; err="$(FAKE_AA_FAILS=1 sh "$WORK/postinst" configure 2>&1 >/dev/null)" || rc=$?
-check "a profile that does not load does not fail the installation, and each one is named" "0 1 1" \
-	"$rc $(printf '%s\n' "$err" | grep -c -x 'podman: the AppArmor profile usr.bin.passt did not load') $(printf '%s\n' "$err" | grep -c -x 'podman: the AppArmor profile usr.bin.pasta did not load')"
-check "and the profile that is not there is not named" 0 "$(printf '%s\n' "$err" | grep -c 'usr.bin.pesto')"
-
-# No apparmor_parser on the PATH at all, which is an image that does not have the package. The
-# directory of every tool the build needs is kept; only the ones that hold the parser are left out.
-restore
-mkdir "$WORK/noaa"
-for t in "$WORK"/fakebin/*; do [ "${t##*/}" = apparmor_parser ] || ln -s "$t" "$WORK/noaa/${t##*/}"; done
-clean_path="$WORK/noaa"; old_ifs="$IFS"; IFS=:
-for d in $PATH; do [ -x "$d/apparmor_parser" ] || clean_path="$clean_path:$d"; done
-IFS="$old_ifs"
-PATH="$clean_path" refused "$WORK/out-no-parser"
-check "an image with no apparmor_parser: refused, and named" "1 1" "$rc $(printf '%s' "$err" | grep -c 'no apparmor_parser to check the pasta profile with')"
-no_package "$WORK/out-no-parser"
-restore
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
