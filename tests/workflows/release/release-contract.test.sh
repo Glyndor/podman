@@ -110,6 +110,14 @@ $GUARD_LINE" "    # from a branch.
     if: github.ref == 'refs/heads/develop'" "$BAD" >/dev/null 2>&1
 check "a guard on another branch is named" "job publish does not carry the main-only guard" "$(violations guard "$BAD")"
 
+# --- which jobs run, and in which order -------------------------------------------
+# A plan that finds nothing new says build=false. A build that ran anyway would take two
+# runners, three clones and a compiler to be refused for an empty version; a publish that
+# did not wait for the builds would start with no package to sign.
+check "build runs only when the plan says there is something to build" "needs.plan.outputs.build == 'true'" "$(gate release.yml build if)"
+check "build waits for the plan" "plan" "$(gate release.yml build needs)"
+check "publish waits for the plan and for the build of every architecture" "build,plan" "$(gate release.yml publish needs)"
+
 # --- the provenance attestation ---------------------------------------------------
 check "the packages are attested between signing and the release" "" "$(violations attest)"
 sabotage release.yml "      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

@@ -248,3 +248,5 @@ watchdog-a-late-delivery-fails-the-job	.github/workflows/watchdog.yml	exit "$lat
 watchdog-a-stale-keyring-watch-fails-the-job	.github/workflows/watchdog.yml	exit "$keyring_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
 watchdog-a-stale-sweep-fails-the-job	.github/workflows/watchdog.yml	exit "$sweep_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
 keyring-diff-a-change-is-the-exit-status	scripts/upstream/keyring-diff.sh	exit "$changed"	exit 0	tests/upstream/keyring-diff.test.sh
+release-build-runs-when-there-is-nothing-to-build	.github/workflows/release.yml	if: needs.plan.outputs.build == 'true'	if: always()	tests/workflows/release/release-contract.test.sh
+release-publish-does-not-wait-for-the-build	.github/workflows/release.yml	needs: [plan, build]	needs: [plan]	tests/workflows/release/release-contract.test.sh
