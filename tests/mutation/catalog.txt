@@ -84,15 +84,29 @@ mutation-refusals-an-exit-that-hands-on-a-status-is-a-refusal	scripts/quality/mu
 check-secrets-a-credential-found	scripts/quality/check-secrets.sh	if [ "$bad" -ne 0 ]; then	if false; then	tests/quality/check-secrets.test.sh
 check-secrets-the-list-leaves-out-added-files	scripts/quality/check-secrets.sh	diff --name-only -z "$base...$head"	diff --name-only -z --diff-filter=M "$base...$head"	tests/quality/check-secrets.test.sh
 check-secrets-allow-list-read-from-the-change	scripts/quality/check-secrets.sh	list_at="$base:.secret-scan-allow"	list_at="$head:.secret-scan-allow"	tests/quality/check-secrets.test.sh
-check-secrets-allow-list-blank-lines-skipped	scripts/quality/check-secrets.sh	[[ "$expr" =~ ^[[:space:]]*(#|$) ]] && continue	[[ "$expr" =~ ^[[:space:]]*(#|$) ]] && true	tests/quality/check-secrets.test.sh
-check-secrets-allow-list-expression-that-does-not-compile	scripts/quality/check-secrets.sh	[ "$rc" -le 1 ] || { echo "::error::.secret-scan-allow line $n is not a valid regular expression" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
-check-secrets-allow-list-grep-failure-empties-the-set	scripts/quality/check-secrets.sh	[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow, so nothing was scanned" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-blank-lines-skipped	scripts/quality/check-secrets.sh	[[ "$entry" =~ ^[[:space:]]*(#|$) ]] && continue	[[ "$entry" =~ ^[[:space:]]*(#|$) ]] && true	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-is-only-a-slash	scripts/quality/check-secrets.sh	[ "$entry" != / ] || { echo "::error::.secret-scan-allow line $n is only a slash, which would exempt every file" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-wildcard-or-expression-character	scripts/quality/check-secrets.sh	case "$entry" in *"$ch"*) echo "::error::.secret-scan-allow line $n holds $ch, and a path is listed as it is: no wildcards or regular expressions" >&2; exit 1 ;; esac	:	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-is-rooted	scripts/quality/check-secrets.sh	case "$entry" in /* | ./*) echo "::error::.secret-scan-allow line $n starts with a slash or ./, and a path is relative to the root of the repository" >&2; exit 1 ;; esac	:	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-climbs	scripts/quality/check-secrets.sh	case "$entry" in *..*) echo "::error::.secret-scan-allow line $n holds .., and a path stays where it is written" >&2; exit 1 ;; esac	:	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-star-is-read	scripts/quality/check-secrets.sh	'*' '?'	'?'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-question-mark-is-read	scripts/quality/check-secrets.sh	'?' '['	'['	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-an-opening-bracket-is-read	scripts/quality/check-secrets.sh	'[' '^'	'^'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-caret-is-read	scripts/quality/check-secrets.sh	'^' '$'	'$'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-dollar-is-read	scripts/quality/check-secrets.sh	'$' '|'	'|'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-pipe-is-read	scripts/quality/check-secrets.sh	'|' '('	'('	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-an-opening-parenthesis-is-read	scripts/quality/check-secrets.sh	'(' '\'	'\'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-backslash-is-read	scripts/quality/check-secrets.sh	'\'; do	; do	tests/quality/check-secrets.test.sh
 check-secrets-range-that-cannot-be-taken	scripts/quality/check-secrets.sh	could not take the diff $base...$head, so nothing was scanned" >&2; exit 1; }	could not take the diff $base...$head, so nothing was scanned" >&2; }	tests/quality/check-secrets.test.sh
 check-secrets-the-path-comes-from-the-text-of-the-patch	scripts/quality/check-secrets.sh	inhunk && /^\+/  {	/^\+\+\+ / { sub(/^\+\+\+ b\//, ""); ENVIRON["FILE"] = $0; next } inhunk && /^\+/  {	tests/quality/check-secrets.test.sh
 check-secrets-a-file-name-is-a-pathspec	scripts/quality/check-secrets.sh	git --literal-pathspecs diff --no-color --text	git diff --no-color --text	tests/quality/check-secrets.test.sh
 check-secrets-a-name-with-a-control-character	scripts/quality/check-secrets.sh	a control character in its name, so nothing was scanned" >&2; exit 1; }	a control character in its name, so nothing was scanned" >&2; }	tests/quality/check-secrets.test.sh
 check-secrets-the-allow-marker-is-read-in-the-path	scripts/quality/check-secrets.sh	if (index(text, "secret-scan:allow") == 0)	if (index(ENVIRON["FILE"] text, "secret-scan:allow") == 0)	tests/quality/check-secrets.test.sh
-check-secrets-the-allow-list-is-matched-against-the-text	scripts/quality/check-secrets.sh	grep -qE -f "$allowfile" <<< "$file" ||	grep -qE -f "$allowfile" "$patchfile" ||	tests/quality/check-secrets.test.sh
+check-secrets-the-allow-list-is-applied	scripts/quality/check-secrets.sh	if is_allowed "$file"; then continue; fi	if false; then continue; fi	tests/quality/check-secrets.test.sh
+check-secrets-a-file-entry-skips-the-file	scripts/quality/check-secrets.sh	[ "$1" != "$entry" ] || return 0	true	tests/quality/check-secrets.test.sh
+check-secrets-a-directory-entry-skips-what-lies-below	scripts/quality/check-secrets.sh	case "$entry" in */) [[ "$1" != "$entry"* ]] || return 0 ;; esac	:	tests/quality/check-secrets.test.sh
+check-secrets-an-entry-without-a-slash-is-a-directory	scripts/quality/check-secrets.sh	case "$entry" in */) [[ "$1" != "$entry"* ]]	case "$entry" in *) [[ "$1" != "$entry"* ]]	tests/quality/check-secrets.test.sh
+check-secrets-a-directory-entry-matches-the-name-without-its-slash	scripts/quality/check-secrets.sh	[[ "$1" != "$entry"* ]] || return 0 ;; esac	[[ "$1" != "${entry%/}"* ]] || return 0 ;; esac	tests/quality/check-secrets.test.sh
 check-secrets-the-skip-words-are-read-in-the-path	scripts/quality/check-secrets.sh	grep -qiE -- "$sample_word" <<< "$value"	grep -qiE -- "$sample_word" <<< "$record"	tests/quality/check-secrets.test.sh
 check-secrets-git-reads-the-attributes-of-the-tree-as-text	scripts/quality/check-secrets.sh	--no-color --text --no-textconv --no-ext-diff -U0	--no-color --no-textconv --no-ext-diff -U0	tests/quality/check-secrets.test.sh
 check-secrets-git-applies-the-text-conversion-of-the-tree	scripts/quality/check-secrets.sh	--no-color --text --no-textconv --no-ext-diff -U0	--no-color --text --no-ext-diff -U0	tests/quality/check-secrets.test.sh
@@ -274,7 +288,6 @@ check-secrets-sample-words-are-not-delimited	scripts/quality/check-secrets.sh	sa
 check-secrets-a-sample-word-in-the-value-excuses-nothing	scripts/quality/check-secrets.sh	if grep -qiE -- "$sample_word" <<< "$value"; then continue; fi	:	tests/quality/check-secrets.test.sh
 check-secrets-a-name-that-holds-a-path-is-not-a-secret	scripts/quality/check-secrets.sh	if grep -qiE -- "$named_path" <<< "$name$sep"; then continue; fi	:	tests/quality/check-secrets.test.sh
 check-secrets-a-file-the-base-already-holds-is-scanned-again	scripts/quality/check-secrets.sh	if [ -n "$new" ] && grep -qxF "$new" "$baseblobs"; then continue; fi	:	tests/quality/check-secrets.test.sh
-check-secrets-an-expression-that-matches-every-path	scripts/quality/check-secrets.sh	[ "$rc" -ne 0 ] || { echo "::error::.secret-scan-allow line $n matches every path, which would switch the scan off" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
 check-commit-identity-reads-only-the-last-paragraph	scripts/quality/check-commit-identity.sh	body="$(git show -s --format='%B' "$sha")"	body="$(git show -s --format='%(trailers)' "$sha")"	tests/quality/check-commit-identity.test.sh
 check-commit-identity-reads-the-keys-in-one-case	scripts/quality/check-commit-identity.sh	grep -iE '^(Signed-off-by|Co-authored-by):'	grep -E '^(Signed-off-by|Co-authored-by):'	tests/quality/check-commit-identity.test.sh
 check-commit-identity-merges-are-skipped	scripts/quality/check-commit-identity.sh	git rev-list "$base..$head"	git rev-list --no-merges "$base..$head"	tests/quality/check-commit-identity.test.sh

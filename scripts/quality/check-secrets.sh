@@ -15,9 +15,13 @@
 # carries the word secret-scan:allow is skipped, for a value that is public on
 # purpose; say why next to it. A file cannot carry a comment, so a repository that
 # keeps throwaway test keys lists the paths in .secret-scan-allow at its root, one
-# regular expression per line, each with a comment saying why. The list counts
-# once it is on the base branch: a change cannot add its own exceptions, and an
-# expression that does not compile fails the scan.
+# path per line, each group with a comment saying why. A line is a literal path
+# relative to the root of the repository: it exempts that exact file or, when it
+# ends in a slash, every file below that directory. There are no wildcards and no
+# regular expressions, so what the list exempts is read off the list. A line with a
+# wildcard or a regular expression character, one that starts with a slash or with
+# ./, one that holds .., and a lone slash fail the scan, naming the line. The list
+# counts once it is on the base branch: a change cannot add its own exceptions.
 #
 # This is a filter for the mistake, not a vault: GitHub's push protection and
 # secret scanning remain the other half.
@@ -37,33 +41,45 @@ export LC_ALL=C
 # record, and the text of a line is only ever matched after the second one.
 SEP=$'\037'
 
-names="$(mktemp)"; allowfile="$(mktemp)"; patchfile="$(mktemp)"; baseblobs="$(mktemp)"
-trap 'rm -f "$names" "$allowfile" "$patchfile" "$baseblobs"' EXIT
+names="$(mktemp)"; patchfile="$(mktemp)"; baseblobs="$(mktemp)"
+trap 'rm -f "$names" "$patchfile" "$baseblobs"' EXIT
 
 # Paths the repository declares as holding throwaway keys on purpose. The list is
 # read from <base>, the branch the change lands on, never from <head>: a change
-# that carries its own list would be the one deciding what the scan may skip, and
-# an expression that matches every line would switch the scan off. Every
-# expression is compiled before it is used, because a grep that cannot compile
-# one reads nothing and would leave the scan with nothing to report. An expression
-# is matched against the path of a file and nothing else, and one that matches any
-# path at all stops the scan.
-# A path no repository has: an expression that matches it matches everything (".*", "a|",
-# an empty group), and is refused, because it would exempt every file.
-canary="zz-canary-9f3a/zz-canary-9f3a"
+# that carries its own list would be the one deciding what the scan may skip. A line
+# is a literal path, so the list can be read to know what it exempts: an expression
+# cannot be judged by reading it (one can match every path but a canary), and a
+# wildcard can reach further than its author meant. An entry is the exact path of a
+# file, or a directory ending in a slash, which exempts every file below it; the
+# comparison is of strings, an equality or a prefix, and no pattern is ever compiled.
 list_at="$base:.secret-scan-allow"
+allowed=()
 if git cat-file -e "$list_at" 2>/dev/null; then
 	list="$(git show "$list_at")" # set -e: a list that exists and cannot be read stops the scan
 	n=0
-	while IFS= read -r expr || [ -n "$expr" ]; do
+	while IFS= read -r entry || [ -n "$entry" ]; do
 		n=$((n + 1))
-		[[ "$expr" =~ ^[[:space:]]*(#|$) ]] && continue
-		rc=0; grep -qE -e "^($expr)" 2>/dev/null <<< "$canary" || rc=$?
-		[ "$rc" -le 1 ] || { echo "::error::.secret-scan-allow line $n is not a valid regular expression" >&2; exit 1; }
-		[ "$rc" -ne 0 ] || { echo "::error::.secret-scan-allow line $n matches every path, which would switch the scan off" >&2; exit 1; }
-		printf '%s\n' "^($expr)" >> "$allowfile"
+		[[ "$entry" =~ ^[[:space:]]*(#|$) ]] && continue
+		[ "$entry" != / ] || { echo "::error::.secret-scan-allow line $n is only a slash, which would exempt every file" >&2; exit 1; }
+		for ch in '*' '?' '[' '^' '$' '|' '(' '\'; do
+			case "$entry" in *"$ch"*) echo "::error::.secret-scan-allow line $n holds $ch, and a path is listed as it is: no wildcards or regular expressions" >&2; exit 1 ;; esac
+		done
+		case "$entry" in /* | ./*) echo "::error::.secret-scan-allow line $n starts with a slash or ./, and a path is relative to the root of the repository" >&2; exit 1 ;; esac
+		case "$entry" in *..*) echo "::error::.secret-scan-allow line $n holds .., and a path stays where it is written" >&2; exit 1 ;; esac
+		allowed+=("$entry")
 	done <<< "$list"
 fi
+
+# Whether the list exempts a path: the path is the entry, or the entry is a directory
+# (it ends in a slash) and the path lies below it.
+is_allowed() { # <path>
+	local entry
+	for entry in ${allowed[@]+"${allowed[@]}"}; do
+		[ "$1" != "$entry" ] || return 0
+		case "$entry" in */) [[ "$1" != "$entry"* ]] || return 0 ;; esac
+	done
+	return 1
+}
 
 # One "path<SEP>line<SEP>text" per added line. The files come from git's own list, and
 # each one is diffed on its own and reported under the name git gave: a path read out
@@ -80,11 +96,7 @@ merge_base="$(git merge-base "$base" "$head")"
 git ls-tree -r "$base" | awk '{ print $3 }' | sort -u > "$baseblobs"
 added=""
 while IFS= read -r -d '' file; do
-	if [ -s "$allowfile" ]; then
-		rc=0; grep -qE -f "$allowfile" <<< "$file" || rc=$?
-		[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow, so nothing was scanned" >&2; exit 1; }
-		[ "$rc" -ne 0 ] || continue
-	fi
+	if is_allowed "$file"; then continue; fi
 	new="$(git rev-parse -q --verify "$head:$file" || true)"
 	if [ -n "$new" ] && grep -qxF "$new" "$baseblobs"; then continue; fi
 	# The tree being judged carries its own .gitattributes and, on a runner, its own

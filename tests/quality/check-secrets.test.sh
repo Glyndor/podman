@@ -129,7 +129,7 @@ gitc reset -q --hard "$base2"
 # A repository lists the paths that hold throwaway keys on purpose. The list counts
 # once it is on the base branch, so it is committed to the base before the change.
 git -C "$repo" reset -q --hard "$base"
-printf '# test keys\n\n^fixtures/\n' > "$repo/.secret-scan-allow"
+printf '# test keys (throwaway only), no * here\n\nfixtures/\n' > "$repo/.secret-scan-allow"
 gitc add -A; gitc commit -q -m "list the fixture paths"
 listed="$(git -C "$repo" rev-parse HEAD)"
 mkdir -p "$repo/fixtures"
@@ -212,20 +212,50 @@ check "a path that holds the allow marker does not skip its lines" 1 "$(printf '
 check "a path that holds a skip word does not skip its lines" 1 "$(printf '%s' "$out" | grep -c 'fixture-example-dummy.env:1 long value assigned to a secret-like name')"
 check "and both fail the scan" 1 "$rc"
 
-# The list is compared with the path alone: an expression that happens to match the text
-# of a line does not skip it.
+# The list is compared with the path alone: an entry that happens to be the text of a
+# line does not skip it. A file below a listed directory is skipped, and a file that
+# merely has the listed name as its text is not.
 git -C "$repo" reset -q --hard "$base"
-printf '.*AKIAQQQQ.*\n' > "$repo/.secret-scan-allow"
-gitc add -A; gitc commit -q -m "a list that matches text"
+printf 'AKIAQQQQ/\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "a list with one directory"
 textual="$(git -C "$repo" rev-parse HEAD)"
 printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/c.txt"
 gitc add -A; gitc commit -q -m "a credential"
 out="$( (cd "$repo" && "$SCRIPT" "$textual" HEAD 2>&1) )"; rc=$?
-check "an expression that matches the text of a line and not its path does not skip it" "1 1" "$rc $(printf '%s' "$out" | grep -c 'c.txt:1 AWS access key')"
+check "a listed name that is the text of a line and not its path does not skip it" "1 1" "$rc $(printf '%s' "$out" | grep -c 'c.txt:1 AWS access key')"
 git -C "$repo" reset -q --hard "$textual"
 mkdir -p "$repo/AKIAQQQQ"; printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/AKIAQQQQ/c.txt"
-gitc add -A; gitc commit -q -m "the same line in a listed path"
-(cd "$repo" && "$SCRIPT" "$textual" HEAD >/dev/null 2>&1); check "the same expression skips a path it matches" 0 "$?"
+gitc add -A; gitc commit -q -m "the same line in a listed directory"
+(cd "$repo" && "$SCRIPT" "$textual" HEAD >/dev/null 2>&1); check "the same entry skips a file below the directory it names" 0 "$?"
+
+# What an entry exempts is what it says. A file entry is that file and no other; a
+# directory entry (it ends in a slash) is what lies below it, and not a directory that
+# only starts with the same letters. Each case plants a credential in one path and
+# is paired with the case that lists that path and passes.
+path_case() { # <list> <path> <want: skipped|scanned> <description>
+	local out rc
+	git -C "$repo" reset -q --hard "$base"
+	printf '%s\n' "$1" > "$repo/.secret-scan-allow"
+	gitc add -A; gitc commit -q -m "a list"
+	local listed_base; listed_base="$(git -C "$repo" rev-parse HEAD)"
+	mkdir -p "$repo/$(dirname "$2")"
+	printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/$2"
+	gitc add -A; gitc commit -q -m "a credential"
+	out="$( (cd "$repo" && "$SCRIPT" "$listed_base" HEAD 2>&1) )"; rc=$?
+	if [ "$3" = skipped ]; then
+		check "$4" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+	else
+		check "$4" "1 1" "$rc $(printf '%s' "$out" | grep -c "$2:1 AWS access key")"
+	fi
+}
+path_case 'tests/keys/test.pem' 'tests/keys/test.pem' skipped "a file entry skips that file"
+path_case 'tests/keys/test.pem' 'tests/keys/other.pem' scanned "a file entry does not skip the file beside it"
+path_case 'tests/keys/test.pem' 'tests/keys/test.pem.bak' scanned "a file entry does not skip a file that starts with its name"
+path_case 'tests/keys' 'tests/keys/test.pem' scanned "an entry without a slash is not a directory"
+path_case 'tests/keys/' 'tests/keys/deep/er/test.pem' skipped "a directory entry skips every file below it"
+path_case 'tests/keys/' 'tests/keys2/test.pem' scanned "a directory entry does not skip a directory that starts with its name"
+path_case 'tests/keys/' 'tests/key' scanned "a directory entry does not skip the file named like it without the slash"
+path_case 'tests/keys/' 'x/tests/keys/test.pem' scanned "a directory entry is anchored at the root"
 
 # What git shows of a file does not depend on the attributes or the drivers of the tree being
 # judged: a text file marked binary, or given a text conversion or an external diff, is
@@ -305,7 +335,7 @@ git -C "$repo" branch -q -D stale
 # A change cannot list its own exceptions: the same fixture with the list added by
 # the change itself is scanned, and an expression that matches everything is no
 # way to switch the scan off.
-for list in '^fixtures/' '^.*$' '[unclosed'; do
+for list in 'fixtures/' 'fixtures/test.pem' 'a-plain-path'; do
 	git -C "$repo" reset -q --hard "$base"
 	mkdir -p "$repo/fixtures"
 	printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/fixtures/test.pem"
@@ -317,56 +347,51 @@ for list in '^fixtures/' '^.*$' '[unclosed'; do
 	check "and no complaint about the list is made" 0 "$(printf '%s' "$out" | grep -c 'secret-scan-allow line')"
 done
 
-# An expression on the base that does not compile stops the scan, whatever the change
-# adds: a grep that cannot read its patterns must not be taken for a scan that found
-# nothing. The same list with a valid expression is accepted.
-git -C "$repo" reset -q --hard "$base"
-printf '# why\n[unclosed\n' > "$repo/.secret-scan-allow"
-gitc add -A; gitc commit -q -m "a list that does not compile"
-broken="$(git -C "$repo" rev-parse HEAD)"
-printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "a credential"
-out="$( (cd "$repo" && "$SCRIPT" "$broken" HEAD 2>&1) )"; rc=$?
-check "an expression that does not compile fails the scan" 1 "$rc"
-check "and it names the line of the list" 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 2 is not a valid regular expression')"
-check "and no clean verdict is given" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
-# An expression that matches every path would exempt every file: the scan stops, naming
-# the line, for each way of writing one. The expression a repository really uses passes.
-for everything in '.*' 'a|' '(|x)' '.*/.*'; do
+# A line of the list that is not a plain path stops the scan, naming its line, whatever
+# the change adds: a list that cannot be read as it is must not be taken for a scan that
+# found nothing. Each rejection is paired with the same list holding a plain path in that
+# line, which passes and skips the file it names.
+listed_case() { # <the third line of the list>: sets out and rc for a credential in c.txt
 	git -C "$repo" reset -q --hard "$base"
-	printf '# why\n^tests/keys/\n%s\n' "$everything" > "$repo/.secret-scan-allow"
-	gitc add -A; gitc commit -q -m "a list that matches every path"
-	broad="$(git -C "$repo" rev-parse HEAD)"
+	printf '# why\ntests/keys/\n%s\n' "$1" > "$repo/.secret-scan-allow"
+	gitc add -A; gitc commit -q -m "a list"
+	local on_base; on_base="$(git -C "$repo" rev-parse HEAD)"
 	printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "a credential"
-	out="$( (cd "$repo" && "$SCRIPT" "$broad" HEAD 2>&1) )"; rc=$?
-	check "the expression '$everything' stops the scan" 1 "$rc"
-	check "and the message names its line and why" 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 3 matches every path, which would switch the scan off')"
+	out="$( (cd "$repo" && "$SCRIPT" "$on_base" HEAD 2>&1) )"; rc=$?
+}
+plain_line="docs/keys/"
+listed_case "$plain_line"
+check "a list of plain paths leaves the credential to be found" "1 1" "$rc $(printf '%s' "$out" | grep -c 'c.txt:1 AWS access key')"
+check "and nothing is said about the list" 0 "$(printf '%s' "$out" | grep -c 'secret-scan-allow line')"
+for ch in '*' '?' '[' '^' '$' '|' '(' '\'; do
+	listed_case "docs/k${ch}eys/"
+	check "a line with $ch stops the scan" 1 "$rc"
+	check "and the message names its line and the character" 1 "$(printf '%s' "$out" | grep -cF "::error::.secret-scan-allow line 3 holds $ch, and a path is listed as it is")"
+	check "and no clean verdict is given" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
 done
+for pattern in '.*' '^.*$' '^[a-y].*' '.*[^a]$' '[unclosed' 'a|' '(|x)' '.*/.*'; do
+	listed_case "$pattern"
+	check "the expression '$pattern' is refused, not read" 1 "$rc"
+	check "and the message names its line" 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 3 ')"
+done
+listed_case "/"
+check "a lone slash stops the scan" 1 "$rc"
+check "and the message says it is only a slash" 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 3 is only a slash, which would exempt every file')"
+for rooted in '/docs/keys/' './docs/keys/' '/etc/'; do
+	listed_case "$rooted"
+	check "the line '$rooted' stops the scan" 1 "$rc"
+	check "and the message says paths are relative to the root" 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 3 starts with a slash or ./, and a path is relative to the root of the repository')"
+done
+for up in '../docs/' 'docs/../x/' 'keys..pem' '..'; do
+	listed_case "$up"
+	check "the line '$up' stops the scan" 1 "$rc"
+	check "and the message says it holds .." 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 3 holds \.\., and a path stays where it is written')"
+done
+listed_case "docs/keys/a.b-c_d/"
+check "dots, dashes and underscores are plain path characters" "1 1" "$rc $(printf '%s' "$out" | grep -c 'c.txt:1 AWS access key')"
+listed_case "c.txt"
+check "a file entry on the third line is read, and skips the file" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
 git -C "$repo" reset -q --hard "$base"
-printf '# why\n^tests/keys/\n' > "$repo/.secret-scan-allow"
-gitc add -A; gitc commit -q -m "a list of one path"
-narrow="$(git -C "$repo" rev-parse HEAD)"
-mkdir -p "$repo/tests/keys"; printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/tests/keys/test.pem"; gitc add -A; gitc commit -q -m "a listed file"
-out="$( (cd "$repo" && "$SCRIPT" "$narrow" HEAD 2>&1) )"; rc=$?
-check "the expression a repository really uses passes, and its file is skipped" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
-git -C "$repo" reset -q --hard "$broken"
-printf '# why\n^docs/\n' > "$repo/.secret-scan-allow"
-gitc add -A; gitc commit -q -m "a list that compiles"
-valid="$(git -C "$repo" rev-parse HEAD)"
-printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "a credential"
-out="$( (cd "$repo" && "$SCRIPT" "$valid" HEAD 2>&1) )"; rc=$?
-check "a list that compiles leaves the credential to be found" 1 "$rc"
-check "and it is named as a credential" 1 "$(printf '%s' "$out" | grep -c 'c.txt:1 AWS access key')"
-
-# A grep that fails while it applies a valid list must not empty the set it was
-# filtering: with a grep that refuses to read a pattern file, the scan stops.
-mkdir -p "$WORK/fakebin"
-real_grep="$(command -v grep)"
-printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = -f ] && exit 2; done\nexec %s "$@"\n' "$real_grep" > "$WORK/fakebin/grep"
-chmod +x "$WORK/fakebin/grep"
-out="$( (cd "$repo" && PATH="$WORK/fakebin:$PATH" "$SCRIPT" "$valid" HEAD 2>&1) )"; rc=$?
-check "a grep that fails on the list stops the scan" 1 "$rc"
-check "and says nothing was scanned" 1 "$(printf '%s' "$out" | grep -c 'could not apply .secret-scan-allow, so nothing was scanned')"
-check "and gives no clean verdict" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
 
 # A range that cannot be taken is a failure, not a clean scan.
 out="$( (cd "$repo" && "$SCRIPT" 0000000000000000000000000000000000000000 HEAD 2>&1) )"; rc=$?
