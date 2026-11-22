@@ -65,9 +65,10 @@ trap cleanup EXIT
 network_settings() {
 	echo "network backend: $(podman info --format '{{.Host.NetworkBackend}} {{.Host.NetworkBackendInfo.Version}}' 2>&1 || true)"
 	echo "environment: $(env | grep -E '^(NETAVARK|CONTAINERS)_' | tr '\n' ' ' || true)"
-	echo "firewall_driver and network_backend lines in containers.conf:"
-	grep -rsn -E '^[[:space:]]*(firewall_driver|network_backend)[[:space:]]*=' \
-		/usr/share/containers /etc/containers "${XDG_CONFIG_HOME:-$HOME/.config}/containers" || echo "  none"
+	# grep answers non-zero when one of the folders is missing, whatever it found.
+	echo "firewall_driver and network_backend lines in containers.conf: $(grep -rsn -E \
+		'^[[:space:]]*(firewall_driver|network_backend)[[:space:]]*=' \
+		/usr/share/containers /etc/containers "${XDG_CONFIG_HOME:-$HOME/.config}/containers" | tr '\n' ' ' || true)"
 }
 
 # The same one-binary container rootless-test.sh runs.

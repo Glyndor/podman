@@ -129,6 +129,15 @@ jobs:
         run: |
           cp "$RUNNER_TEMP/out/podman_${VERSION}_${ARCH}.deb" "$RUNNER_TEMP/podman-under-test.deb"
           bash scripts/verify/rootless-test.sh "$RUNNER_TEMP/podman-under-test.deb" "${PODMAN#v}"
+      # GitHub's ubuntu-26.04 image carries /etc/containers/containers.conf.d/99-fix-firewall.conf,
+      # which names iptables for the netavark of the distribution. netavark 2 has no such
+      # driver and refuses to start a container on a bridge network: "Must provide a valid
+      # firewall backend, got iptables". The override names the driver it has, which is the
+      # one a machine without that file gets.
+      - name: Name the firewall driver this netavark has
+        run: |
+          printf '[network]\nfirewall_driver = "nftables"\n' > "$RUNNER_TEMP/netavark-firewall.conf"
+          echo "CONTAINERS_CONF_OVERRIDE=$RUNNER_TEMP/netavark-firewall.conf" >> "$GITHUB_ENV"
       # The package is installed by the step above. Stopping the last container of a bridge
       # network makes Podman signal the pasta of the rootless network namespace, from the
       # `podman` AppArmor profile Ubuntu gives /usr/bin/podman; the pasta profile has to

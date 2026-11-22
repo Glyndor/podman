@@ -38,6 +38,11 @@ if len(rootless) == 1 and len(stop) == 1 and smoke:
     r, s = rootless[0], stop[0]
     print("order: smoke test, rootless test, stop test", "yes" if max(smoke) < r < s else "no")
     print("stop test runs:", " ".join(str(steps[s]["run"]).split()))
+    # The driver the override names, when a step between the two writes one and exports it.
+    named = [str(x.get("run", "")) for x in steps[r + 1:s]
+             if "CONTAINERS_CONF_OVERRIDE=" in str(x.get("run", "")) and "GITHUB_ENV" in str(x.get("run", ""))]
+    driver = [w.split('"')[1] for run in named for w in run.split("firewall_driver = ")[1:2]]
+    print("firewall driver named before the stop test:", " ".join(driver) or "none")
     print("stop test env: ROOTLESS_STOP_TEST_SUDO=" + str((steps[s].get("env") or {}).get("ROOTLESS_STOP_TEST_SUDO")))
     for name, i in (("rootless test", r), ("stop test", s)):
         skippable = any(k in steps[i] for k in ("if", "continue-on-error", "timeout-minutes"))
@@ -49,6 +54,7 @@ want='steps that run the rootless test 1
 steps that run the stop test 1
 order: smoke test, rootless test, stop test yes
 stop test runs: bash scripts/verify/rootless-stop-test.sh
+firewall driver named before the stop test: nftables
 stop test env: ROOTLESS_STOP_TEST_SUDO=1
 rootless test can be skipped or allowed to fail: no
 stop test can be skipped or allowed to fail: no'
@@ -66,6 +72,10 @@ check "a stop test whose step runs nothing is named" "steps that run the stop te
 	"$(broken 's|run: bash scripts/verify/rootless-stop-test.sh|run: "true"|' | grep '^steps that run the stop test')"
 check "a stop test that reads the kernel log without sudo is named" "stop test env: ROOTLESS_STOP_TEST_SUDO=0" \
 	"$(broken 's|ROOTLESS_STOP_TEST_SUDO: "1"|ROOTLESS_STOP_TEST_SUDO: "0"|' | grep '^stop test env')"
+check "a stop test left to the firewall driver of the runner image is named" "firewall driver named before the stop test: none" \
+	"$(broken '/^      - name: Name the firewall driver this netavark has$/,/GITHUB_ENV/d' | grep '^firewall driver')"
+check "an override that names a driver netavark 2 does not have is named" "firewall driver named before the stop test: iptables" \
+	"$(broken 's|firewall_driver = "nftables"|firewall_driver = "iptables"|' | grep '^firewall driver')"
 check "a stop test allowed to fail is named" "stop test can be skipped or allowed to fail: yes" \
 	"$(broken 's|^\(      - name: Stop the last container of a bridge network.*\)$|\1\n        continue-on-error: true|' | grep '^stop test can be')"
 check "a stop test that runs only on some events is named" "stop test can be skipped or allowed to fail: yes" \
