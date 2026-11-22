@@ -190,11 +190,14 @@ gitc add -A; gitc commit -q -m "a name that forges a record"
 out="$( (cd "$repo" && "$SCRIPT" "$listed" HEAD 2>&1) )"; rc=$?
 check "a file name with a line break is refused" 1 "$rc"
 check "and the refusal says why" 1 "$(printf '%s' "$out" | grep -c '::error::a changed file has a control character in its name, so nothing was scanned')"
+# The refusal ends the scan: a line reported under a name that cannot be trusted
+# would be a record somebody else chose the path of.
+check "and nothing is reported under that name" 0 "$(printf '%s' "$out" | grep -c 'AWS access key')"
 git -C "$repo" reset -q --hard "$listed"
 printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/$(printf 'a\tb.txt')"
 gitc add -A; gitc commit -q -m "a name with a tab"
 out="$( (cd "$repo" && "$SCRIPT" "$listed" HEAD 2>&1) )"; rc=$?
-check "a file name with a tab is refused" "1 1" "$rc $(printf '%s' "$out" | grep -c 'control character in its name')"
+check "a file name with a tab is refused, and nothing is reported under it" "1 1 0" "$rc $(printf '%s' "$out" | grep -c 'control character in its name') $(printf '%s' "$out" | grep -c 'AWS access key')"
 git -C "$repo" reset -q --hard "$listed"
 printf 'nothing to see\n' > "$repo/a b é.txt"
 gitc add -A; gitc commit -q -m "a name with a space and a letter outside ASCII"
