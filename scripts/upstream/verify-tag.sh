@@ -32,7 +32,11 @@ trap 'rm -rf "$GNUPGHOME"' EXIT
 shopt -s nullglob
 files=("$keys"/*.asc)
 [ ${#files[@]} -gt 0 ] || { echo "no keys under $keys" >&2; exit 1; }
-gpg --batch --quiet --import "${files[@]}" 2>/dev/null
+# gpg's own message stays visible, and so does its status: a key file that does not
+# import leaves no allowed key, and the log has to say which step stopped and why.
+rc=0
+gpg --batch --quiet --import "${files[@]}" || rc=$?
+[ "$rc" -eq 0 ] || { echo "could not import the keys under $keys" >&2; exit "$rc"; }
 
 status="$(git -C "$src" verify-tag --raw "refs/tags/$tag" 2>&1)" || true
 

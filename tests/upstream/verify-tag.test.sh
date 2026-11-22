@@ -78,6 +78,16 @@ err="$("$SCRIPT" "$repo" v1.0.9 "$WORK/keys" 2>&1 >/dev/null)"; rc=$?
 check "a signed tag object under another name fails" 1 "$rc"
 check "and says which name the object carries" 1 "$(printf '%s' "$err" | grep -c "named 'v1.0.0'")"
 
+# A key file that does not import stops the check with gpg's own status and says why;
+# the allowed key beside it does not make the tag pass. The same allowed key alone passes.
+mkdir "$WORK/keys-torn"; cp "$WORK/good.asc" "$WORK/keys-torn/"
+head -c 200 "$WORK/other.asc" > "$WORK/keys-torn/torn.asc"
+err="$("$SCRIPT" "$repo" v1.0.0 "$WORK/keys-torn" 2>&1 >/dev/null)"; rc=$?
+check "a key file that does not import fails with the status gpg gives" 2 "$rc"
+check "and says which keys could not be imported" 1 "$(printf '%s\n' "$err" | grep -c -F -- "could not import the keys under $WORK/keys-torn")"
+check "and passes on what gpg said" 1 "$([ "$(printf '%s\n' "$err" | wc -l)" -ge 2 ] && echo 1 || echo 0)"
+accepted_alone="$("$SCRIPT" "$repo" v1.0.0 "$WORK/keys" 2>&1)"; check "the allowed key alone still passes" "$commit" "$accepted_alone"
+
 mkdir "$WORK/empty"
 "$SCRIPT" "$repo" v1.0.0 "$WORK/empty" >/dev/null 2>&1; check "no keys fails" 1 "$?"
 

@@ -105,6 +105,7 @@ read-released-components-without-podman	scripts/upstream/read-released.sh	|| { e
 verify-tag-not-annotated	scripts/upstream/verify-tag.sh	|| { echo "$tag is not an annotated tag" >&2; exit 1; }	|| true	tests/upstream/verify-tag.test.sh
 verify-tag-object-names-another-tag	scripts/upstream/verify-tag.sh	|| { echo "ref $tag points at a signed tag object named '$named'" >&2; exit 1; }	|| true	tests/upstream/verify-tag.test.sh
 verify-tag-no-keys	scripts/upstream/verify-tag.sh	[ ${#files[@]} -gt 0 ] || { echo "no keys under $keys" >&2; exit 1; }	[ ${#files[@]} -gt 0 ] || true	tests/upstream/verify-tag.test.sh
+verify-tag-keys-that-do-not-import	scripts/upstream/verify-tag.sh	[ "$rc" -eq 0 ] || { echo "could not import the keys under $keys" >&2; exit "$rc"; }	true	tests/upstream/verify-tag.test.sh
 # The mutation keeps the caller's GNUPGHOME, which the script then deletes on exit: the suite points it at a throwaway of its own.
 verify-tag-the-keyring-is-the-callers	scripts/upstream/verify-tag.sh	GNUPGHOME="$(mktemp -d)"	GNUPGHOME="${GNUPGHOME:-$(mktemp -d)}"	tests/upstream/verify-tag.test.sh
 verify-tag-bad-signature-status	scripts/upstream/verify-tag.sh	if grep -q "\[GNUPG:\] $bad" <<<"$status"; then	if false; then	tests/upstream/verify-tag.test.sh
