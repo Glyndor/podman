@@ -50,6 +50,11 @@ flag "a fine-grained GitHub token" "github_pat""_$(rep b 60)" "GitHub token"
 flag "a JWT" "e""yJ$(rep h 20).e""yJ$(rep p 20).sig" "JWT"
 flag "a long value assigned to a secret-like name" "release_secret = \"$(rep c 40)\"" "secret-like name"
 flag "a signing key assigned in a config" "SIGNING_KEY: $(rep d 43)" "secret-like name"
+# The two names the release workflow reads its signing keys from.
+flag "the Ed25519 release signing key" "GLYNDOR_RELEASE_ED25519_KEY: $(rep e 43)=" "secret-like name"
+flag "the ML-DSA-65 release signing key" "GLYNDOR_RELEASE_MLDSA65_KEY: $(rep f 43)=" "secret-like name"
+out="$(scan "GLYNDOR_RELEASE_MLDSA65_KEY: \${{ secrets.GLYNDOR_RELEASE_MLDSA65_KEY }}")"
+check "the ML-DSA-65 key name with a reference to the CI secret passes" 0 "$?"
 
 # Code that writes or checks the header is not a key; a key inside a string is.
 out="$(scan 'let mut pem = String::from("-----BEGIN PRIVATE KEY-----\n");')"

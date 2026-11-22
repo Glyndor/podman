@@ -9,7 +9,8 @@
 # What it knows: private key blocks (a PEM file, or a PEM with its body inside a
 # string; code that only writes or checks the header line is not one), the token formats of AWS, GitHub, GitLab,
 # Slack, npm, Google and OpenAI, JWTs, and an assignment of a long value to a name
-# that says secret, token, password or key. The last one is what catches a
+# that says secret, token, password or key, which includes the names of the two
+# release signing keys. The last one is what catches a
 # credential with a format of its own, such as a signing key in base64. A line that
 # carries the word secret-scan:allow is skipped, for a value that is public on
 # purpose; say why next to it. A file cannot carry a comment, so a repository that
@@ -92,7 +93,7 @@ for entry in "${patterns[@]}"; do
 done
 
 # A credential with a format of its own is caught by the name it is assigned to.
-generic='(token|secret|passw(or)?d|api[_-]?key|private[_-]?key|signing[_-]?key|access[_-]?key|ed25519[_-]?key|credential)[a-z0-9_]*["'"'"']?[ \t]*[:=][ \t]*["'"'"']?[a-z0-9+/_=-]{32,}'
+generic='(token|secret|passw(or)?d|api[_-]?key|private[_-]?key|signing[_-]?key|access[_-]?key|ed25519[_-]?key|mldsa[0-9_-]*key|credential)[a-z0-9_]*["'"'"']?[ \t]*[:=][ \t]*["'"'"']?[a-z0-9+/_=-]{32,}'
 skip='_(file|path|dir|url|name|env|var)[a-z0-9_]*["'"'"']?[ \t]*[:=]|secrets\.|\$\{|\$\(|example|placeholder|dummy|fake|fixture|changeme|redacted|your|<[a-z_-]+>'
 hits="$(printf '%s\n' "$added" | grep -iE -- "$generic" | grep -viE -- "$skip" || true)"
 [ -z "$hits" ] || report "long value assigned to a secret-like name" "$hits"
