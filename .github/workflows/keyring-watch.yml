@@ -42,6 +42,7 @@ jobs:
           persist-credentials: false
 
       - name: Fetch the keys upstream publishes
+        id: fetch
         run: |
           git clone --quiet --depth 1 https://github.com/containers/release-keys.git "$RUNNER_TEMP/release-keys"
 
@@ -50,17 +51,26 @@ jobs:
       # (a symlink would make the copy read something else on this runner, such as
       # a file that holds a credential), small, and public key blocks.
       - name: Refuse anything that is not a plain public key
+        id: validate
         run: |
           dir="$RUNNER_TEMP/release-keys/podman"
-          [ -d "$dir" ] || { echo "::error::upstream has no podman/ directory"; exit 1; }
+          problems="$RUNNER_TEMP/problems.txt"
+          : > "$problems"
           bad=0
+          # A problem goes to this log and to a file the alarm step reads when this one
+          # fails: the update is not prepared, and the issue says why. The name of a file
+          # comes from upstream, so only plain characters of it are kept; it cannot carry
+          # markup or a mention into the issue.
+          refuse() { echo "::error::$1"; printf -- '- %s\n' "$1" >> "$problems"; bad=1; }
+          [ -d "$dir" ] || { refuse "upstream has no podman/ directory"; exit 1; }
           for f in "$dir"/* ; do
             [ -e "$f" ] || [ -L "$f" ] || continue
-            if [ -L "$f" ] || [ ! -f "$f" ]; then echo "::error::$(basename "$f") is not a plain file"; bad=1; continue; fi
-            case "$f" in *.asc) ;; *) echo "::error::$(basename "$f") is not a .asc file"; bad=1; continue ;; esac
-            [ "$(stat -c %s "$f")" -le 200000 ] || { echo "::error::$(basename "$f") is larger than a key should be"; bad=1; continue; }
-            [ "$(head -n 1 "$f")" = "-----BEGIN PGP PUBLIC KEY BLOCK-----" ] || { echo "::error::$(basename "$f") is not a public key block"; bad=1; continue; }
-            ! grep -q "PRIVATE" "$f" || { echo "::error::$(basename "$f") mentions a private key"; bad=1; }
+            name="$(printf '%s' "${f##*/}" | tr -c 'A-Za-z0-9._-' '?')"
+            if [ -L "$f" ] || [ ! -f "$f" ]; then refuse "$name is not a plain file"; continue; fi
+            case "$f" in *.asc) ;; *) refuse "$name is not a .asc file"; continue ;; esac
+            [ "$(stat -c %s "$f")" -le 200000 ] || { refuse "$name is larger than a key should be"; continue; }
+            [ "$(head -n 1 "$f")" = "-----BEGIN PGP PUBLIC KEY BLOCK-----" ] || { refuse "$name is not a public key block"; continue; }
+            ! grep -q "PRIVATE" "$f" || refuse "$name mentions a private key"
           done
           [ "$bad" -eq 0 ]
 
@@ -98,14 +108,51 @@ jobs:
 
       # The issue is the alarm, so this runs even when the commit step failed: a
       # failed step skips every later one unless it says otherwise, and the change
-      # of keys would then leave no branch, no issue and nothing else.
+      # of keys would then leave no branch, no issue and nothing else. It runs too
+      # when a step before the comparison's answer failed (the clone, the check of
+      # what upstream publishes, the comparison itself): no answer about a difference
+      # was written, so without this the run would be red and nothing else would say so.
       - name: Push the branch and open an issue
-        if: always() && steps.diff.outputs.differs == 'true'
+        if: always() && (steps.diff.outputs.differs == 'true' || steps.fetch.outcome == 'failure' || steps.validate.outcome == 'failure' || steps.diff.outcome == 'failure')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ steps.commit.outputs.branch }}
+          FETCH: ${{ steps.fetch.outcome }}
+          VALIDATE: ${{ steps.validate.outcome }}
+          COMPARE: ${{ steps.diff.outcome }}
+          RUN_ID: ${{ github.run_id }}
         run: |
+          # When a step that gives the answer failed there is no answer, and the issue says
+          # which step it was, never that the keys changed.
+          title=""
+          if [ "$FETCH" = "failure" ]; then
+            title="The keys upstream publishes could not be fetched"
+            what="The clone of containers/release-keys failed, so the keys were neither checked nor compared:"
+            list="- the log of the run says why"
+          elif [ "$VALIDATE" = "failure" ]; then
+            title="The keys upstream publishes could not be accepted"
+            what="The check of what containers/release-keys/podman holds refused it, so no update was prepared:"
+            list="- the log of the run says what"
+            if [ -s "$RUNNER_TEMP/problems.txt" ]; then list="$(cat "$RUNNER_TEMP/problems.txt")"; fi
+          elif [ "$COMPARE" = "failure" ]; then
+            title="The keys upstream publishes could not be compared with the copy here"
+            what="The comparison of keyring/podman with containers/release-keys/podman could not be made, so nobody knows whether the keys changed:"
+            list="- the log of the run says why"
+          fi
+          if [ -n "$title" ]; then
+            if [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
+              {
+                echo "$what"
+                echo
+                echo "$list"
+                echo
+                echo "The copy in keyring/podman stays as it is, and it may no longer match upstream: a release signed by a key that is not here is refused. The run: https://github.com/$GH_REPO/actions/runs/$RUN_ID"
+              } > "$RUNNER_TEMP/body.txt"
+              gh issue create --title "$title" --label type:security --label prio:P1 --label area:upstream --body-file "$RUNNER_TEMP/body.txt"
+            fi
+            exit 0
+          fi
           title="Upstream changed the keys that sign Podman"
           if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
             echo "an issue for this is already open"; exit 0

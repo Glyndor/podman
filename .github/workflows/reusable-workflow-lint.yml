@@ -111,6 +111,13 @@ jobs:
       # nothing. `pip install --require-hashes` is the exception because a
       # hash-pinned install resolves nothing — the artifacts are fixed by
       # the lockfile, so no surprise tree appears.
+      #
+      # The list of installers is a list of the forms known today: cargo, go,
+      # gem, npm, npx, yarn, pnpm, pip, pipx, uv, brew, dotnet, and a download
+      # piped or handed to a shell. It cannot be complete, and a form it does
+      # not know passes. It is checked a line at a time, so a command split
+      # over lines with a backslash is read as two. A new job that holds a
+      # secret still needs a reader who asks what it fetches.
       - name: A job holding a secret must not install third-party tooling
         if: ${{ inputs.tooling-isolation }}
         run: |
@@ -127,17 +134,39 @@ jobs:
           # references, and `secrets:` does not contain a `.`.
           SECRET_RE = re.compile(r"(?<!\w)secrets\.[A-Za-z_]\w*")
 
-          # (`pattern`, `opt-out marker on the same line`). The marker, when
-          # present on the line, exempts that install: the only case where
-          # the resolved tree is fixed is pip with --require-hashes, which
-          # reads the lockfile verbatim and installs exactly what it lists.
+          # (`what it is`, `regular expression`, `opt-out marker on the same
+          # line`). The marker, when present on the line, exempts that
+          # install: the only case where the resolved tree is fixed is pip
+          # with --require-hashes, which reads the lockfile verbatim and
+          # installs exactly what it lists. Each expression starts at a word
+          # that is not part of a longer name or path (`mycargo install`), and
+          # takes the flags that may sit between the tool and its verb.
+          NAME = r"(?<![\w.-])"
+          FLAGS = r"(?:\s+-\S+)*"
+          SHELL = r"(?:ba|z|da|k)?sh\b"
           INSTALL_PATTERNS = (
-              ("cargo install",   None),
-              ("go install",      None),
-              ("gem install",     None),
-              ("npm install -g",  None),
-              ("npm i -g",        None),
-              ("pip install",     "--require-hashes"),
+              ("cargo install", r"cargo(?:\s+\+\S+)?\s+install\b", None),
+              ("go install", r"go\s+install\b", None),
+              ("go run of a module", r"go\s+run\s+(?:-\S+\s+)*[^\s@-]\S*@\S", None),
+              ("gem install", r"gem\s+install\b", None),
+              ("npm install", r"npm" + FLAGS + r"\s+(?:install|i|ci|add)\b", None),
+              ("npx", r"npx\b", None),
+              ("yarn", r"yarn" + FLAGS + r"(?:\s+(?:install|add|global|dlx|up|upgrade)\b|\s*(?:$|[;&|)]))", None),
+              ("pnpm", r"pnpm" + FLAGS + r"\s+(?:install|i|add|dlx|up|update|upgrade)\b", None),
+              ("pip install", r"pip[0-9.]*" + FLAGS + r"\s+install\b", "--require-hashes"),
+              ("pipx", r"pipx" + FLAGS + r"\s+(?:install|run|inject|upgrade)\b", None),
+              ("uv tool", r"uv\s+tool\s+(?:install|run|upgrade)\b", None),
+              ("uvx", r"uvx\b", None),
+              ("brew install", r"brew" + FLAGS + r"\s+(?:install|reinstall|upgrade)\b", None),
+              ("dotnet tool install", r"dotnet\s+tool\s+(?:install|update)\b", None),
+              ("a download piped into a shell",
+               r"(?:curl|wget)\b.*\|\s*(?:sudo\s+(?:-\S+\s+)*)?" + SHELL, None),
+              ("a download handed to a shell",
+               SHELL + r"\s+(?:-\S+\s+)*(?:<\(|\"?\$\()\s*(?:curl|wget)\b", None),
+          )
+          INSTALL_PATTERNS = tuple(
+              (what, re.compile(NAME + expr), marker)
+              for what, expr, marker in INSTALL_PATTERNS
           )
 
 
@@ -190,8 +219,8 @@ jobs:
                           stripped = line.lstrip()
                           if not stripped or stripped.startswith("#"):
                               continue
-                          for pattern, except_marker in INSTALL_PATTERNS:
-                              if pattern in line and not (
+                          for _what, pattern, except_marker in INSTALL_PATTERNS:
+                              if pattern.search(line) and not (
                                   except_marker and except_marker in line
                               ):
                                   violations.append((spec_path, job_id, line))

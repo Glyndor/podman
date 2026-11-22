@@ -84,15 +84,29 @@ mutation-refusals-an-exit-that-hands-on-a-status-is-a-refusal	scripts/quality/mu
 check-secrets-a-credential-found	scripts/quality/check-secrets.sh	if [ "$bad" -ne 0 ]; then	if false; then	tests/quality/check-secrets.test.sh
 check-secrets-the-list-leaves-out-added-files	scripts/quality/check-secrets.sh	diff --name-only -z "$base...$head"	diff --name-only -z --diff-filter=M "$base...$head"	tests/quality/check-secrets.test.sh
 check-secrets-allow-list-read-from-the-change	scripts/quality/check-secrets.sh	list_at="$base:.secret-scan-allow"	list_at="$head:.secret-scan-allow"	tests/quality/check-secrets.test.sh
-check-secrets-allow-list-blank-lines-skipped	scripts/quality/check-secrets.sh	[[ "$expr" =~ ^[[:space:]]*(#|$) ]] && continue	[[ "$expr" =~ ^[[:space:]]*(#|$) ]] && true	tests/quality/check-secrets.test.sh
-check-secrets-allow-list-expression-that-does-not-compile	scripts/quality/check-secrets.sh	[ "$rc" -le 1 ] || { echo "::error::.secret-scan-allow line $n is not a valid regular expression" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
-check-secrets-allow-list-grep-failure-empties-the-set	scripts/quality/check-secrets.sh	[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow, so nothing was scanned" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-blank-lines-skipped	scripts/quality/check-secrets.sh	[[ "$entry" =~ ^[[:space:]]*(#|$) ]] && continue	[[ "$entry" =~ ^[[:space:]]*(#|$) ]] && true	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-is-only-a-slash	scripts/quality/check-secrets.sh	[ "$entry" != / ] || { echo "::error::.secret-scan-allow line $n is only a slash, which would exempt every file" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-wildcard-or-expression-character	scripts/quality/check-secrets.sh	case "$entry" in *"$ch"*) echo "::error::.secret-scan-allow line $n holds $ch, and a path is listed as it is: no wildcards or regular expressions" >&2; exit 1 ;; esac	:	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-is-rooted	scripts/quality/check-secrets.sh	case "$entry" in /* | ./*) echo "::error::.secret-scan-allow line $n starts with a slash or ./, and a path is relative to the root of the repository" >&2; exit 1 ;; esac	:	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-climbs	scripts/quality/check-secrets.sh	case "$entry" in *..*) echo "::error::.secret-scan-allow line $n holds .., and a path stays where it is written" >&2; exit 1 ;; esac	:	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-star-is-read	scripts/quality/check-secrets.sh	'*' '?'	'?'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-question-mark-is-read	scripts/quality/check-secrets.sh	'?' '['	'['	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-an-opening-bracket-is-read	scripts/quality/check-secrets.sh	'[' '^'	'^'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-caret-is-read	scripts/quality/check-secrets.sh	'^' '$'	'$'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-dollar-is-read	scripts/quality/check-secrets.sh	'$' '|'	'|'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-pipe-is-read	scripts/quality/check-secrets.sh	'|' '('	'('	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-an-opening-parenthesis-is-read	scripts/quality/check-secrets.sh	'(' '\'	'\'	tests/quality/check-secrets.test.sh
+check-secrets-allow-list-entry-with-a-backslash-is-read	scripts/quality/check-secrets.sh	'\'; do	; do	tests/quality/check-secrets.test.sh
 check-secrets-range-that-cannot-be-taken	scripts/quality/check-secrets.sh	could not take the diff $base...$head, so nothing was scanned" >&2; exit 1; }	could not take the diff $base...$head, so nothing was scanned" >&2; }	tests/quality/check-secrets.test.sh
 check-secrets-the-path-comes-from-the-text-of-the-patch	scripts/quality/check-secrets.sh	inhunk && /^\+/  {	/^\+\+\+ / { sub(/^\+\+\+ b\//, ""); ENVIRON["FILE"] = $0; next } inhunk && /^\+/  {	tests/quality/check-secrets.test.sh
 check-secrets-a-file-name-is-a-pathspec	scripts/quality/check-secrets.sh	git --literal-pathspecs diff --no-color --text	git diff --no-color --text	tests/quality/check-secrets.test.sh
 check-secrets-a-name-with-a-control-character	scripts/quality/check-secrets.sh	a control character in its name, so nothing was scanned" >&2; exit 1; }	a control character in its name, so nothing was scanned" >&2; }	tests/quality/check-secrets.test.sh
 check-secrets-the-allow-marker-is-read-in-the-path	scripts/quality/check-secrets.sh	if (index(text, "secret-scan:allow") == 0)	if (index(ENVIRON["FILE"] text, "secret-scan:allow") == 0)	tests/quality/check-secrets.test.sh
-check-secrets-the-allow-list-is-matched-against-the-text	scripts/quality/check-secrets.sh	grep -qE -f "$allowfile" <<< "$file" ||	grep -qE -f "$allowfile" "$patchfile" ||	tests/quality/check-secrets.test.sh
+check-secrets-the-allow-list-is-applied	scripts/quality/check-secrets.sh	if is_allowed "$file"; then continue; fi	if false; then continue; fi	tests/quality/check-secrets.test.sh
+check-secrets-a-file-entry-skips-the-file	scripts/quality/check-secrets.sh	[ "$1" != "$entry" ] || return 0	true	tests/quality/check-secrets.test.sh
+check-secrets-a-directory-entry-skips-what-lies-below	scripts/quality/check-secrets.sh	case "$entry" in */) [[ "$1" != "$entry"* ]] || return 0 ;; esac	:	tests/quality/check-secrets.test.sh
+check-secrets-an-entry-without-a-slash-is-a-directory	scripts/quality/check-secrets.sh	case "$entry" in */) [[ "$1" != "$entry"* ]]	case "$entry" in *) [[ "$1" != "$entry"* ]]	tests/quality/check-secrets.test.sh
+check-secrets-a-directory-entry-matches-the-name-without-its-slash	scripts/quality/check-secrets.sh	[[ "$1" != "$entry"* ]] || return 0 ;; esac	[[ "$1" != "${entry%/}"* ]] || return 0 ;; esac	tests/quality/check-secrets.test.sh
 check-secrets-the-skip-words-are-read-in-the-path	scripts/quality/check-secrets.sh	grep -qiE -- "$sample_word" <<< "$value"	grep -qiE -- "$sample_word" <<< "$record"	tests/quality/check-secrets.test.sh
 check-secrets-git-reads-the-attributes-of-the-tree-as-text	scripts/quality/check-secrets.sh	--no-color --text --no-textconv --no-ext-diff -U0	--no-color --no-textconv --no-ext-diff -U0	tests/quality/check-secrets.test.sh
 check-secrets-git-applies-the-text-conversion-of-the-tree	scripts/quality/check-secrets.sh	--no-color --text --no-textconv --no-ext-diff -U0	--no-color --text --no-ext-diff -U0	tests/quality/check-secrets.test.sh
@@ -195,7 +209,32 @@ dependabot-automerge-files-unreadable	.github/workflows/dependabot-automerge.yml
 dependabot-automerge-rebase-list-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not list the open pull requests"; exit 1; }	|| true	tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh
 dependabot-automerge-files-unknown-answer	.github/workflows/dependabot-automerge.yml	*) echo "::error::unexpected answer reading the files: '$signing'"; exit 1 ;;	*) ;;	tests/workflows/dependabot/dependabot-automerge.test.sh
 dependabot-automerge-disarm-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not read the pull request"; exit 1; }	|| true	tests/workflows/dependabot/dependabot-automerge.test.sh
-keyring-watch-no-podman-directory	.github/workflows/keyring-watch.yml	[ -d "$dir" ] || { echo "::error::upstream has no podman/ directory"; exit 1; }	[ -d "$dir" ] || true	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-no-podman-directory	.github/workflows/keyring-watch.yml	[ -d "$dir" ] || { refuse "upstream has no podman/ directory"; exit 1; }	[ -d "$dir" ] || true	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-alarm-forgets-the-keys-that-were-refused	.github/workflows/keyring-watch.yml	 || steps.validate.outcome == 'failure'	 || false	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-is-skipped-after-a-failed-step	.github/workflows/keyring-watch.yml	if: always() && (steps.diff	if: (steps.diff	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-the-check-of-the-keys-has-no-id-to-read	.github/workflows/keyring-watch.yml	id: validate	id: validated	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-alarm-forgets-the-clone	.github/workflows/keyring-watch.yml	|| steps.fetch.outcome == 'failure' 	|| false 	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-forgets-the-comparison	.github/workflows/keyring-watch.yml	 || steps.diff.outcome == 'failure'	 || false	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-the-clone-has-no-id-to-read	.github/workflows/keyring-watch.yml	id: fetch	id: fetched	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-the-comparison-has-no-id-to-read	.github/workflows/keyring-watch.yml	id: diff	id: compared	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-alarm-is-not-told-the-outcome-of-the-clone	.github/workflows/keyring-watch.yml	FETCH: ${{ steps.fetch.outcome }}	FETCH: success	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-is-not-told-the-outcome-of-the-check	.github/workflows/keyring-watch.yml	VALIDATE: ${{ steps.validate.outcome }}	VALIDATE: success	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-is-not-told-the-outcome-of-the-comparison	.github/workflows/keyring-watch.yml	COMPARE: ${{ steps.diff.outcome }}	COMPARE: success	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-does-not-tell-a-failed-clone-from-a-change	.github/workflows/keyring-watch.yml	if [ "$FETCH" = "failure" ]; then	if false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-does-not-tell-a-failed-comparison-from-a-change	.github/workflows/keyring-watch.yml	elif [ "$COMPARE" = "failure" ]; then	elif false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-says-a-failed-step-is-a-change-of-keys	.github/workflows/keyring-watch.yml	if [ -n "$title" ]; then	if false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-does-not-tell-a-refused-check-from-a-change	.github/workflows/keyring-watch.yml	elif [ "$VALIDATE" = "failure" ]; then	elif false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-without-a-list-of-what-was-refused	.github/workflows/keyring-watch.yml	if [ -s "$RUNNER_TEMP/problems.txt" ]; then list="$(cat "$RUNNER_TEMP/problems.txt")"; fi	list="$(cat "$RUNNER_TEMP/problems.txt")"	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-a-refusal-is-not-kept-for-the-issue	.github/workflows/keyring-watch.yml	printf -- '- %s\n' "$1" >> "$problems"	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-refusal-does-not-count	.github/workflows/keyring-watch.yml	>> "$problems"; bad=1; }	>> "$problems"; }	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-the-list-of-refusals-starts-empty	.github/workflows/keyring-watch.yml	: > "$problems"	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-name-from-upstream-is-printed-as-it-is	.github/workflows/keyring-watch.yml	| tr -c 'A-Za-z0-9._-' '?')"	| cat)"	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-link-is-accepted	.github/workflows/keyring-watch.yml	if [ -L "$f" ] || [ ! -f "$f" ]; then refuse "$name is not a plain file"; continue; fi	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-file-that-is-not-asc-is-accepted	.github/workflows/keyring-watch.yml	case "$f" in *.asc) ;; *) refuse "$name is not a .asc file"; continue ;; esac	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-large-file-is-accepted	.github/workflows/keyring-watch.yml	[ "$(stat -c %s "$f")" -le 200000 ] || { refuse "$name is larger than a key should be"; continue; }	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-file-that-is-not-a-key-block-is-accepted	.github/workflows/keyring-watch.yml	[ "$(head -n 1 "$f")" = "-----BEGIN PGP PUBLIC KEY BLOCK-----" ] || { refuse "$name is not a public key block"; continue; }	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-private-key-is-accepted	.github/workflows/keyring-watch.yml	! grep -q "PRIVATE" "$f" || refuse "$name mentions a private key"	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-the-refusals-do-not-fail-the-step	.github/workflows/keyring-watch.yml	[ "$bad" -eq 0 ]	true	tests/workflows/policy/workflows-contract.test.sh
 keyring-watch-comparison-failed	.github/workflows/keyring-watch.yml	[ "$rc" -le 1 ] || { echo "::error::could not compare the keyrings"; exit 1; }	[ "$rc" -le 1 ] || true	tests/workflows/keyring/keyring-watch-copy.test.sh
 keyring-watch-health-run-is-red-beside-the-issue	.github/workflows/keyring-watch.yml	echo "::error::$title"; exit 1	echo "::error::$title"	tests/workflows/keyring/keyring-watch-health.test.sh
 mutation-gate-decide-did-not-succeed	.github/workflows/mutation.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/mutation/mutation-workflow.test.sh
@@ -274,17 +313,42 @@ check-secrets-sample-words-are-not-delimited	scripts/quality/check-secrets.sh	sa
 check-secrets-a-sample-word-in-the-value-excuses-nothing	scripts/quality/check-secrets.sh	if grep -qiE -- "$sample_word" <<< "$value"; then continue; fi	:	tests/quality/check-secrets.test.sh
 check-secrets-a-name-that-holds-a-path-is-not-a-secret	scripts/quality/check-secrets.sh	if grep -qiE -- "$named_path" <<< "$name$sep"; then continue; fi	:	tests/quality/check-secrets.test.sh
 check-secrets-a-file-the-base-already-holds-is-scanned-again	scripts/quality/check-secrets.sh	if [ -n "$new" ] && grep -qxF "$new" "$baseblobs"; then continue; fi	:	tests/quality/check-secrets.test.sh
-check-secrets-an-expression-that-matches-every-path	scripts/quality/check-secrets.sh	[ "$rc" -ne 0 ] || { echo "::error::.secret-scan-allow line $n matches every path, which would switch the scan off" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
 check-commit-identity-reads-only-the-last-paragraph	scripts/quality/check-commit-identity.sh	body="$(git show -s --format='%B' "$sha")"	body="$(git show -s --format='%(trailers)' "$sha")"	tests/quality/check-commit-identity.test.sh
 check-commit-identity-reads-the-keys-in-one-case	scripts/quality/check-commit-identity.sh	grep -iE '^(Signed-off-by|Co-authored-by):'	grep -E '^(Signed-off-by|Co-authored-by):'	tests/quality/check-commit-identity.test.sh
 check-commit-identity-merges-are-skipped	scripts/quality/check-commit-identity.sh	git rev-list "$base..$head"	git rev-list --no-merges "$base..$head"	tests/quality/check-commit-identity.test.sh
 check-commit-identity-the-committer-of-a-merge	scripts/quality/check-commit-identity.sh	flag "$sha" "the committer address of a merge"	true	tests/quality/check-commit-identity.test.sh
-reusable-workflow-lint-forgets-go-install	.github/workflows/reusable-workflow-lint.yml	("go install",      None),	("go-install",      None),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
-reusable-workflow-lint-forgets-gem-install	.github/workflows/reusable-workflow-lint.yml	("gem install",     None),	("gem-install",     None),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
-reusable-workflow-lint-forgets-npm-install-g	.github/workflows/reusable-workflow-lint.yml	("npm install -g",  None),	("npm-install-g",  None),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
-reusable-workflow-lint-forgets-npm-i-g	.github/workflows/reusable-workflow-lint.yml	("npm i -g",        None),	("npm-i-g",        None),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
-reusable-workflow-lint-forgets-pip-install	.github/workflows/reusable-workflow-lint.yml	("pip install",     "--require-hashes"),	("pip-install",     "--require-hashes"),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
-reusable-workflow-lint-pip-exception-widened	.github/workflows/reusable-workflow-lint.yml	("pip install",     "--require-hashes"),	("pip install",     "pip"),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-cargo-install	.github/workflows/reusable-workflow-lint.yml	r"cargo(?:\s+\+\S+)?\s+install\b"	r"__never__cargo(?:\s+\+\S+)?\s+install\b"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-cargo-install-is-read-past-its-verb	.github/workflows/reusable-workflow-lint.yml	r"cargo(?:\s+\+\S+)?\s+install\b"	r"cargo(?:\s+\+\S+)?\s+install"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-go-install	.github/workflows/reusable-workflow-lint.yml	r"go\s+install\b"	r"__never__go\s+install\b"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-go-run-of-a-module	.github/workflows/reusable-workflow-lint.yml	r"go\s+run\s+(?:-\S+\s+)*[^\s@-]\S*@\S"	r"__never__go\s+run\s+(?:-\S+\s+)*[^\s@-]\S*@\S"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-go-run-reads-an-at-sign-past-the-module	.github/workflows/reusable-workflow-lint.yml	r"go\s+run\s+(?:-\S+\s+)*[^\s@-]\S*@\S"	r"go\s+run\s+.*@\S"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-gem-install	.github/workflows/reusable-workflow-lint.yml	r"gem\s+install\b"	r"__never__gem\s+install\b"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-npm-install	.github/workflows/reusable-workflow-lint.yml	r"npm" + FLAGS + r"\s+(?:install|i|ci|add)\b"	r"__never__npm" + FLAGS + r"\s+(?:install|i|ci|add)\b"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-npm-ci	.github/workflows/reusable-workflow-lint.yml	(?:install|i|ci|add)	(?:install|i|add)	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-npm-i	.github/workflows/reusable-workflow-lint.yml	(?:install|i|ci|add)	(?:install|ci|add)	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-npx	.github/workflows/reusable-workflow-lint.yml	r"npx\b"	r"__never__npx\b"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-yarn	.github/workflows/reusable-workflow-lint.yml	r"yarn" + FLAGS	r"__never__yarn" + FLAGS	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-a-bare-yarn	.github/workflows/reusable-workflow-lint.yml	\b|\s*(?:$|[;&|)]))"	\b)"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-pnpm	.github/workflows/reusable-workflow-lint.yml	r"pnpm" + FLAGS	r"__never__pnpm" + FLAGS	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-pip-install	.github/workflows/reusable-workflow-lint.yml	r"pip[0-9.]*" + FLAGS	r"__never__pip[0-9.]*" + FLAGS	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-pip3-and-pip-with-a-version	.github/workflows/reusable-workflow-lint.yml	pip[0-9.]*	pip	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-pip-exception-widened	.github/workflows/reusable-workflow-lint.yml	install\b", "--require-hashes"),	install\b", "pip"),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-pipx	.github/workflows/reusable-workflow-lint.yml	r"pipx" + FLAGS	r"__never__pipx" + FLAGS	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-uv-tool	.github/workflows/reusable-workflow-lint.yml	r"uv\s+tool\s+	r"__never__uv\s+tool\s+	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-uvx	.github/workflows/reusable-workflow-lint.yml	r"uvx\b"	r"__never__uvx\b"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-brew-install	.github/workflows/reusable-workflow-lint.yml	r"brew" + FLAGS	r"__never__brew" + FLAGS	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-dotnet-tool-install	.github/workflows/reusable-workflow-lint.yml	r"dotnet\s+tool\s+	r"__never__dotnet\s+tool\s+	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-a-download-piped-into-a-shell	.github/workflows/reusable-workflow-lint.yml	r"(?:curl|wget)\b.*\|\s*	r"__never__(?:curl|wget)\b.*\|\s*	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-wget-piped-into-a-shell	.github/workflows/reusable-workflow-lint.yml	r"(?:curl|wget)\b.*\|\s*	r"(?:curl)\b.*\|\s*	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-a-download-is-read-through-a-pipe	.github/workflows/reusable-workflow-lint.yml	\b.*\|\s*(?:sudo	\b[^|]*\|\s*(?:sudo	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-a-download-piped-into-sudo-and-a-shell	.github/workflows/reusable-workflow-lint.yml	\|\s*(?:sudo\s+(?:-\S+\s+)*)?"	\|\s*"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-a-download-handed-to-a-shell	.github/workflows/reusable-workflow-lint.yml	SHELL + r"\s+(?:-\S+\s+)*(?:<\(|\"?\$\()	r"__never__\s+(?:-\S+\s+)*(?:<\(|\"?\$\()	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-process-substitution	.github/workflows/reusable-workflow-lint.yml	(?:<\(|\"?\$\()	(?:\"?\$\()	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-command-substitution	.github/workflows/reusable-workflow-lint.yml	(?:<\(|\"?\$\()	(?:<\()	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-a-shell-but-bash	.github/workflows/reusable-workflow-lint.yml	SHELL = r"(?:ba|z|da|k)?sh\b"	SHELL = r"bash\b"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-a-shell-is-read-past-its-name	.github/workflows/reusable-workflow-lint.yml	SHELL = r"(?:ba|z|da|k)?sh\b"	SHELL = r"(?:ba|z|da|k)?sh"	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-a-tool-is-read-inside-a-longer-name	.github/workflows/reusable-workflow-lint.yml	NAME = r"(?<![\w.-])"	NAME = r""	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-workflow-lint-forgets-the-flags-between-a-tool-and-its-verb	.github/workflows/reusable-workflow-lint.yml	FLAGS = r"(?:\s+-\S+)*"	FLAGS = r""	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-workflow-lint-exception-always-applies	.github/workflows/reusable-workflow-lint.yml	except_marker and except_marker in line	True	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-build-the-package-is-never-uploaded	.github/workflows/reusable-build.yml	- if: ${{ inputs.upload }}	- if: ${{ false }}	tests/workflows/build/reusable-build-upload-gate.test.sh
 reusable-build-the-pull-request-check-always-uploads	.github/workflows/reusable-build.yml	- if: ${{ inputs.upload }}	- if: ${{ true }}	tests/workflows/build/reusable-build-upload-gate.test.sh
