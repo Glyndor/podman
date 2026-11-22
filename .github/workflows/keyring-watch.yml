@@ -42,6 +42,7 @@ jobs:
           persist-credentials: false
 
       - name: Fetch the keys upstream publishes
+        id: fetch
         run: |
           git clone --quiet --depth 1 https://github.com/containers/release-keys.git "$RUNNER_TEMP/release-keys"
 
@@ -108,25 +109,43 @@ jobs:
       # The issue is the alarm, so this runs even when the commit step failed: a
       # failed step skips every later one unless it says otherwise, and the change
       # of keys would then leave no branch, no issue and nothing else. It runs too
-      # when the check of what upstream publishes failed, which is the case that
-      # check exists for: the comparison never ran, so there is no answer about a
-      # difference, and without this the run would be red and nothing else would say so.
+      # when a step before the comparison's answer failed (the clone, the check of
+      # what upstream publishes, the comparison itself): no answer about a difference
+      # was written, so without this the run would be red and nothing else would say so.
       - name: Push the branch and open an issue
-        if: always() && (steps.diff.outputs.differs == 'true' || steps.validate.outcome == 'failure')
+        if: always() && (steps.diff.outputs.differs == 'true' || steps.fetch.outcome == 'failure' || steps.validate.outcome == 'failure' || steps.diff.outcome == 'failure')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ steps.commit.outputs.branch }}
+          FETCH: ${{ steps.fetch.outcome }}
           VALIDATE: ${{ steps.validate.outcome }}
+          COMPARE: ${{ steps.diff.outcome }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          if [ "$VALIDATE" = "failure" ]; then
+          # When a step that gives the answer failed there is no answer, and the issue says
+          # which step it was, never that the keys changed.
+          title=""
+          if [ "$FETCH" = "failure" ]; then
+            title="The keys upstream publishes could not be fetched"
+            what="The clone of containers/release-keys failed, so the keys were neither checked nor compared:"
+            list="- the log of the run says why"
+          elif [ "$VALIDATE" = "failure" ]; then
             title="The keys upstream publishes could not be accepted"
+            what="The check of what containers/release-keys/podman holds refused it, so no update was prepared:"
+            list="- the log of the run says what"
+            if [ -s "$RUNNER_TEMP/problems.txt" ]; then list="$(cat "$RUNNER_TEMP/problems.txt")"; fi
+          elif [ "$COMPARE" = "failure" ]; then
+            title="The keys upstream publishes could not be compared with the copy here"
+            what="The comparison of keyring/podman with containers/release-keys/podman could not be made, so nobody knows whether the keys changed:"
+            list="- the log of the run says why"
+          fi
+          if [ -n "$title" ]; then
             if [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
               {
-                echo "The check of what containers/release-keys/podman holds refused it, so no update was prepared:"
+                echo "$what"
                 echo
-                if [ -s "$RUNNER_TEMP/problems.txt" ]; then cat "$RUNNER_TEMP/problems.txt"; else echo "- the log of the run says what"; fi
+                echo "$list"
                 echo
                 echo "The copy in keyring/podman stays as it is, and it may no longer match upstream: a release signed by a key that is not here is refused. The run: https://github.com/$GH_REPO/actions/runs/$RUN_ID"
               } > "$RUNNER_TEMP/body.txt"

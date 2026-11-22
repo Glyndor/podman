@@ -210,11 +210,21 @@ dependabot-automerge-rebase-list-unreadable	.github/workflows/dependabot-automer
 dependabot-automerge-files-unknown-answer	.github/workflows/dependabot-automerge.yml	*) echo "::error::unexpected answer reading the files: '$signing'"; exit 1 ;;	*) ;;	tests/workflows/dependabot/dependabot-automerge.test.sh
 dependabot-automerge-disarm-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not read the pull request"; exit 1; }	|| true	tests/workflows/dependabot/dependabot-automerge.test.sh
 keyring-watch-no-podman-directory	.github/workflows/keyring-watch.yml	[ -d "$dir" ] || { refuse "upstream has no podman/ directory"; exit 1; }	[ -d "$dir" ] || true	tests/workflows/policy/workflows-contract.test.sh
-keyring-watch-alarm-forgets-the-keys-that-were-refused	.github/workflows/keyring-watch.yml	 || steps.validate.outcome == 'failure')	)	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-forgets-the-keys-that-were-refused	.github/workflows/keyring-watch.yml	 || steps.validate.outcome == 'failure'	 || false	tests/workflows/keyring/keyring-watch-alarm.test.sh
 keyring-watch-alarm-is-skipped-after-a-failed-step	.github/workflows/keyring-watch.yml	if: always() && (steps.diff	if: (steps.diff	tests/workflows/keyring/keyring-watch-alarm.test.sh
 keyring-watch-the-check-of-the-keys-has-no-id-to-read	.github/workflows/keyring-watch.yml	id: validate	id: validated	tests/workflows/policy/workflows-contract.test.sh
-keyring-watch-alarm-does-not-tell-a-refused-check-from-a-change	.github/workflows/keyring-watch.yml	if [ "$VALIDATE" = "failure" ]; then	if false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
-keyring-watch-alarm-without-a-list-of-what-was-refused	.github/workflows/keyring-watch.yml	if [ -s "$RUNNER_TEMP/problems.txt" ]; then cat "$RUNNER_TEMP/problems.txt"; else echo "- the log of the run says what"; fi	cat "$RUNNER_TEMP/problems.txt"	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-forgets-the-clone	.github/workflows/keyring-watch.yml	|| steps.fetch.outcome == 'failure' 	|| false 	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-forgets-the-comparison	.github/workflows/keyring-watch.yml	 || steps.diff.outcome == 'failure'	 || false	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-the-clone-has-no-id-to-read	.github/workflows/keyring-watch.yml	id: fetch	id: fetched	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-the-comparison-has-no-id-to-read	.github/workflows/keyring-watch.yml	id: diff	id: compared	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-alarm-is-not-told-the-outcome-of-the-clone	.github/workflows/keyring-watch.yml	FETCH: ${{ steps.fetch.outcome }}	FETCH: success	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-is-not-told-the-outcome-of-the-check	.github/workflows/keyring-watch.yml	VALIDATE: ${{ steps.validate.outcome }}	VALIDATE: success	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-is-not-told-the-outcome-of-the-comparison	.github/workflows/keyring-watch.yml	COMPARE: ${{ steps.diff.outcome }}	COMPARE: success	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-does-not-tell-a-failed-clone-from-a-change	.github/workflows/keyring-watch.yml	if [ "$FETCH" = "failure" ]; then	if false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-does-not-tell-a-failed-comparison-from-a-change	.github/workflows/keyring-watch.yml	elif [ "$COMPARE" = "failure" ]; then	elif false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-says-a-failed-step-is-a-change-of-keys	.github/workflows/keyring-watch.yml	if [ -n "$title" ]; then	if false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-does-not-tell-a-refused-check-from-a-change	.github/workflows/keyring-watch.yml	elif [ "$VALIDATE" = "failure" ]; then	elif false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-without-a-list-of-what-was-refused	.github/workflows/keyring-watch.yml	if [ -s "$RUNNER_TEMP/problems.txt" ]; then list="$(cat "$RUNNER_TEMP/problems.txt")"; fi	list="$(cat "$RUNNER_TEMP/problems.txt")"	tests/workflows/keyring/keyring-watch-alarm.test.sh
 keyring-watch-a-refusal-is-not-kept-for-the-issue	.github/workflows/keyring-watch.yml	printf -- '- %s\n' "$1" >> "$problems"	:	tests/workflows/policy/workflows-contract.test.sh
 keyring-watch-a-refusal-does-not-count	.github/workflows/keyring-watch.yml	>> "$problems"; bad=1; }	>> "$problems"; }	tests/workflows/policy/workflows-contract.test.sh
 keyring-watch-the-list-of-refusals-starts-empty	.github/workflows/keyring-watch.yml	: > "$problems"	:	tests/workflows/policy/workflows-contract.test.sh

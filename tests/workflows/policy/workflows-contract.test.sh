@@ -62,6 +62,8 @@ K="$WORK/keys"
 if step keyring-watch.yml compare "name=Refuse anything that is not a plain public key" "$K"; then
 	check "the key check's run block has no expression in it" 0 "$(grep -c '\${{' "$K/run.sh")"
 	check "the key check has the id the alarm reads its outcome by" "validate" "$(gate keyring-watch.yml compare id 'Refuse anything that is not a plain public key')"
+	check "so have the clone and the comparison" "fetch diff" \
+		"$(gate keyring-watch.yml compare id 'Fetch the keys upstream publishes') $(gate keyring-watch.yml compare id 'Compare with the copy here')"
 	block='-----BEGIN PGP PUBLIC KEY BLOCK-----'
 	upstream() { # <name> <how>: an upstream with one good key and one file made <how>
 		rm -rf "$K/rt"; mkdir -p "$K/rt/release-keys/podman" "$K/elsewhere"
