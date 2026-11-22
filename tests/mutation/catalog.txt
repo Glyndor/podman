@@ -78,7 +78,8 @@ schedule-freshness-no-run-finished	scripts/monitoring/schedule-freshness.sh	if [
 check-commit-identity-personal-address	scripts/quality/check-commit-identity.sh	[ "$bad" -eq 0 ] || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }	[ "$bad" -eq 0 ] || true	tests/quality/check-commit-identity.test.sh
 check-mutation-coverage-a-finding-fails	scripts/quality/check-mutation-coverage.sh	if errors:	if False:	tests/quality/check-mutation-coverage.test.sh
 mutation-refusals-a-condition-on-the-line-guards-the-refusal	scripts/quality/mutation_refusals.py	if "||" in before or "&&" in before:	if False:	tests/quality/check-mutation-coverage.test.sh
-mutation-refusals-an-exit-in-shell-is-a-refusal	scripts/quality/mutation_refusals.py	hit = EXIT.search(code) or PY_EXIT.search(code_of(line, STRING)) \	hit = PY_EXIT.search(code_of(line, STRING)) \	tests/quality/check-mutation-coverage.test.sh
+mutation-refusals-an-exit-in-shell-is-a-refusal	scripts/quality/mutation_refusals.py	hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	hit = (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	tests/quality/check-mutation-coverage.test.sh
+mutation-refusals-an-exit-that-hands-on-a-status-is-a-refusal	scripts/quality/mutation_refusals.py	hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	hit = EXIT.search(code) \	tests/quality/check-mutation-coverage.test.sh
 check-secrets-a-credential-found	scripts/quality/check-secrets.sh	if [ "$bad" -ne 0 ]; then	if false; then	tests/quality/check-secrets.test.sh
 check-secrets-a-moved-file-is-not-rescanned	scripts/quality/check-secrets.sh	git diff --no-color -U0 --no-renames "$base...$head"	git diff --no-color -U0 "$base...$head"	tests/quality/check-secrets.test.sh
 check-test-coverage-no-scripts-directory	scripts/quality/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true	tests/quality/check-test-coverage.test.sh
@@ -234,3 +235,8 @@ check-folder-size-the-limit-is-twenty	scripts/quality/check-folder-size.sh	limit
 check-folder-size-the-workflows-folder-is-left-out	scripts/quality/check-folder-size.sh	dir == ".github/workflows" ||	dir == "none" ||	tests/quality/check-folder-size.test.sh
 check-folder-size-a-testdata-folder-is-left-out	scripts/quality/check-folder-size.sh	 || ("/" dir "/") ~ /\/testdata\//	 || ("/" dir "/") ~ /\/nothing\//	tests/quality/check-folder-size.test.sh
 check-folder-size-only-the-files-directly-inside-count	scripts/quality/check-folder-size.sh	dir = substr($0, 1, RSTART - 1)	dir = substr($0, 1, index($0, "/") - 1)	tests/quality/check-folder-size.test.sh
+tests-a-failed-suite-fails-the-job	.github/workflows/tests.yml	exit "$status"	exit 0	tests/workflows/policy/tests-run-every-suite.test.sh
+watchdog-a-late-delivery-fails-the-job	.github/workflows/watchdog.yml	exit "$late"	exit 0	tests/workflows/watchdog/watchdog-delivery-lag.test.sh
+watchdog-a-stale-keyring-watch-fails-the-job	.github/workflows/watchdog.yml	exit "$keyring_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
+watchdog-a-stale-sweep-fails-the-job	.github/workflows/watchdog.yml	exit "$sweep_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
+keyring-diff-a-change-is-the-exit-status	scripts/upstream/keyring-diff.sh	exit "$changed"	exit 0	tests/upstream/keyring-diff.test.sh
