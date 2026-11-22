@@ -101,6 +101,25 @@ if step reusable-workflow-lint.yml workflow-lint "name=A job holding a secret mu
 	check "one whose install is pinned by hash passes" "0 1" "$rc $(says 'tooling-isolation: no job holding a secret installs third-party tooling.')"
 	isolate "$(printf 'jobs:\n  j:\n    steps:\n      - run: cargo install something\n')"
 	check "an install in a job that holds no secret passes" 0 "$rc"
+	# One case per installer the rule knows, each paired with the same line in a job
+	# that holds no secret, so a refusal is the installer's and not the fixture's.
+	installer() { # <command>: the same step with and without a secret in its job
+		isolate "$(printf 'jobs:\n  j:\n    env:\n      T: ${{ secrets.TOKEN }}\n    steps:\n      - run: |\n          %s\n' "$1")"
+		held="$rc $(says "job \`j\` installs third-party tooling while holding a secret: \`$1\`")"
+		isolate "$(printf 'jobs:\n  j:\n    steps:\n      - run: |\n          %s\n' "$1")"
+		free="$rc $(says 'tooling-isolation: no job holding a secret installs third-party tooling.')"
+	}
+	for cmd in 'cargo install --locked sometool' 'go install example.com/tool@v1.0.0' \
+		'gem install sometool' 'npm install -g sometool' 'npm i -g sometool' \
+		'pip install sometool'; do
+		installer "$cmd"
+		check "'$cmd' in a job holding a secret is refused, and named" "1 1" "$held"
+		check "  and in a job holding none it passes" "0 1" "$free"
+	done
+	installer 'pip install --require-hashes -r requirements.txt'
+	check "a pip install pinned by hash passes in a job holding a secret" "0 0" "$held"
+	installer 'pip install --no-deps sometool'
+	check "a pip install that pins nothing is refused, whatever its other flags" "1 1" "$held"
 	run_step "$I" "$HERE"
 	check "and this repository's workflows pass it" "0 1" "$rc $(says 'tooling-isolation: no job holding a secret installs')"
 else
