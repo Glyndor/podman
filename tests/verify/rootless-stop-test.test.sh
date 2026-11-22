@@ -43,10 +43,18 @@ fake aa-enabled 'case "$FAKE" in aa-off) echo "No - disabled at boot"; exit 1 ;;
 # answer it, and is the real cat for everything else.
 fake cat 'case "$1" in /proc/*/attr/current) echo "${FAKE_PROFILE:-podman (unconfined)}" ;; *) exec "${REAL_CAT:-/bin/cat}" "$@" ;; esac'
 # pasta is alive while the file names a process that is, and not a zombie of one.
-fake pgrep '[ -f "$STATE/pasta.pid" ] || exit 1
-pid="$(cat "$STATE/pasta.pid")"
-[ -d "/proc/$pid" ] && ! grep -q "^State:.*Z" "/proc/$pid/status" || exit 1
+fake pgrep 'read -r pid < "$STATE/pasta.pid" || exit 1
+[ -d "/proc/$pid" ] || exit 1
+while read -r key value; do
+	[ "$key" = "State:" ] || continue
+	case "$value" in Z*) exit 1 ;; esac
+	break
+done < "/proc/$pid/status"
 echo "$pid"'
+# The script waits in steps of a tenth of a second, up to a hundred of them, for the API
+# and for pasta to go. Here nothing is slow, so the wait is skipped; every other sleep is
+# the real one, which the fake processes of the machine are made of.
+fake sleep '[ "$1" = 0.1 ] || exec "$REAL_SLEEP" "$@"'
 fake podman 'echo "podman $*" >> "$CALLS"
 start_pasta() { sleep 60 >/dev/null 2>&1 </dev/null & echo $! > "$STATE/pasta.pid"; }
 case "$1 $2" in
@@ -72,7 +80,13 @@ case "$*" in
 esac
 out=""; prev=""
 for a in "$@"; do [ "$prev" = -o ] && out="$a"; prev="$a"; done
-stop_pasta() { [ ! -f "$STATE/pasta.pid" ] || kill "$(cat "$STATE/pasta.pid")" 2>/dev/null || true; }
+# pasta is gone when the answer comes, as it is when Podman waits for the process it signals:
+# the wait is for the kernel to report the process ended, which takes a moment.
+stop_pasta() {
+	[ -f "$STATE/pasta.pid" ] || return 0
+	kill "$(cat "$STATE/pasta.pid")" 2>/dev/null || return 0
+	n=0; while pgrep >/dev/null && [ "$n" -lt 2000 ]; do n=$((n + 1)); done
+}
 code=204; : > "$out"
 case "$FAKE" in
 	curl-fails) printf "000"; exit 7 ;;
@@ -90,11 +104,17 @@ fake journalctl 'echo "journalctl $*" >> "$CALLS"
 case "$FAKE_KERNEL" in journal) echo "$DENIED" ;; other) echo "$OTHER" ;; *) exit 1 ;; esac'
 fake sudo 'echo "sudo $*" >> "$CALLS"; [ "$1 $2" = "-n dmesg" ] || exit 9; [ "$FAKE_KERNEL" = sudo ] || exit 1; echo "$DENIED"'
 
+# A case that does not finish in five seconds is a script that waits for something that never
+# comes, such as a loop that lost its bound. It is read as a failure, and the cases after it
+# are not run: each would wait as long, and a hung script is already the answer.
+hung=""
 run() { # [NAME=value ...]: sets $rc and $out; every case starts from a machine at rest
-	rm -f "$STATE"/*; : > "$WORK/calls"; rm -rf "$WORK/tmp"; mkdir "$WORK/tmp"
 	rc=0
-	out="$(env PATH="$B:$PATH" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" DENIED="$DENIED" OTHER="$OTHER" REAL_CAT="$(command -v cat)" \
-		FAKE= FAKE_KERNEL= "$@" bash "$SCRIPT" 2>&1 </dev/null)" || rc=$?
+	[ -z "$hung" ] || { rc=124; out="not run: an earlier case did not finish"; return; }
+	rm -f "$STATE"/*; : > "$WORK/calls"; rm -rf "$WORK/tmp"; mkdir "$WORK/tmp"
+	out="$(timeout 5 env PATH="$B:$PATH" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" DENIED="$DENIED" OTHER="$OTHER" \
+		REAL_CAT="$(command -v cat)" REAL_SLEEP="$(command -v sleep)" FAKE= FAKE_KERNEL= "$@" bash "$SCRIPT" 2>&1 </dev/null)" || rc=$?
+	[ "$rc" -ne 124 ] || hung=1
 }
 said() { printf '%s\n' "$out" | grep -c -F -- "$1"; }
 called() { grep -c -E -- "$1" "$WORK/calls"; }
@@ -109,10 +129,11 @@ check "and nothing was touched" 0 "$(called '^podman')"
 without() { # <tool>: sets $rc and $out for a run on a machine that lacks it
 	local dir="$WORK/without-$1" t
 	mkdir "$dir"
-	for t in id busybox aa-enabled curl pgrep podman dmesg journalctl sudo; do [ "$t" = "$1" ] || cp "$B/$t" "$dir/$t"; done
-	for t in mktemp cp seq sleep tr grep tail date cat rm mkdir kill dirname; do ln -s "$(command -v "$t")" "$dir/$t"; done
+	for t in id busybox aa-enabled curl pgrep podman dmesg journalctl sudo sleep; do [ "$t" = "$1" ] || cp "$B/$t" "$dir/$t"; done
+	for t in mktemp cp seq tr grep tail date cat rm mkdir kill dirname; do ln -s "$(command -v "$t")" "$dir/$t"; done
 	rm -f "$STATE"/*; : > "$WORK/calls"
-	rc=0; out="$(env PATH="$dir" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" FAKE= FAKE_KERNEL= "$(command -v bash)" "$SCRIPT" 2>&1 </dev/null)" || rc=$?
+	rc=0; out="$(timeout 5 env PATH="$dir" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" REAL_SLEEP="$(command -v sleep)" FAKE= FAKE_KERNEL= \
+		"$(command -v bash)" "$SCRIPT" 2>&1 </dev/null)" || rc=$?
 }
 without curl
 check "a machine without curl: refused with 2, for curl" "2 1" "$rc $(said 'curl is needed and is not installed')"
@@ -133,7 +154,7 @@ check "and no network was created" 0 "$(called '^podman network create')"
 
 rm -f "$STATE"/*; sleep 60 >/dev/null 2>&1 & echo $! > "$STATE/pasta.pid"
 : > "$WORK/calls"; rc=0
-out="$(env PATH="$B:$PATH" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" REAL_CAT="$(command -v cat)" FAKE= FAKE_KERNEL= bash "$SCRIPT" 2>&1 </dev/null)" || rc=$?
+out="$(timeout 5 env PATH="$B:$PATH" CALLS="$WORK/calls" STATE="$STATE" TMPDIR="$WORK/tmp" REAL_CAT="$(command -v cat)" REAL_SLEEP="$(command -v sleep)" FAKE= FAKE_KERNEL= bash "$SCRIPT" 2>&1 </dev/null)" || rc=$?
 check "a pasta that was already there: refused with 2, and it names it" "2 1 1" \
 	"$rc $(said 'already has a pasta process') $(said "$(cat "$STATE/pasta.pid")")"
 check "and no network was created" 0 "$(called '^podman network create')"
@@ -154,9 +175,9 @@ check "and the container and the network were removed afterwards" "1 1" \
 	"$(called '^podman rm -f -t 0 aa-pasta-ctr-[0-9]+$') $(called '^podman network rm -f aa-pasta-net-[0-9]+$')"
 # The API process ends with the script: it is a process of the machine, not of the test.
 pid="$(cat "$STATE/service.pid" 2>/dev/null || echo 0)"; alive=1
-for _ in $(seq 1 50); do
+for _ in $(seq 1 20); do
 	if [ ! -d "/proc/$pid" ] || grep -q '^State:.*Z' "/proc/$pid/status"; then alive=0; break; fi
-	sleep 0.1
+	sleep 0.05
 done
 check "and the API process it started is ended" "yes 0" "$([ "$pid" != 0 ] && echo yes || echo no) $alive"
 check "and the work directory is gone" 0 "$(find "$WORK/tmp" -mindepth 1 | wc -l)"
@@ -230,11 +251,11 @@ check "a container still running after a 204: refused for that and only that" "1
 run FAKE=pasta-left
 check "a pasta still running after a 204: refused for that, and it names the process" "1 1 0 0" \
 	"$rc $(said 'pasta was still running after the stop: ') $(said 'answered') $(said 'still running after the stop (running')"
-# The kill is a signal: give the process a moment to be gone, then read it again.
+# The kill is a signal: give the process a moment (a second at most) to be gone, then read it again.
 pid="$(cat "$STATE/pasta.pid")"; alive=1
-for _ in $(seq 1 50); do
+for _ in $(seq 1 20); do
 	if [ ! -d "/proc/$pid" ] || grep -q '^State:.*Z' "/proc/$pid/status"; then alive=0; break; fi
-	sleep 0.1
+	sleep 0.05
 done
 check "and the pasta it left is ended by the cleanup" 0 "$alive"
 
