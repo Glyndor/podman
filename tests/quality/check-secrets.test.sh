@@ -74,6 +74,25 @@ check "a variable that names a file or a path passes" 0 "$?"
 
 out="$(scan "api_key = \"your-$(rep x 40)\"")"
 check "a placeholder passes" 0 "$?"
+out="$(scan "api_key = example-$(rep 0 40)")"
+check "a value that starts with a sample word and a hyphen passes" 0 "$?"
+out="$(scan "password: \"dummy_$(rep 7 40)\"")"
+check "a value with a sample word before an underscore passes" 0 "$?"
+
+# The words that excuse a sample are read in the value, as a word of their own: not in the
+# name, not in a comment, and not inside a run of letters of a key.
+sample() { # <description> <line>: refused, and named as a long value
+	local out rc
+	out="$(scan "$2")"; rc=$?
+	check "$1 fails" 1 "$rc"
+	check "$1 is named" 1 "$(printf '%s' "$out" | grep -c 'probe.txt:1 long value assigned to a secret-like name')"
+}
+sample "a key whose value starts with a sample word and goes on in letters" "GLYNDOR_RELEASE_ED25519_KEY=example$(rep A 36)="
+sample "a key with a comment that says example" "GLYNDOR_RELEASE_ED25519_KEY: $(rep e 43)= # an example of the format"
+sample "a key with a comment that says fake" "api_key = \"$(rep k 40)\" // not a fake"
+sample "a value that holds fake between letters" "api_key = \"$(rep a 12)fake$(rep b 30)\""
+sample "a sample word in the name and not in the value" "example_api_key = \"$(rep c 40)\""
+sample "a key whose name says file and value does not" "api_key = \"$(rep d 40)\" # was api_key_file = x"
 
 # A secret that was already in the base is not a reason to fail this change.
 printf 'old_token = "%s"\n' "$(rep z 40)" > "$repo/old.txt"; gitc add -A; gitc commit -q -m "old"

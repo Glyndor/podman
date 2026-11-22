@@ -135,8 +135,31 @@ done
 
 # A credential with a format of its own is caught by the name it is assigned to.
 generic='(token|secret|passw(or)?d|api[_-]?key|private[_-]?key|signing[_-]?key|access[_-]?key|ed25519[_-]?key|mldsa[0-9_-]*key|credential)[a-z0-9_]*["'"'"']?[ \t]*[:=][ \t]*["'"'"']?[a-z0-9+/_=-]{32,}'
-skip='_(file|path|dir|url|name|env|var)[a-z0-9_]*["'"'"']?[ \t]*[:=]|secrets\.|\$\{|\$\(|example|placeholder|dummy|fake|fixture|changeme|redacted|your|<[a-z_-]+>'
-hits="$(printf '%s\n' "$added" | grep -aiE -- "$prefix.*($generic)" | grep -aviE -- "$prefix.*($skip)" || true)"
+# What excuses an assignment is read in the assignment itself, not in the line around it:
+# the name of a variable that holds a file, a path or an address is not a secret, and a
+# value that carries a sample word of its own, as a word and not as a run of letters of a
+# key, is a sample. A word in the name or in a comment says nothing about the value.
+named_path='_(file|path|dir|url|name|env|var)[a-z0-9_]*["'"'"']?[ \t]*[:=]'
+sample_word='(^|[^a-z0-9])(example|placeholder|dummy|fake|fixture|changeme|redacted|your)([^a-z0-9]|$)'
+real_value() { # <text of a line>: succeeds when some assignment in it is not a sample
+	local matches m name sep value
+	matches="$(grep -aoiE -- "$generic" <<< "$1")" || return 0
+	while IFS= read -r m; do
+		[ -n "$m" ] || continue
+		name="${m%%[:=]*}"; sep="${m:${#name}:1}"; value="${m:$((${#name} + 1))}"
+		if grep -qiE -- "$named_path" <<< "$name$sep"; then continue; fi
+		if grep -qiE -- "$sample_word" <<< "$value"; then continue; fi
+		return 0
+	done <<< "$matches"
+	return 1
+}
+hits=""
+while IFS= read -r record; do
+	[ -n "$record" ] || continue
+	text="${record#*"$SEP"}"; text="${text#*"$SEP"}"
+	if real_value "$text"; then hits+="$record"$'\n'; fi
+done <<< "$(printf '%s\n' "$added" | grep -aiE -- "$prefix.*($generic)" || true)"
+hits="${hits%$'\n'}"
 [ -z "$hits" ] || report "long value assigned to a secret-like name" "$hits"
 
 if [ "$bad" -ne 0 ]; then
