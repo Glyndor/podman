@@ -92,15 +92,73 @@ gitc mv README README.md; gitc commit -q -m "rename a harmless file"
 (cd "$repo" && "$SCRIPT" "$base3" HEAD >/dev/null 2>&1); check "a harmless file moved the same way passes" 0 "$?"
 gitc reset -q --hard "$base2"
 
-# A repository lists the paths that hold throwaway keys on purpose.
+# A repository lists the paths that hold throwaway keys on purpose. The list counts
+# once it is on the base branch, so it is committed to the base before the change.
 git -C "$repo" reset -q --hard "$base"
+printf '# test keys\n\n^fixtures/\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "list the fixture paths"
+listed="$(git -C "$repo" rev-parse HEAD)"
 mkdir -p "$repo/fixtures"
 printf -- '-----BEGIN %s-----\n%s\n' 'PRIVATE KEY' "$(rep M 40)" > "$repo/fixtures/test.pem"
-printf '# test keys\n^fixtures/\n' > "$repo/.secret-scan-allow"
 gitc add -A; gitc commit -q -m "fixture"
-(cd "$repo" && "$SCRIPT" "$base" HEAD >/dev/null 2>&1); check "a path listed in .secret-scan-allow is skipped" 0 "$?"
+(cd "$repo" && "$SCRIPT" "$listed" HEAD >/dev/null 2>&1); check "a path listed in .secret-scan-allow on the base is skipped" 0 "$?"
 printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/elsewhere.pem"; gitc add -A; gitc commit -q -m "elsewhere"
-(cd "$repo" && "$SCRIPT" "$base" HEAD >/dev/null 2>&1); check "a key outside the listed paths still fails" 1 "$?"
+out="$( (cd "$repo" && "$SCRIPT" "$listed" HEAD 2>&1) )"; rc=$?
+check "a key outside the listed paths still fails" 1 "$rc"
+check "and it is refused as a key block" 1 "$(printf '%s' "$out" | grep -c 'elsewhere.pem:1 private key block')"
+
+# A change cannot list its own exceptions: the same fixture with the list added by
+# the change itself is scanned, and an expression that matches everything is no
+# way to switch the scan off.
+for list in '^fixtures/' '^.*$' '[unclosed'; do
+	git -C "$repo" reset -q --hard "$base"
+	mkdir -p "$repo/fixtures"
+	printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/fixtures/test.pem"
+	printf '%s\n' "$list" > "$repo/.secret-scan-allow"
+	gitc add -A; gitc commit -q -m "fixture with its own list"
+	out="$( (cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1) )"; rc=$?
+	check "a list the change brings itself ($list) is not read: it fails" 1 "$rc"
+	check "and the key is named, not the list" 1 "$(printf '%s' "$out" | grep -c 'fixtures/test.pem:1 private key block')"
+	check "and no complaint about the list is made" 0 "$(printf '%s' "$out" | grep -c 'secret-scan-allow line')"
+done
+
+# An expression on the base that does not compile stops the scan, whatever the change
+# adds: a grep that cannot read its patterns must not be taken for a scan that found
+# nothing. The same list with a valid expression is accepted.
+git -C "$repo" reset -q --hard "$base"
+printf '# why\n[unclosed\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "a list that does not compile"
+broken="$(git -C "$repo" rev-parse HEAD)"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "a credential"
+out="$( (cd "$repo" && "$SCRIPT" "$broken" HEAD 2>&1) )"; rc=$?
+check "an expression that does not compile fails the scan" 1 "$rc"
+check "and it names the line of the list" 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 2 is not a valid regular expression')"
+check "and no clean verdict is given" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+git -C "$repo" reset -q --hard "$broken"
+printf '# why\n^docs/\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "a list that compiles"
+valid="$(git -C "$repo" rev-parse HEAD)"
+printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "a credential"
+out="$( (cd "$repo" && "$SCRIPT" "$valid" HEAD 2>&1) )"; rc=$?
+check "a list that compiles leaves the credential to be found" 1 "$rc"
+check "and it is named as a credential" 1 "$(printf '%s' "$out" | grep -c 'c.txt:1 AWS access key')"
+
+# A grep that fails while it applies a valid list must not empty the set it was
+# filtering: with a grep that refuses to read a pattern file, the scan stops.
+mkdir -p "$WORK/fakebin"
+real_grep="$(command -v grep)"
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = -f ] && exit 2; done\nexec %s "$@"\n' "$real_grep" > "$WORK/fakebin/grep"
+chmod +x "$WORK/fakebin/grep"
+out="$( (cd "$repo" && PATH="$WORK/fakebin:$PATH" "$SCRIPT" "$valid" HEAD 2>&1) )"; rc=$?
+check "a grep that fails on the list stops the scan" 1 "$rc"
+check "and says nothing was scanned" 1 "$(printf '%s' "$out" | grep -c 'could not apply .secret-scan-allow, so nothing was scanned')"
+check "and gives no clean verdict" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+
+# A range that cannot be taken is a failure, not a clean scan.
+out="$( (cd "$repo" && "$SCRIPT" 0000000000000000000000000000000000000000 HEAD 2>&1) )"; rc=$?
+check "an unreadable range fails" 1 "$rc"
+check "and says nothing was scanned" 1 "$(printf '%s' "$out" | grep -c 'so nothing was scanned')"
+check "and gives no clean verdict" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
 
 "$SCRIPT" >/dev/null 2>&1; check "no arguments fails" 1 "$?"
 

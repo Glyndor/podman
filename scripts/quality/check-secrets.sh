@@ -14,7 +14,9 @@
 # carries the word secret-scan:allow is skipped, for a value that is public on
 # purpose; say why next to it. A file cannot carry a comment, so a repository that
 # keeps throwaway test keys lists the paths in .secret-scan-allow at its root, one
-# regular expression per line, each with a comment saying why.
+# regular expression per line, each with a comment saying why. The list counts
+# once it is on the base branch: a change cannot add its own exceptions, and an
+# expression that does not compile fails the scan.
 #
 # This is a filter for the mistake, not a vault: GitHub's push protection and
 # secret scanning remain the other half.
@@ -27,17 +29,39 @@ base="${1:?base}"; head="${2:?head}"
 
 # One "file:line:text" per added line. awk only parses the diff; the matching is
 # grep, whose interval expressions behave the same on every runner (mawk, which
-# some images ship as awk, does not always honour them).
-added="$(git diff --no-color -U0 --no-renames "$base...$head" | awk '
+# some images ship as awk, does not always honour them). A diff that cannot be
+# taken stops the scan: reading nothing must never read as finding nothing.
+patch="$(git diff --no-color -U0 --no-renames "$base...$head")" || { echo "::error::could not take the diff $base...$head, so nothing was scanned" >&2; exit 1; }
+added="$(printf '%s\n' "$patch" | awk '
 	/^\+\+\+ / { file = substr($0, 7); sub(/^b\//, "", file); next }
 	/^@@/        { split($3, a, ","); line = substr(a[1], 2) + 0; next }
 	/^\+/        { print file ":" line ":" substr($0, 2); line++ }
 ' | grep -v 'secret-scan:allow' || true)"
 
-# Paths the repository declares as holding throwaway keys on purpose.
-allow="$(git show "$head:.secret-scan-allow" 2>/dev/null | grep -vE '^[[:space:]]*(#|$)' || true)"
-if [ -n "$allow" ] && [ -n "$added" ]; then
-	added="$(printf '%s\n' "$added" | grep -vE -f <(printf '%s\n' "$allow" | sed 's/^/^(/; s/$/)/') || true)"
+# Paths the repository declares as holding throwaway keys on purpose. The list is
+# read from <base>, the branch the change lands on, never from <head>: a change
+# that carries its own list would be the one deciding what the scan may skip, and
+# an expression that matches every line would switch the scan off. Every
+# expression is compiled before it is used, because a grep that cannot compile
+# one reads nothing and would leave the scan with nothing to report.
+allowed=()
+list_at="$base:.secret-scan-allow"
+if git cat-file -e "$list_at" 2>/dev/null; then
+	list="$(git show "$list_at")" # set -e: a list that exists and cannot be read stops the scan
+	n=0
+	while IFS= read -r expr || [ -n "$expr" ]; do
+		n=$((n + 1))
+		[[ "$expr" =~ ^[[:space:]]*(#|$) ]] && continue
+		rc=0; printf '' | grep -qE -e "^($expr)" 2>/dev/null || rc=$?
+		[ "$rc" -le 1 ] || { echo "::error::.secret-scan-allow line $n is not a valid regular expression" >&2; exit 1; }
+		allowed+=("^($expr)")
+	done <<< "$list"
+fi
+if [ "${#allowed[@]}" -gt 0 ] && [ -n "$added" ]; then
+	rc=0
+	kept="$(printf '%s\n' "$added" | grep -vE -f <(printf '%s\n' "${allowed[@]}"))" || rc=$?
+	[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow, so nothing was scanned" >&2; exit 1; }
+	added="$kept"
 fi
 
 [ -n "$added" ] || { echo "no credential-shaped lines added"; exit 0; }
