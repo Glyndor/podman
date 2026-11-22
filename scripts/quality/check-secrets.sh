@@ -46,7 +46,11 @@ trap 'rm -f "$names" "$allowfile" "$patchfile" "$baseblobs"' EXIT
 # an expression that matches every line would switch the scan off. Every
 # expression is compiled before it is used, because a grep that cannot compile
 # one reads nothing and would leave the scan with nothing to report. An expression
-# is matched against the path of a file and nothing else.
+# is matched against the path of a file and nothing else, and one that matches any
+# path at all stops the scan.
+# A path no repository has: an expression that matches it matches everything (".*", "a|",
+# an empty group), and is refused, because it would exempt every file.
+canary="zz-canary-9f3a/zz-canary-9f3a"
 list_at="$base:.secret-scan-allow"
 if git cat-file -e "$list_at" 2>/dev/null; then
 	list="$(git show "$list_at")" # set -e: a list that exists and cannot be read stops the scan
@@ -54,8 +58,9 @@ if git cat-file -e "$list_at" 2>/dev/null; then
 	while IFS= read -r expr || [ -n "$expr" ]; do
 		n=$((n + 1))
 		[[ "$expr" =~ ^[[:space:]]*(#|$) ]] && continue
-		rc=0; printf '' | grep -qE -e "^($expr)" 2>/dev/null || rc=$?
+		rc=0; grep -qE -e "^($expr)" 2>/dev/null <<< "$canary" || rc=$?
 		[ "$rc" -le 1 ] || { echo "::error::.secret-scan-allow line $n is not a valid regular expression" >&2; exit 1; }
+		[ "$rc" -ne 0 ] || { echo "::error::.secret-scan-allow line $n matches every path, which would switch the scan off" >&2; exit 1; }
 		printf '%s\n' "^($expr)" >> "$allowfile"
 	done <<< "$list"
 fi

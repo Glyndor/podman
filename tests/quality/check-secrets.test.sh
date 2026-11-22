@@ -305,6 +305,25 @@ out="$( (cd "$repo" && "$SCRIPT" "$broken" HEAD 2>&1) )"; rc=$?
 check "an expression that does not compile fails the scan" 1 "$rc"
 check "and it names the line of the list" 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 2 is not a valid regular expression')"
 check "and no clean verdict is given" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+# An expression that matches every path would exempt every file: the scan stops, naming
+# the line, for each way of writing one. The expression a repository really uses passes.
+for everything in '.*' 'a|' '(|x)' '.*/.*'; do
+	git -C "$repo" reset -q --hard "$base"
+	printf '# why\n^tests/keys/\n%s\n' "$everything" > "$repo/.secret-scan-allow"
+	gitc add -A; gitc commit -q -m "a list that matches every path"
+	broad="$(git -C "$repo" rev-parse HEAD)"
+	printf 'AWS_KEY=AKI%s\n' "A$(rep Q 16)" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "a credential"
+	out="$( (cd "$repo" && "$SCRIPT" "$broad" HEAD 2>&1) )"; rc=$?
+	check "the expression '$everything' stops the scan" 1 "$rc"
+	check "and the message names its line and why" 1 "$(printf '%s' "$out" | grep -c '::error::.secret-scan-allow line 3 matches every path, which would switch the scan off')"
+done
+git -C "$repo" reset -q --hard "$base"
+printf '# why\n^tests/keys/\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "a list of one path"
+narrow="$(git -C "$repo" rev-parse HEAD)"
+mkdir -p "$repo/tests/keys"; printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/tests/keys/test.pem"; gitc add -A; gitc commit -q -m "a listed file"
+out="$( (cd "$repo" && "$SCRIPT" "$narrow" HEAD 2>&1) )"; rc=$?
+check "the expression a repository really uses passes, and its file is skipped" "0 1" "$rc $(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
 git -C "$repo" reset -q --hard "$broken"
 printf '# why\n^docs/\n' > "$repo/.secret-scan-allow"
 gitc add -A; gitc commit -q -m "a list that compiles"
