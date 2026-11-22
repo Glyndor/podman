@@ -9,10 +9,12 @@
 # profile of pasta has to admit a signal from that peer, or the kernel answers
 #   apparmor="DENIED" operation="signal" profile="pasta" comm="podman" signal=term peer="podman"
 # and Podman reports 500 "rootless netns: kill network process: permission denied" to
-# the caller of POST /containers/<id>/stop. The command line hides it, because the
-# cleanup that fails runs in another process and `podman stop` exits 0.
+# the caller of POST /containers/<id>/stop. `podman stop` on the command line reaches the
+# same code and fails the same way (status 125, "removing container <id> network: ...").
 #
-# So the stop goes through the API, on a socket of its own inside the work directory.
+# The stop goes through the API, on a socket of its own inside the work directory,
+# because that is what the clients of libpod call and because the HTTP code is a verdict
+# that needs no parsing: 204 or not.
 # Only the last container of the network shows it: with another one alive the namespace
 # stays up and nothing is signalled, so this refuses to run next to other containers or
 # another pasta of the same user. A run that cannot reach the code it checks would pass
