@@ -45,6 +45,18 @@ if step keyring-watch.yml compare "name=Commit the update to a branch" "$C"; the
 		"kept.asc:100644 link.asc:120000 new.asc:100644" \
 		"$(g ls-tree -r HEAD keyring/podman | awk '{sub("keyring/podman/", "", $4); print $4 ":" $1}' | paste -sd' ')"
 	check "and nothing the link points to is in the commit" 0 "$(g grep -c 'a credential' HEAD -- keyring | wc -l)"
+	# With nothing to commit the step has nothing to do and fails, so on the days the keys
+	# do not differ, which is every day but a few, only its condition keeps the job green.
+	rm -rf "$C/same"; mkdir -p "$C/same/keyring/podman" "$C/same/rt/release-keys/podman"
+	echo kept > "$C/same/keyring/podman/kept.asc"; echo kept > "$C/same/rt/release-keys/podman/kept.asc"
+	S="$C/same"; g2() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$S" "$@"; }
+	g2 init -q; g2 add -A; g2 -c user.name=t -c user.email=t@example.invalid -c commit.gpgSign=false commit -q -m base
+	printf 'no difference\n' > "$S/rt/diff.txt"; : > "$C/out2"
+	run_step "$C" "$S" RUNNER_TEMP="$S/rt" GITHUB_OUTPUT="$C/out2" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 LC_ALL=C
+	check "the same keys leave the step with nothing to commit, and it fails" "1 1 0" \
+		"$([ "$rc" -ne 0 ] && echo 1 || echo 0) $(says 'nothing') $(grep -c '^branch=' "$C/out2")"
+	check "so it runs only when the comparison said the keys differ" "steps.diff.outputs.differs == 'true'" \
+		"$(gate keyring-watch.yml compare if 'Commit the update to a branch')"
 	check "the commit is signed off" 1 "$(g log -1 --format=%B | grep -c '^Signed-off-by: github-actions\[bot\] ')"
 else
 	fail=$((fail + 1)); echo "FAIL  keyring-watch.yml: cannot find the copy step"
