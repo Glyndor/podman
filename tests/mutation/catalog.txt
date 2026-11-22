@@ -421,3 +421,4 @@ rootless-stop-test-apparmor-off-is-fine	scripts/verify/rootless-stop-test.sh	[ "
 rootless-stop-test-any-service-profile-is-fine	scripts/verify/rootless-stop-test.sh	podman | "podman ("*) echo	*) echo	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-a-profile-starting-with-podman-is-fine	scripts/verify/rootless-stop-test.sh	podman | "podman ("*)	podman*)	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-an-unconfined-service-is-fine	scripts/verify/rootless-stop-test.sh	*) echo "podman system service runs under the AppArmor profile '$profile', not under podman, so on this machine the signal to pasta never comes from the peer the rule admits and the stop proves nothing" >&2; exit 2 ;;	*) ;;	tests/verify/rootless-stop-test.test.sh
+build-deb-no-passt-apparmor-directory	scripts/build/build-deb.sh	echo "passt has no contrib/apparmor directory, so the package would ship no AppArmor profiles" >&2; exit 1	true	tests/build/build-deb.test.sh

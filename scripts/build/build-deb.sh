@@ -163,6 +163,10 @@ if [ -d "$passt_src/contrib/apparmor" ]; then
 	# the distribution's abi and abstractions with the package's own on top.
 	apparmor_parser -Q -K -b /etc/apparmor.d -I "$stage/etc/apparmor.d" "$pasta_profile" >/dev/null \
 		|| { echo "the pasta profile with the signal rule does not compile" >&2; exit 1; }
+else
+	# A passt tree that moved or dropped the folder would give a package with no AppArmor
+	# profile for pasta and no rule, and nothing would say so.
+	echo "passt has no contrib/apparmor directory, so the package would ship no AppArmor profiles" >&2; exit 1
 fi
 
 # Every ELF in the package, listed once. The checks below read binaries, and an executable

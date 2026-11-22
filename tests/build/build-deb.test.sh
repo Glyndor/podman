@@ -342,6 +342,17 @@ restore; FAKE_AA_FAILS=1 refused "$WORK/out-no-compile"
 check "a profile apparmor_parser cannot compile: refused, and named" "1 1" "$rc $(printf '%s' "$err" | grep -c 'with the signal rule does not compile')"
 no_package "$WORK/out-no-compile"
 
+# A passt tree that has no contrib/apparmor at all, as when upstream moves the folder: the same
+# build is accepted a moment before, and the package would otherwise ship without profiles.
+restore
+mv "$WORK/passt/contrib/apparmor" "$WORK/passt/contrib/apparmor.away"
+refused "$WORK/out-no-apparmor-dir"
+check "a passt tree with no contrib/apparmor: refused, and named" "1 1" \
+	"$rc $(printf '%s' "$err" | grep -c 'passt has no contrib/apparmor directory')"
+no_package "$WORK/out-no-apparmor-dir"
+mv "$WORK/passt/contrib/apparmor.away" "$WORK/passt/contrib/apparmor"
+restore
+
 # No apparmor_parser on the PATH at all, which is an image that does not have the package. The
 # directory of every tool the build needs is kept; only the ones that hold the parser are left out.
 restore
