@@ -287,3 +287,7 @@ reusable-workflow-lint-forgets-npm-i-g	.github/workflows/reusable-workflow-lint.
 reusable-workflow-lint-forgets-pip-install	.github/workflows/reusable-workflow-lint.yml	("pip install",     "--require-hashes"),	("pip-install",     "--require-hashes"),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-workflow-lint-pip-exception-widened	.github/workflows/reusable-workflow-lint.yml	("pip install",     "--require-hashes"),	("pip install",     "pip"),	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-workflow-lint-exception-always-applies	.github/workflows/reusable-workflow-lint.yml	except_marker and except_marker in line	True	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+reusable-build-the-package-is-never-uploaded	.github/workflows/reusable-build.yml	- if: ${{ inputs.upload }}	- if: ${{ false }}	tests/workflows/build/reusable-build-upload-gate.test.sh
+reusable-build-the-pull-request-check-always-uploads	.github/workflows/reusable-build.yml	- if: ${{ inputs.upload }}	- if: ${{ true }}	tests/workflows/build/reusable-build-upload-gate.test.sh
+release-build-does-not-ask-for-the-artifact	.github/workflows/release.yml	upload: true	upload: false	tests/workflows/build/reusable-build-upload-gate.test.sh
+build-check-uploads-the-package	.github/workflows/build-check.yml	upload: false	upload: true	tests/workflows/build/reusable-build-upload-gate.test.sh
