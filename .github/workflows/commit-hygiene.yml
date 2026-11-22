@@ -49,11 +49,11 @@ jobs:
           # checkout is the pull request's own tree, and a change that rewrote the
           # check would be the one deciding whether it passes. The copy of the tree
           # is used only when the base has none, the commit that introduces it.
-          tool=scripts/quality/check-commit-identity.sh
-          if git cat-file -e "$BASE:$tool" 2>/dev/null; then
-            git show "$BASE:$tool" > "$RUNNER_TEMP/check-commit-identity.sh"
+          tool=scripts/quality/check-commit-identity
+          if git cat-file -e "$BASE:$tool.sh" 2>/dev/null; then
+            git show "$BASE:$tool.sh" > "$RUNNER_TEMP/check-commit-identity.sh"
           else
-            cp "$tool" "$RUNNER_TEMP/check-commit-identity.sh"
+            cp "$tool.sh" "$RUNNER_TEMP/check-commit-identity.sh"
           fi
           bash "$RUNNER_TEMP/check-commit-identity.sh" "$BASE" "$HEAD"
 
@@ -77,10 +77,10 @@ jobs:
         run: |
           # The scanner is the one on the base branch, for the reason the identity
           # check is: the pull request's tree must not be able to change what judges it.
-          tool=scripts/quality/check-secrets.sh
-          if git cat-file -e "$BASE:$tool" 2>/dev/null; then
-            git show "$BASE:$tool" > "$RUNNER_TEMP/check-secrets.sh"
+          tool=scripts/quality/check-secrets
+          if git cat-file -e "$BASE:$tool.sh" 2>/dev/null; then
+            git show "$BASE:$tool.sh" > "$RUNNER_TEMP/check-secrets.sh"
           else
-            cp "$tool" "$RUNNER_TEMP/check-secrets.sh"
+            cp "$tool.sh" "$RUNNER_TEMP/check-secrets.sh"
           fi
           bash "$RUNNER_TEMP/check-secrets.sh" "$BASE" "$HEAD"
