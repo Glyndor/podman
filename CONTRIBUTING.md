@@ -82,9 +82,9 @@ other folders of `tests/` are named for what they test: `tests/workflows` reads
 holds the documents that make a claim about the repository, and `tests/lib` holds
 helpers that suites source. `tests.yml` runs every `*.test.sh` under `tests/` at any depth. The scripts that install the package
 (`scripts/verify/smoke-test.sh` and `scripts/verify/refuse-test.sh` as root inside a container of a given release,
-`scripts/verify/rootless-test.sh` on the runner) are tested here as far as stand-ins reach: their argument contract,
-the checks `smoke-test.sh` hands to `scripts/verify/package-state.sh`, and the body of `rootless-test.sh` against a
-faked machine. Their real run is in `reusable-build.yml`, which `release.yml` runs before anything is signed and
+`scripts/verify/rootless-test.sh` and `scripts/verify/rootless-stop-test.sh` on the runner) are tested here as far as stand-ins reach: their argument contract,
+the checks `smoke-test.sh` hands to `scripts/verify/package-state.sh`, and the body of the two rootless scripts against a
+faked machine. What no stand-in shows is the kernel, such as AppArmor refusing a signal; that is only seen on the runner. Their real run is in `reusable-build.yml`, which `release.yml` runs before anything is signed and
 `build-check.yml` runs on a pull request that changes how the package is built.
 
 One suite needs a library the distributions do not carry: `tests/release/release-signing-mldsa.test.sh`
@@ -117,7 +117,7 @@ reason it names. Assert which failure fired, never that some failure did.
 | `reusable-dco.yml`, `reusable-line-limit.yml`, `reusable-workflow-lint.yml` | the rule behind each of the three above, which only call them. They live in this repository and are edited here, so a fix made to the organisation's workflow of the same name does not arrive by itself |
 | `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential. A repository that keeps throwaway test keys lists their paths in `.secret-scan-allow` on the base branch: one literal path per line, relative to the root, with a trailing `/` for a whole directory, and no wildcards or regular expressions (a line that has one fails the scan, naming it) |
 | `release.yml` | the scheduled plan, build, smoke test, signing and publish; also runs when `scripts/build`, `keyring`, `release.yml` or `reusable-build.yml` changes, and only publishes from `main`; opens an issue when a scheduled or push run fails |
-| `reusable-build.yml` | the build, the smoke test on Debian 13 and Ubuntu 24.04 and 26.04, the check that Ubuntu 22.04 refuses the package, and a rootless container on the runner itself, for one architecture; called by `release.yml` and `build-check.yml` |
+| `reusable-build.yml` | the build, the smoke test on Debian 13 and Ubuntu 24.04 and 26.04, the check that Ubuntu 22.04 refuses the package, a rootless container on the runner itself, and the stop of the last container of a rootless bridge network through the API, for one architecture; called by `release.yml` and `build-check.yml` |
 | `build-check.yml` | `package builds`: a pull request that touches `scripts/build/`, `scripts/verify/`, `scripts/upstream/`, `keyring/podman/`, the build workflows or `scripts/ci/decide-build.sh` compiles the package on both architectures; any other pull request skips the build and passes |
 | `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it; also fails when `keyring-watch.yml` has not finished a scheduled run in two days, or `mutation.yml` in nine, and opens an issue for each |
 | `mutation.yml` | `every catalogued guard is noticed`: each entry of `tests/mutation/catalog.txt` breaks one refusal of a script or workflow, and a suite it names has to go red. Weekly and on demand every entry; on a pull request only the entries the change can affect, decided from the base commit |
