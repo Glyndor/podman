@@ -209,7 +209,22 @@ dependabot-automerge-files-unreadable	.github/workflows/dependabot-automerge.yml
 dependabot-automerge-rebase-list-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not list the open pull requests"; exit 1; }	|| true	tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh
 dependabot-automerge-files-unknown-answer	.github/workflows/dependabot-automerge.yml	*) echo "::error::unexpected answer reading the files: '$signing'"; exit 1 ;;	*) ;;	tests/workflows/dependabot/dependabot-automerge.test.sh
 dependabot-automerge-disarm-unreadable	.github/workflows/dependabot-automerge.yml	|| { echo "::error::could not read the pull request"; exit 1; }	|| true	tests/workflows/dependabot/dependabot-automerge.test.sh
-keyring-watch-no-podman-directory	.github/workflows/keyring-watch.yml	[ -d "$dir" ] || { echo "::error::upstream has no podman/ directory"; exit 1; }	[ -d "$dir" ] || true	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-no-podman-directory	.github/workflows/keyring-watch.yml	[ -d "$dir" ] || { refuse "upstream has no podman/ directory"; exit 1; }	[ -d "$dir" ] || true	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-alarm-forgets-the-keys-that-were-refused	.github/workflows/keyring-watch.yml	 || steps.validate.outcome == 'failure')	)	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-is-skipped-after-a-failed-step	.github/workflows/keyring-watch.yml	if: always() && (steps.diff	if: (steps.diff	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-the-check-of-the-keys-has-no-id-to-read	.github/workflows/keyring-watch.yml	id: validate	id: validated	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-alarm-does-not-tell-a-refused-check-from-a-change	.github/workflows/keyring-watch.yml	if [ "$VALIDATE" = "failure" ]; then	if false; then	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-alarm-without-a-list-of-what-was-refused	.github/workflows/keyring-watch.yml	if [ -s "$RUNNER_TEMP/problems.txt" ]; then cat "$RUNNER_TEMP/problems.txt"; else echo "- the log of the run says what"; fi	cat "$RUNNER_TEMP/problems.txt"	tests/workflows/keyring/keyring-watch-alarm.test.sh
+keyring-watch-a-refusal-is-not-kept-for-the-issue	.github/workflows/keyring-watch.yml	printf -- '- %s\n' "$1" >> "$problems"	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-refusal-does-not-count	.github/workflows/keyring-watch.yml	>> "$problems"; bad=1; }	>> "$problems"; }	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-the-list-of-refusals-starts-empty	.github/workflows/keyring-watch.yml	: > "$problems"	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-name-from-upstream-is-printed-as-it-is	.github/workflows/keyring-watch.yml	| tr -c 'A-Za-z0-9._-' '?')"	| cat)"	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-link-is-accepted	.github/workflows/keyring-watch.yml	if [ -L "$f" ] || [ ! -f "$f" ]; then refuse "$name is not a plain file"; continue; fi	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-file-that-is-not-asc-is-accepted	.github/workflows/keyring-watch.yml	case "$f" in *.asc) ;; *) refuse "$name is not a .asc file"; continue ;; esac	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-large-file-is-accepted	.github/workflows/keyring-watch.yml	[ "$(stat -c %s "$f")" -le 200000 ] || { refuse "$name is larger than a key should be"; continue; }	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-file-that-is-not-a-key-block-is-accepted	.github/workflows/keyring-watch.yml	[ "$(head -n 1 "$f")" = "-----BEGIN PGP PUBLIC KEY BLOCK-----" ] || { refuse "$name is not a public key block"; continue; }	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-a-private-key-is-accepted	.github/workflows/keyring-watch.yml	! grep -q "PRIVATE" "$f" || refuse "$name mentions a private key"	:	tests/workflows/policy/workflows-contract.test.sh
+keyring-watch-the-refusals-do-not-fail-the-step	.github/workflows/keyring-watch.yml	[ "$bad" -eq 0 ]	true	tests/workflows/policy/workflows-contract.test.sh
 keyring-watch-comparison-failed	.github/workflows/keyring-watch.yml	[ "$rc" -le 1 ] || { echo "::error::could not compare the keyrings"; exit 1; }	[ "$rc" -le 1 ] || true	tests/workflows/keyring/keyring-watch-copy.test.sh
 keyring-watch-health-run-is-red-beside-the-issue	.github/workflows/keyring-watch.yml	echo "::error::$title"; exit 1	echo "::error::$title"	tests/workflows/keyring/keyring-watch-health.test.sh
 mutation-gate-decide-did-not-succeed	.github/workflows/mutation.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/mutation/mutation-workflow.test.sh

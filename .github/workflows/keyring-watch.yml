@@ -50,17 +50,26 @@ jobs:
       # (a symlink would make the copy read something else on this runner, such as
       # a file that holds a credential), small, and public key blocks.
       - name: Refuse anything that is not a plain public key
+        id: validate
         run: |
           dir="$RUNNER_TEMP/release-keys/podman"
-          [ -d "$dir" ] || { echo "::error::upstream has no podman/ directory"; exit 1; }
+          problems="$RUNNER_TEMP/problems.txt"
+          : > "$problems"
           bad=0
+          # A problem goes to this log and to a file the alarm step reads when this one
+          # fails: the update is not prepared, and the issue says why. The name of a file
+          # comes from upstream, so only plain characters of it are kept; it cannot carry
+          # markup or a mention into the issue.
+          refuse() { echo "::error::$1"; printf -- '- %s\n' "$1" >> "$problems"; bad=1; }
+          [ -d "$dir" ] || { refuse "upstream has no podman/ directory"; exit 1; }
           for f in "$dir"/* ; do
             [ -e "$f" ] || [ -L "$f" ] || continue
-            if [ -L "$f" ] || [ ! -f "$f" ]; then echo "::error::$(basename "$f") is not a plain file"; bad=1; continue; fi
-            case "$f" in *.asc) ;; *) echo "::error::$(basename "$f") is not a .asc file"; bad=1; continue ;; esac
-            [ "$(stat -c %s "$f")" -le 200000 ] || { echo "::error::$(basename "$f") is larger than a key should be"; bad=1; continue; }
-            [ "$(head -n 1 "$f")" = "-----BEGIN PGP PUBLIC KEY BLOCK-----" ] || { echo "::error::$(basename "$f") is not a public key block"; bad=1; continue; }
-            ! grep -q "PRIVATE" "$f" || { echo "::error::$(basename "$f") mentions a private key"; bad=1; }
+            name="$(printf '%s' "${f##*/}" | tr -c 'A-Za-z0-9._-' '?')"
+            if [ -L "$f" ] || [ ! -f "$f" ]; then refuse "$name is not a plain file"; continue; fi
+            case "$f" in *.asc) ;; *) refuse "$name is not a .asc file"; continue ;; esac
+            [ "$(stat -c %s "$f")" -le 200000 ] || { refuse "$name is larger than a key should be"; continue; }
+            [ "$(head -n 1 "$f")" = "-----BEGIN PGP PUBLIC KEY BLOCK-----" ] || { refuse "$name is not a public key block"; continue; }
+            ! grep -q "PRIVATE" "$f" || refuse "$name mentions a private key"
           done
           [ "$bad" -eq 0 ]
 
@@ -98,14 +107,33 @@ jobs:
 
       # The issue is the alarm, so this runs even when the commit step failed: a
       # failed step skips every later one unless it says otherwise, and the change
-      # of keys would then leave no branch, no issue and nothing else.
+      # of keys would then leave no branch, no issue and nothing else. It runs too
+      # when the check of what upstream publishes failed, which is the case that
+      # check exists for: the comparison never ran, so there is no answer about a
+      # difference, and without this the run would be red and nothing else would say so.
       - name: Push the branch and open an issue
-        if: always() && steps.diff.outputs.differs == 'true'
+        if: always() && (steps.diff.outputs.differs == 'true' || steps.validate.outcome == 'failure')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ steps.commit.outputs.branch }}
+          VALIDATE: ${{ steps.validate.outcome }}
+          RUN_ID: ${{ github.run_id }}
         run: |
+          if [ "$VALIDATE" = "failure" ]; then
+            title="The keys upstream publishes could not be accepted"
+            if [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
+              {
+                echo "The check of what containers/release-keys/podman holds refused it, so no update was prepared:"
+                echo
+                if [ -s "$RUNNER_TEMP/problems.txt" ]; then cat "$RUNNER_TEMP/problems.txt"; else echo "- the log of the run says what"; fi
+                echo
+                echo "The copy in keyring/podman stays as it is, and it may no longer match upstream: a release signed by a key that is not here is refused. The run: https://github.com/$GH_REPO/actions/runs/$RUN_ID"
+              } > "$RUNNER_TEMP/body.txt"
+              gh issue create --title "$title" --label type:security --label prio:P1 --label area:upstream --body-file "$RUNNER_TEMP/body.txt"
+            fi
+            exit 0
+          fi
           title="Upstream changed the keys that sign Podman"
           if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')" ]; then
             echo "an issue for this is already open"; exit 0

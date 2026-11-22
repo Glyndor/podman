@@ -61,6 +61,7 @@ fi
 K="$WORK/keys"
 if step keyring-watch.yml compare "name=Refuse anything that is not a plain public key" "$K"; then
 	check "the key check's run block has no expression in it" 0 "$(grep -c '\${{' "$K/run.sh")"
+	check "the key check has the id the alarm reads its outcome by" "validate" "$(gate keyring-watch.yml compare id 'Refuse anything that is not a plain public key')"
 	block='-----BEGIN PGP PUBLIC KEY BLOCK-----'
 	upstream() { # <name> <how>: an upstream with one good key and one file made <how>
 		rm -rf "$K/rt"; mkdir -p "$K/rt/release-keys/podman" "$K/elsewhere"
@@ -76,13 +77,17 @@ if step keyring-watch.yml compare "name=Refuse anything that is not a plain publ
 		run_step "$K" "$K" RUNNER_TEMP="$K/rt"
 	}
 	upstream second.asc good
-	check "two plain public keys pass" 0 "$rc"
+	check "two plain public keys pass" "0 0" "$rc $(grep -c . "$K/rt/problems.txt")"
 	upstream link.asc symlink
 	check "a symlink to a valid key is refused" "1 1" "$rc $(says 'link.asc is not a plain file')"
+	check "and kept for the issue, which says the same" "- link.asc is not a plain file" "$(cat "$K/rt/problems.txt")"
 	upstream key.txt good
 	check "a valid key in a file that is not .asc is refused" "1 1" "$rc $(says 'key.txt is not a .asc file')"
 	upstream big.asc large
 	check "a key block larger than a key should be is refused" "1 1" "$rc $(says 'big.asc is larger than a key should be')"
+	upstream 'a`@evil b.txt' good
+	check "a file name from upstream reaches the log and the issue in plain characters only" "1 - a??evil?b.txt is not a .asc file" \
+		"$rc $(cat "$K/rt/problems.txt")"
 	upstream plain.asc not-a-block
 	check "a file that is not a public key block is refused" "1 1" "$rc $(says 'plain.asc is not a public key block')"
 	upstream secret.asc private
@@ -90,6 +95,7 @@ if step keyring-watch.yml compare "name=Refuse anything that is not a plain publ
 	rm -rf "$K/rt"; mkdir -p "$K/rt/release-keys"
 	run_step "$K" "$K" RUNNER_TEMP="$K/rt"
 	check "an upstream with no podman/ directory is refused" "1 1" "$rc $(says 'upstream has no podman/ directory')"
+	check "and kept for the issue" "- upstream has no podman/ directory" "$(cat "$K/rt/problems.txt")"
 else
 	fail=$((fail + 1)); echo "FAIL  keyring-watch.yml: cannot find the key check"
 fi
