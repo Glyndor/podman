@@ -157,6 +157,20 @@ assert_error 1 "scripts/area/sub/leaf.sh" \
 	"a test one folder up does not cover it either" \
 	-- "$GATE" "$WORK/deep"
 
+# A script written in Python is a script: the mutation coverage check reads its
+# refusals, and this gate asks for its test as it does for a shell one.
+mkdir -p "$WORK/py/scripts/area" "$WORK/py/tests/area"
+printf 'import sys\nsys.exit("refuses")\n' > "$WORK/py/scripts/area/helper.py"
+assert_error 1 "scripts/area/helper.py" \
+	"a Python script with no test is named, with its extension" \
+	-- "$GATE" "$WORK/py"
+: > "$WORK/py/tests/area/helper.test.sh"
+assert 0 "and passes once tests/area/helper.test.sh exists" \
+	-- "$GATE" "$WORK/py"
+printf 'not a script\n' > "$WORK/py/scripts/area/notes.txt"
+assert 0 "a file that is neither is not asked for a test" \
+	-- "$GATE" "$WORK/py"
+
 echo
 echo "passed $pass, failed $fail"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

@@ -354,3 +354,6 @@ reusable-build-the-package-is-never-uploaded	.github/workflows/reusable-build.ym
 reusable-build-the-pull-request-check-always-uploads	.github/workflows/reusable-build.yml	- if: ${{ inputs.upload }}	- if: ${{ true }}	tests/workflows/build/reusable-build-upload-gate.test.sh
 release-build-does-not-ask-for-the-artifact	.github/workflows/release.yml	upload: true	upload: false	tests/workflows/build/reusable-build-upload-gate.test.sh
 build-check-uploads-the-package	.github/workflows/build-check.yml	upload: false	upload: true	tests/workflows/build/reusable-build-upload-gate.test.sh
+watchdog-no-verdict-is-said-as-behind	.github/workflows/watchdog.yml	title="The release pipeline's delivery check could not decide"	title="Release pipeline is behind upstream"	tests/workflows/watchdog/watchdog-delivery-lag.test.sh
+check-test-coverage-a-python-script-is-a-script	scripts/quality/check-test-coverage.sh	\( -name '*.sh' -o -name '*.py' \)	-name '*.sh'	tests/quality/check-test-coverage.test.sh
+check-test-coverage-the-test-is-named-after-the-script	scripts/quality/check-test-coverage.sh	[ -f "$root/tests/${rel%.*}.test.sh" ]	[ -f "$root/tests/${rel%.sh}.test.sh" ]	tests/quality/check-test-coverage.test.sh
