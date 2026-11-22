@@ -414,7 +414,7 @@ build-deb-pasta-profile-compiled-without-the-package-abstractions	scripts/build/
 build-deb-signal-rules-of-the-abstractions-not-counted	scripts/build/build-deb.sh	cat "$pasta_profile" "$stage"/etc/apparmor.d/abstractions/*	cat "$pasta_profile"	tests/build/build-deb.test.sh
 build-deb-pasta-include-is-matched-as-a-substring	scripts/build/build-deb.sh	grep -c -x -F -- "$pasta_anchor"	grep -c -F -- "$pasta_anchor"	tests/build/build-deb.test.sh
 build-deb-pasta-include-may-be-repeated	scripts/build/build-deb.sh	"$pasta_profile")" -eq 1 ]	"$pasta_profile")" -ge 1 ]	tests/build/build-deb.test.sh
-build-deb-pasta-signal-rule-may-be-repeated	scripts/build/build-deb.sh	peer=podman')" -eq 1 ]	peer=podman')" -ge 1 ]	tests/build/build-deb.test.sh
+build-deb-pasta-signal-rule-may-be-repeated	scripts/build/build-deb.sh	|$)')" -eq 1 ]	|$)')" -ge 1 ]	tests/build/build-deb.test.sh
 dockerfile-no-apparmor-parser	scripts/build/Dockerfile	protobuf-compiler python3 apparmor \	protobuf-compiler python3 \	tests/build/dockerfile-sources.test.sh
 rootless-stop-test-aa-enabled-not-asked-for	scripts/verify/rootless-stop-test.sh	for tool in podman curl busybox pgrep aa-enabled; do	for tool in podman curl busybox pgrep; do	tests/verify/rootless-stop-test.test.sh
 rootless-stop-test-apparmor-off-is-fine	scripts/verify/rootless-stop-test.sh	[ "$aa" = Yes ] || { echo "AppArmor is not enabled on this machine (aa-enabled says: $aa), so the stop proves nothing about its profiles" >&2; exit 2; }	[ "$aa" = Yes ] || true	tests/verify/rootless-stop-test.test.sh
@@ -423,3 +423,6 @@ rootless-stop-test-a-profile-starting-with-podman-is-fine	scripts/verify/rootles
 rootless-stop-test-an-unconfined-service-is-fine	scripts/verify/rootless-stop-test.sh	*) echo "podman system service runs under the AppArmor profile '$profile', not under podman, so on this machine the signal to pasta never comes from the peer the rule admits and the stop proves nothing" >&2; exit 2 ;;	*) ;;	tests/verify/rootless-stop-test.test.sh
 build-deb-no-passt-apparmor-directory	scripts/build/build-deb.sh	echo "passt has no contrib/apparmor directory, so the package would ship no AppArmor profiles" >&2; exit 1	true	tests/build/build-deb.test.sh
 build-deb-postinst-says-nothing-of-a-profile-that-did-not-load	scripts/build/build-deb.sh	|| echo "podman: the AppArmor profile $p did not load" >&2	|| true	tests/build/build-deb.test.sh
+build-deb-signal-rule-without-a-space-is-not-counted	scripts/build/build-deb.sh	signal([[:space:]]|\()	signal[[:space:]]	tests/build/build-deb.test.sh
+build-deb-signal-rule-with-spaces-around-the-equals-is-not-counted	scripts/build/build-deb.sh	peer[[:space:]]*=[[:space:]]*"?podman	peer=podman	tests/build/build-deb.test.sh
+build-deb-a-peer-that-starts-with-podman-is-counted	scripts/build/build-deb.sh	"?podman"?([[:space:],]|$)	"?podman	tests/build/build-deb.test.sh

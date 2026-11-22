@@ -335,6 +335,18 @@ refused "$WORK/out-upstream-has-it"
 check "a rule for that peer that upstream now ships: refused, and named" "1 1" \
 	"$rc $(printf '%s' "$err" | grep -c 'does not hold exactly one signal rule for peer=podman')"
 no_package "$WORK/out-upstream-has-it"
+for variant in '  signal(receive) peer=podman,' '  signal (receive) peer = podman,' '  signal (receive) peer="podman",' "$(printf '\tsignal\t(send) peer=podman')"; do
+	restore; printf '%s\n' "$variant" >> "$ABS"
+	refused "$WORK/out-upstream-spelling"
+	check "upstream's rule spelled '$(printf '%s' "$variant" | tr '\t' ' ' | sed 's/^ *//')': refused, and named" "1 1" \
+		"$rc $(printf '%s' "$err" | grep -c 'does not hold exactly one signal rule for peer=podman')"
+	no_package "$WORK/out-upstream-spelling"
+	rm -rf "$WORK/out-upstream-spelling"
+done
+restore; echo '  signal (receive) set=(term) peer=podman-other,' >> "$ABS"
+refused "$WORK/out-other-podman"
+check "a peer whose name only starts with podman is not that peer: accepted, and the rule added once" "0 1" \
+	"$rc $(grep -c -x -F -- "$RULE" "$WORK/aa.profile")"
 restore; echo '  signal (receive) set=(term) peer=unconfined,' >> "$ABS"
 refused "$WORK/out-other-peer"
 check "a rule of upstream's for another peer is not in the way: accepted, and the rule added once" "0 1" \

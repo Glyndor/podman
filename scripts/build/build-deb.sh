@@ -155,8 +155,10 @@ if [ -d "$passt_src/contrib/apparmor" ]; then
 		{ print }' "$pasta_profile" > "$work/usr.bin.pasta"
 	install -m 0644 "$work/usr.bin.pasta" "$pasta_profile"
 	# Counted over everything the profile can reach, so a rule of upstream's own is a
-	# second one and stops the build instead of sitting beside ours.
-	[ "$(cat "$pasta_profile" "$stage"/etc/apparmor.d/abstractions/* | grep -c -E '^[[:space:]]*signal[[:space:]].*peer=podman')" -eq 1 ] \
+	# second one and stops the build instead of sitting beside ours. The peer is read as a
+	# token, in any spelling the syntax allows (signal(receive), peer = podman), and a peer
+	# whose name only starts with podman is another peer.
+	[ "$(cat "$pasta_profile" "$stage"/etc/apparmor.d/abstractions/* | grep -c -E '^[[:space:]]*signal([[:space:]]|\().*peer[[:space:]]*=[[:space:]]*"?podman"?([[:space:],]|$)')" -eq 1 ] \
 		|| { echo "the pasta profile does not hold exactly one signal rule for peer=podman after the build added it" >&2; exit 1; }
 	command -v apparmor_parser >/dev/null || { echo "no apparmor_parser to check the pasta profile with" >&2; exit 1; }
 	# -Q does not load anything and -K writes no cache: the profile is only compiled, against
