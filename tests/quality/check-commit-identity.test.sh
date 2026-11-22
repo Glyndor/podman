@@ -98,6 +98,39 @@ git -C "$repo" reset -q --hard "$base"
 commit "$noreply" "$(printf 'x\n\nnote that Signed-off-by: t <%s> is not a trailer when it is not at the start of a line\n' "$personal")"
 run >/dev/null; check "a line that only mentions the key mid-sentence is not read" 0 "$?"
 
+# A merge commit in the range is checked like the rest: its author, its committer, and the
+# trailers of its message. The merge GitHub makes has GitHub's own address as committer and
+# passes. merge <author> <committer> <message>: a side branch merged without fast-forward.
+merge() {
+	git -C "$repo" reset -q --hard "$base"
+	git -C "$repo" checkout -q -b side
+	commit "$noreply" "a side commit"
+	git -C "$repo" checkout -q -
+	GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL="$1" GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL="$2" \
+		git -C "$repo" -c commit.gpgSign=false merge -q --no-ff -m "$3" side
+	git -C "$repo" branch -q -D side
+}
+merge "$noreply" "$noreply" "merge the side branch"
+out="$(run)"; rc=$?
+check "a merge by a noreply author and committer passes" "0 1" "$rc $(printf '%s' "$out" | grep -c 'every commit uses a GitHub noreply address')"
+merge "$noreply" "noreply@github.com" "Merge branch 'main' into side"
+run >/dev/null; check "a merge GitHub made, committed by its own noreply address, passes" 0 "$?"
+merge "$personal" "$noreply" "merge the side branch"
+out="$(run)"; rc=$?
+check "a merge with a personal author fails" 1 "$rc"
+check "and the message names the author" 1 "$(printf '%s' "$out" | grep -c 'the author address')"
+check "and the address is not printed" 0 "$(printf '%s' "$out" | grep -c "$personal")"
+merge "$noreply" "$personal" "merge the side branch"
+out="$(run)"; rc=$?
+check "a merge with a personal committer fails" 1 "$rc"
+check "and the message names the committer of a merge" 1 "$(printf '%s' "$out" | grep -c 'the committer address of a merge')"
+check "and the address is not printed" 0 "$(printf '%s' "$out" | grep -c "$personal")"
+merge "$noreply" "$noreply" "$(printf 'merge\n\nSigned-off-by: t <%s>\n' "$personal")"
+out="$(run)"; rc=$?
+check "a merge with a personal Signed-off-by fails" 1 "$rc"
+check "and the message names the trailer" 1 "$(printf '%s' "$out" | grep -c 'a Signed-off-by address')"
+git -C "$repo" reset -q --hard "$base"
+
 # A range that cannot be listed is a failure, not a clean pass; the same script over
 # a range that can be listed, with nothing in it, still passes.
 out="$( (cd "$repo" && "$SCRIPT" 0000000000000000000000000000000000000000 HEAD 2>&1) )"; rc=$?

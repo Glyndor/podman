@@ -3,7 +3,8 @@
 # Refuse a pull request whose commits carry a personal email address.
 #
 # Every commit in <base>..<head> is checked for three things: the author address,
-# every Signed-off-by, and every Co-authored-by, wherever in the message they are. Each has to be a GitHub noreply
+# every Signed-off-by, and every Co-authored-by, wherever in the message they are. A
+# merge commit is checked too, and its committer as well. Each has to be a GitHub noreply
 # address (or GitHub's own noreply@github.com and support@github.com, the latter
 # used by older Dependabot commits). A trailer is checked for every address it
 # carries, and one with none is refused. Addresses are never printed: they
@@ -13,7 +14,8 @@
 # signed off with a personal address. The dco check only asks for "a name and an
 # address", so it passed every one of them, and history cannot be taken back.
 #
-# Merge commits are skipped; the ones GitHub writes carry its own identity.
+# A merge that GitHub writes carries GitHub's own noreply address as committer, which
+# is allowed.
 #
 # Usage: check-commit-identity.sh <base> <head>
 
@@ -25,8 +27,9 @@ allowed='^([0-9]+\+)?[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?@users\.noreply\.github\.
 
 # The range is listed first, and on its own: inside `done < <(...)` the status of
 # git rev-list is dropped, the loop does not run and the script would say every
-# commit was fine over a range it never read.
-commits="$(git rev-list --no-merges "$base..$head")" || { echo "::error::could not list $base..$head; the range could not be checked" >&2; exit 1; }
+# commit was fine over a range it never read. Merge commits are in it: in a pull
+# request their author writes them, and what is in them is as public as the rest.
+commits="$(git rev-list "$base..$head")" || { echo "::error::could not list $base..$head; the range could not be checked" >&2; exit 1; }
 
 bad=0
 flag() { # <sha> <what>
@@ -38,6 +41,14 @@ while IFS= read -r sha; do
 	[ -n "$sha" ] || continue
 	author="$(git show -s --format='%ae' "$sha")"
 	printf '%s\n' "$author" | grep -qE "$allowed" || flag "$sha" "the author address"
+
+	# A merge has a committer worth reading: one GitHub makes carries GitHub's own
+	# address, and one made on a machine carries whatever that machine is set to.
+	parents="$(git show -s --format='%P' "$sha")"
+	if [ "${parents#* }" != "$parents" ]; then
+		committer="$(git show -s --format='%ce' "$sha")"
+		printf '%s\n' "$committer" | grep -qE "$allowed" || flag "$sha" "the committer address of a merge"
+	fi
 
 	# Every line of the whole message that starts like one of the two trailers, in any
 	# paragraph: %(trailers) reads only the last one, and a line above it counts for

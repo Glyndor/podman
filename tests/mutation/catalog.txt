@@ -278,3 +278,5 @@ check-secrets-a-file-the-base-already-holds-is-scanned-again	scripts/quality/che
 check-secrets-an-expression-that-matches-every-path	scripts/quality/check-secrets.sh	[ "$rc" -ne 0 ] || { echo "::error::.secret-scan-allow line $n matches every path, which would switch the scan off" >&2; exit 1; }	true	tests/quality/check-secrets.test.sh
 check-commit-identity-reads-only-the-last-paragraph	scripts/quality/check-commit-identity.sh	body="$(git show -s --format='%B' "$sha")"	body="$(git show -s --format='%(trailers)' "$sha")"	tests/quality/check-commit-identity.test.sh
 check-commit-identity-reads-the-keys-in-one-case	scripts/quality/check-commit-identity.sh	grep -iE '^(Signed-off-by|Co-authored-by):'	grep -E '^(Signed-off-by|Co-authored-by):'	tests/quality/check-commit-identity.test.sh
+check-commit-identity-merges-are-skipped	scripts/quality/check-commit-identity.sh	git rev-list "$base..$head"	git rev-list --no-merges "$base..$head"	tests/quality/check-commit-identity.test.sh
+check-commit-identity-the-committer-of-a-merge	scripts/quality/check-commit-identity.sh	flag "$sha" "the committer address of a merge"	true	tests/quality/check-commit-identity.test.sh
