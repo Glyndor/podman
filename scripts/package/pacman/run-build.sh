@@ -19,7 +19,7 @@ out="${2:?output dir}"
 src="${GLYNDOR_SRC:-/src}"
 scripts="${GLYNDOR_SCRIPTS:-/scripts}"
 
-pacman -Syu --noconfirm --needed base-devel git go rust protobuf libseccomp systemd gettext binutils file python containers-common \
+pacman -Syu --noconfirm --needed base-devel git go rust protobuf libseccomp systemd gettext binutils file python man-db perl gawk sed grep containers-common \
 	|| { echo "the repositories of Arch lack a package the build requires" >&2; exit 1; }
 # btrfs headers are optional: the build takes the btrfs tag only when they are there.
 pacman -S --noconfirm --needed btrfs-progs || echo "no btrfs-progs here: the build goes without btrfs" >&2

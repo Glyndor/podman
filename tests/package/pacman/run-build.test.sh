@@ -41,7 +41,7 @@ says() { printf '%s\n' "$out" | grep -c -F -- "$1"; }
 
 run 6.2.0+r12 "$WORK/out"
 check "a build succeeds" 0 "$rc"
-check "the system and the build dependencies are installed first, containers-common among them" 1 "$(grep -c '^pacman -Syu --noconfirm --needed base-devel git go rust protobuf libseccomp systemd gettext binutils file python containers-common' "$CALLS")"
+check "the system and the build dependencies are installed first, containers-common among them" 1 "$(grep -c '^pacman -Syu --noconfirm --needed base-devel git go rust protobuf libseccomp systemd gettext binutils file python man-db perl gawk sed grep containers-common' "$CALLS")"
 check "then what requires podman is checked, then the payload is built, then the packages" "require-tools|check-replacement|build-payload|build-pacman" \
 	"$(grep -v '^pacman' "$CALLS" | sed 's|^package/pacman/||; s|^package/||; s|\.sh .*||' | paste -sd'|')"
 check "the payload is built from the three trees for Arch, with the list Arch ships" \
