@@ -25,3 +25,5 @@ grep
 sed
 awk
 rpm rpm
+pacman pacman
+repo-add pacman

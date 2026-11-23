@@ -33,6 +33,10 @@ image="${5:?image to run, by digest}"
 case "$mode" in clean | upgrade) ;; *) echo "mode is clean or upgrade, not $mode" >&2; exit 2 ;; esac
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+r[0-9]+$ ]] || { echo "bad version, expected X.Y.Z+rR: $version" >&2; exit 2; }
 
+# What this script runs on the machine has to be there before anything is installed on it: a program that is
+# missing otherwise shows up minutes in, as the failure of the one check that needed it.
+bash "$scripts/package/require-tools.sh" pacman "$here/test-tools.txt" || exit 1
+
 # shellcheck source=engine-files.sh
 . "$here/engine-files.sh"
 failed=()
