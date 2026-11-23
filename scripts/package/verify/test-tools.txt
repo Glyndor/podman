@@ -1,0 +1,27 @@
+# The programs the proof of a native package runs on the machine it installs the package on, one per line:
+# the program, then the formats that need it (all when there is no second field). The image of each distribution
+# installs the packages that carry them (scripts/package/images/*/Dockerfile), and rpm-test.sh and
+# pacman-test.sh refuse to start, naming what is missing, before they install anything.
+#
+# runuser starts the commands of the unprivileged user (util-linux); useradd, newuidmap and newgidmap make that
+# user and map its ids (shadow); getcap reads the capabilities newuidmap may carry in place of the setuid bit
+# (libcap); curl asks the Podman API of that user for the stop of a container; the others are what the scripts
+# call on the way.
+runuser
+useradd
+newuidmap
+newgidmap
+getcap
+curl
+install
+seq
+sleep
+mktemp
+kill
+id
+sort
+tr
+grep
+sed
+awk
+rpm rpm

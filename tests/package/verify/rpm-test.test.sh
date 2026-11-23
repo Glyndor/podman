@@ -25,6 +25,19 @@ bash "$SCRIPT" "$WORK/rpms" fc45 6.2.0+r12 6.2.0 sideways "$img" > /dev/null 2>&
 bash "$SCRIPT" "$WORK/rpms" fc45 6.2.0 6.2.0 clean "$img" > /dev/null 2>&1; check "a version with no revision is a usage error" 2 "$?"
 bash "$SCRIPT" "$WORK/absent" fc45 6.2.0+r12 6.2.0 clean "$img" > /dev/null 2>&1; check "a directory of packages that is not there is refused" 1 "$?"
 bash "$SCRIPT" "$WORK/rpms" nope 6.2.0+r12 6.2.0 clean "$img" > /dev/null 2>&1; check "a distribution the table does not have is refused" 1 "$?"
+# A machine with bash and nothing else lacks every program the proof runs: it is refused, every one named, and
+# nothing was installed (no package manager was asked).
+mkdir "$WORK/bare"
+for tool in bash awk grep sed tr sort dirname cat head; do ln -s "$(type -P "$tool")" "$WORK/bare/$tool"; done
+out="$(PATH="$WORK/bare" "$WORK/bare/bash" "$SCRIPT" "$WORK/rpms" fc45 6.2.0+r12 6.2.0 clean "$img" 2>&1)"; rc=$?
+check "a machine without the programs of the proof is refused" "1" "$rc"
+check "and every one of them is named, before anything is installed" "runuser useradd newuidmap newgidmap getcap curl rpm" \
+	"$(printf '%s\n' "$out" | sed -n 's/^this container lacks://p' | tr ' ;' '\n\n' | grep -x -e runuser -e useradd -e newuidmap -e newgidmap -e getcap -e curl -e rpm | paste -sd' ')"
+check "and nothing of the proof ran" 0 "$(printf '%s\n' "$out" | grep -c '^== ')"
+for tool in runuser useradd newuidmap newgidmap getcap curl; do
+	check "the list of the proof names $tool" 1 "$(grep -c -x "$tool" "$HERE/scripts/package/verify/test-tools.txt")"
+done
+check "the proof does not use su, which a minimal image lacks" 0 "$(grep -v '^\s*#' "$SCRIPT" | grep -c -E '(^|[^a-z_-])su (probe|-)')"
 check "the checks that need a machine of the distribution name themselves in the log" 1 "$(grep -c 'echo "== \$name"' "$SCRIPT")"
 
 echo "$pass passed, $fail failed"

@@ -38,6 +38,10 @@ epoch="$(bash "$scripts/package/distros.sh" field "$id" epoch)"
 family="$(bash "$scripts/package/distros.sh" field "$id" family)"
 nevr="$epoch:$version-$revision.glyndor.$id"
 
+# What this script runs on the machine has to be there before anything is installed on it: a program that is
+# missing otherwise shows up minutes in, as the failure of the one check that needed it.
+bash "$scripts/package/require-tools.sh" rpm "$here/test-tools.txt" || exit 1
+
 # --- what the distribution's package manager is called here ------------------------------------
 case "$family" in
 	suse)
@@ -193,8 +197,10 @@ case "\$1" in
 		[ "\$code" = 204 ] ;;
 esac
 ROOTLESS
-rl() { su probe -s /bin/bash -c "bash /tmp/rootless.sh $1"; }
+rl() { runuser -u probe -- bash /tmp/rootless.sh "$1"; }
 pasta_left() { grep -l '^pasta' /proc/[0-9]*/comm 2> /dev/null | head -n 1; }
+# What decides whether an unprivileged user can get a namespace here, written down for the run that fails.
+note "kernel.apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>&1) user.max_user_namespaces=$(cat /proc/sys/user/max_user_namespaces 2>&1) newuidmap=$(command -v newuidmap)"
 check "an unprivileged user can map ids and Podman can create its namespace" rl userns
 if rl userns > /dev/null 2>&1; then
 	check "the image is pulled, rootless" rl pull
@@ -206,7 +212,7 @@ if rl userns > /dev/null 2>&1; then
 	check "a rootless container reaches the host through pasta" rl host
 	p rm -f hostlisten > /dev/null 2>&1 || true
 	check "a rootless container resolves another by name on a bridge network" rl dns
-	check "the last containers of a rootless bridge network stop with the command" bash -c "su probe -s /bin/bash -c 'bash /tmp/rootless.sh stop-cli'"
+	check "the last containers of a rootless bridge network stop with the command" rl stop-cli
 	check "the last container of a rootless bridge network stops through the API" rl stop-api
 	check "no pasta is left running after the last container stopped" test -z "$(pasta_left)"
 else
