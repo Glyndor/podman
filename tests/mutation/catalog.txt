@@ -543,7 +543,7 @@ rpm-check-replacement-cannot-ask-the-repositories-what3	scripts/package/rpm/chec
 rpm-check-replacement-zypper-requirers-unreadable	scripts/package/rpm/check-replacement.sh	|| { echo "cannot ask zypper what requires podman" >&2; exit 1; }	|| true	tests/package/rpm/check-replacement.test.sh
 make-repo-input-is-not-a-directory	scripts/package/rpm/make-repo.sh	[ -d "$in" ] ||	true ||	tests/package/rpm/make-repo.test.sh
 make-repo-output-is-not-a-directory	scripts/package/rpm/make-repo.sh	[ -d "$out" ] ||	true ||	tests/package/rpm/make-repo.test.sh
-make-repo-no-rpm-to-make-a-repository-of	scripts/package/rpm/make-repo.sh	compgen -G "$in/*.rpm" > /dev/null ||	true ||	tests/package/rpm/make-repo.test.sh
+make-repo-no-rpm-to-make-a-repository-of	scripts/package/rpm/make-repo.sh	[ -f "${rpms[0]}" ] ||	true ||	tests/package/rpm/make-repo.test.sh
 make-repo-writes-no-repomd	scripts/package/rpm/make-repo.sh	[ -f "$out/repodata/repomd.xml" ] ||	true ||	tests/package/rpm/make-repo.test.sh
 package-image-fc45-carries-a-digest	scripts/package/images/fc45/Dockerfile	FROM quay.io/fedora/fedora:45	FROM quay.io/fedora/fedora:45@sha256:0000000000000000000000000000000000000000000000000000000000000000	tests/package/distros.test.sh
 package-image-fc45-tag-is-latest	scripts/package/images/fc45/Dockerfile	FROM quay.io/fedora/fedora:45	FROM quay.io/fedora/fedora:latest	tests/package/distros.test.sh
@@ -555,7 +555,8 @@ package-image-ubi10-loses-its-digest	scripts/package/images/ubi10/Dockerfile	FRO
 
 rpm-extras-build-the-revision-is-a-number	scripts/package/rpm/build-extras.sh	[[ "$revision" =~ ^[0-9]+$ ]] || { echo "the revision is a number: $revision" >&2; exit 1; }	[[ "$revision" =~ ^[0-9]+$ ]] || true	tests/package/rpm/build-extras.test.sh
 rpm-extras-build-name-is-not-in-table	scripts/package/rpm/build-extras.sh	[ -n "$row" ] || { echo "$name is not in $table" >&2; exit 1; }	[ -n "$row" ] || true	tests/package/rpm/build-extras.test.sh
-rpm-extras-build-cannot-unpack-the-source-of	scripts/package/rpm/build-extras.sh	tar -C "$build" --strip-components=1 -xf "$src/$name"/src.tar.* || { echo "cannot unpack the source of $name" >&2; exit 1; }	tar -C "$build" --strip-components=1 -xf "$src/$name"/src.tar.* || true	tests/package/rpm/build-extras.test.sh
+rpm-extras-build-cannot-unpack-the-source-of	scripts/package/rpm/build-extras.sh	tar -C "$build" --strip-components=1 -xf "${tarball[0]}" || { echo "cannot unpack the source of $name" >&2; exit 1; }	tar -C "$build" --strip-components=1 -xf "${tarball[0]}" || true	tests/package/rpm/build-extras.test.sh
+rpm-extras-build-not-exactly-one-tarball	scripts/package/rpm/build-extras.sh	[ "${#tarball[@]}" -eq 1 ] ||	true ||	tests/package/rpm/build-extras.test.sh
 rpm-extras-fetch-name-is-not-in-table	scripts/package/rpm/fetch-extras.sh	[ -n "$row" ] || { echo "$name is not in $table" >&2; exit 1; }	[ -n "$row" ] || true	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-name-the-tarball-is-not	scripts/package/rpm/fetch-extras.sh	|| { echo "$name: the tarball is not the one pinned in extras.txt" >&2; exit 1; }	|| true	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-cannot-import-keyfile	scripts/package/rpm/fetch-extras.sh	gpg --batch --quiet --import "$keys/$keyfile" || { echo "cannot import $keyfile" >&2; exit 1; }	gpg --batch --quiet --import "$keys/$keyfile" || true	tests/package/rpm/fetch-extras.test.sh
@@ -575,3 +576,8 @@ rpm-extras-fetch-git-too-large-on-disk	scripts/package/rpm/fetch-extras.sh	[ "$(
 rpm-extras-fetch-git-unpacks-loose-objects	scripts/package/rpm/fetch-extras.sh	 -c fetch.unpackLimit=1 -c transfer.unpackLimit=1	 -c fetch.unpackLimit=100 -c transfer.unpackLimit=100	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-no-timeout-around-curl	scripts/package/rpm/fetch-extras.sh	timeout "$max_seconds" curl -fsSL	curl -fsSL	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-time-limit-not-said	scripts/package/rpm/fetch-extras.sh	if [ "$rc" -eq 124 ] || [ "$rc" -eq 28 ]; then	if false; then	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-build-catatonit-linked-dynamically	scripts/package/rpm/build-extras.sh	file -b "$tree/usr/libexec/catatonit/catatonit" | grep -q 'statically linked' \	true \	tests/package/rpm/build-extras.test.sh
+install-build-deps-unknown-extra	scripts/package/rpm/install-build-deps.sh	*) echo "no build dependencies are known for the extra $extra" >&2; exit 2 ;;	*) ;;	tests/package/rpm/install-build-deps.test.sh
+install-build-deps-crun-without-json-c	scripts/package/rpm/install-build-deps.sh	*:crun) required+=(libcap-devel json-c-devel) ;;	*:crun) ;;	tests/package/rpm/install-build-deps.test.sh
+install-build-deps-catatonit-without-static-libc	scripts/package/rpm/install-build-deps.sh	*:catatonit) required+=(autoconf automake libtool glibc-static) ;;	*:catatonit) required+=(autoconf automake libtool) ;;	tests/package/rpm/install-build-deps.test.sh
+install-build-deps-suse-names	scripts/package/rpm/install-build-deps.sh	suse:crun) required+=(libcap-devel libjson-c-devel) ;;	suse:crun) required+=(libcap-devel json-c-devel) ;;	tests/package/rpm/install-build-deps.test.sh

@@ -76,5 +76,19 @@ check "and on openSUSE, zypper does" "0 zypper --non-interactive install --no-re
 check "the repository of the proof is the packages and the metadata made before, copied together" 1 "$(grep -c 'cp -r "$rpms/repodata" "$repo/"' "$SCRIPT")"
 check "and the repositories are no longer made by installing the tool in the two package managers' branches" 0 "$(sed -n '/^pm_add_repo() {/,/^}/p; /pm_add_repo() {/,/} ;;/p' "$SCRIPT" | grep -c 'createrepo_c')"
 
+# --- the update step: it replaces the distribution's podman where there is one, and installs ours where there is none ---
+# Amazon Linux 2023 has buildah and skopeo and no podman: an update there has nothing to replace and installs nothing, which
+# let the proof go on with no podman at all ("Nothing to do", then every check on podman failing).
+sed -n '/^pm_update_step() {/,/^}/p' "$SCRIPT" > "$WORKM/pm_update_step.sh"
+check "the function of the update step is found" 1 "$(grep -c '^pm_update_step() {' "$WORKM/pm_update_step.sh")"
+step() { # <before> -> what was run
+	( pm_upgrade() { echo upgrade; }; pm_install() { echo "install $*"; }; . "$WORKM/pm_update_step.sh"; pm_update_step "$1" )
+}
+check "with the distribution's podman installed, the packages are upgraded" "upgrade" "$(step 'podman buildah skopeo')"
+check "with podman in the middle of the list, too" "upgrade" "$(step 'buildah podman skopeo')"
+check "with buildah and skopeo and no podman, podman is installed" "install podman" "$(step 'buildah skopeo')"
+check "and a package whose name only contains podman (podman-docker) does not count as podman" "install podman" "$(step 'podman-docker buildah')"
+check "the proof calls the step in both cases, and not pm_upgrade on its own" "0" "$(grep -c 'check "the update replaces the distribution.s packages" pm_upgrade' "$SCRIPT")"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

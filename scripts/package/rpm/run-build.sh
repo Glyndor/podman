@@ -26,7 +26,8 @@ scripts="${GLYNDOR_SCRIPTS:-/scripts}"
 # distros.sh reads the table with awk, which the minimal image of openSUSE does not have.
 command -v awk > /dev/null || { zypper --non-interactive install gawk || dnf install -y gawk; } > /dev/null 2>&1 || true
 family="$(bash "$scripts/package/distros.sh" field "$id" family)"
-bash "$scripts/package/rpm/install-build-deps.sh" "$family"
+extras="$(bash "$scripts/package/distros.sh" field "$id" extras)"
+bash "$scripts/package/rpm/install-build-deps.sh" "$family" ${extras:+"$extras"}
 # What the distribution has that requires podman has to be satisfied or replaced by this package.
 bash "$scripts/package/rpm/check-replacement.sh" "$id"
 

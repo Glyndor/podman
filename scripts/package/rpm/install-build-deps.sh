@@ -9,11 +9,17 @@
 # btrfs out), and the build takes the btrfs tag only when they are there; every other
 # package is required, and one the repositories lack stops the build here and says which.
 #
-# Usage: install-build-deps.sh <family>      family: fedora, el, amzn or suse
+# What the dependencies packaged beside podman need to be built (the `extras` of the row, a comma list) is added to
+# the list: crun the headers of libcap and json-c, catatonit autoconf, automake, libtool and the static libc it is
+# linked with (it is the first process of a container whose libc is not this one, so a dynamic one would not start),
+# conmon the headers of glib, and passt nothing beyond the compiler. A row that takes none installs none of them.
+#
+# Usage: install-build-deps.sh <family> [extras]      family: fedora, el, amzn or suse
 
 set -euo pipefail
 
 family="${1:?family}"
+extras="${2:-}"
 
 case "$family" in
 	fedora | el | amzn)
@@ -32,6 +38,18 @@ case "$family" in
 		optional=(libbtrfs-devel) ;;
 	*) echo "no build dependencies are known for the family: $family" >&2; exit 2 ;;
 esac
+
+for extra in ${extras//,/ }; do
+	case "$family:$extra" in
+		suse:crun) required+=(libcap-devel libjson-c-devel) ;;
+		*:crun) required+=(libcap-devel json-c-devel) ;;
+		suse:catatonit) required+=(autoconf automake libtool glibc-devel-static) ;;
+		*:catatonit) required+=(autoconf automake libtool glibc-static) ;;
+		*:conmon) required+=(glib2-devel) ;;
+		*:passt) ;;
+		*) echo "no build dependencies are known for the extra $extra" >&2; exit 2 ;;
+	esac
+done
 
 case "$family" in
 	el)

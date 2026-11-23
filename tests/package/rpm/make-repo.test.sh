@@ -32,7 +32,8 @@ CR
 chmod +x "$bin/createrepo_c"
 # A PATH of the stand-ins and the plain tools, without a zypper of this machine unless the case wants one.
 mkdir -p "$WORK/plain"
-for t in bash sh cat find wc ls mkdir rm tr; do ln -sf "$(command -v "$t")" "$WORK/plain/$t"; done
+# no find and no wc: the build image of Amazon Linux 2023 has neither findutils nor, for this script, any need of them
+for t in bash sh cat ls mkdir rm tr; do ln -sf "$(command -v "$t")" "$WORK/plain/$t"; done
 mkdir -p "$WORK/in" "$WORK/out"; : > "$WORK/in/podman-1.rpm"
 
 run() { # <extra env...> -> exit status, calls in $WORK/calls

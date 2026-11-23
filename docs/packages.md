@@ -7,7 +7,7 @@ netavark and aardvark-dns of the same release in `/usr/libexec/podman`, the cont
 configuration of the release, and no gpgme, subid or sqlite linked. Nothing is compiled from a
 source that upstream did not sign.
 
-Today the rows of the table are Fedora 45 and 44, Enterprise Linux 10 (built on AlmaLinux and also proved on Rocky and on Red Hat's UBI image) and openSUSE Tumbleweed. `package-check.yml` builds them on a pull request that
+Today the rows of the table are Fedora 45 and 44, Enterprise Linux 9 and 10 (built on AlmaLinux and also proved on Rocky and on Red Hat's UBI image), Amazon Linux 2023 and openSUSE Leap 16.1 and Tumbleweed. `package-check.yml` builds them on a pull request that
 changes how they are built, and each package is installed with `dnf` on a clean image and over the
 Fedora Podman, runs containers with and without root, and is removed. Release runs do not publish
 them yet.

@@ -47,6 +47,9 @@ check "a build on Fedora succeeds" 0 "$rc"
 check "its steps run in order: dependencies, the package that holds the short names, the payload, the rpm" \
 	"install-build-deps|check-replacement|dnf|build-payload|build-rpm|build-extras" "$(sed 's|^package/rpm/||; s|^package/||; s|\.sh .*||; s|^.*/dnf .*|dnf|' "$CALLS" | paste -sd'|')"
 check "the dependencies are those of the family of the table" "package/rpm/install-build-deps.sh fedora" "$(sed -n 1p "$CALLS")"
+run amzn2023 6.2.0+r12 "$WORK/out-amzn"
+check "a row that takes extras gives them to the installation of the dependencies, which they need to be built" "package/rpm/install-build-deps.sh amzn crun,conmon,catatonit" "$(sed -n 1p "$CALLS")"
+run fc45 6.2.0+r12 "$WORK/out"
 check "the short names are asked of the distribution's containers-common" 1 "$(grep -c 'dnf install -y --setopt=install_weak_deps=False containers-common' "$CALLS")"
 check "the payload is built from the three trees, for the family, with the list the distribution ships" \
 	"package/build-payload.sh $WORK/src/podman $WORK/src/netavark $WORK/src/aardvark $(sed -n 4p "$CALLS" | awk '{print $5}') fedora $WORK/shortnames-dir/000-shortnames.conf" "$(sed -n 4p "$CALLS")"

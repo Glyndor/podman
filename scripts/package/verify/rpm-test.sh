@@ -149,8 +149,17 @@ repo="$(mktemp -d)"
 cp "$rpms"/*.rpm "$repo/"
 [ ! -d "$rpms/repodata" ] || cp -r "$rpms/repodata" "$repo/"
 check "the packages are put in a repository the package manager reads" pm_add_repo "$repo"
+# What the update does depends on what the distribution has: an update replaces its podman where it has one, and where it
+# has buildah and skopeo but no podman (Amazon Linux 2023) an update has nothing to replace and installs nothing, so the
+# package is installed over them, which is the case that proves containers-common is replaced under packages that need it.
+pm_update_step() { # <what was installed before, as words>
+	case " $1 " in *" podman "*) pm_upgrade ;; *) pm_install podman ;; esac
+}
 if [ "$mode" = upgrade ] && [ -n "$before" ]; then
-	check "the update replaces the distribution's packages" pm_upgrade
+	case " $before " in
+		*" podman "*) check "the update replaces the distribution's packages" pm_update_step "$before" ;;
+		*) check "podman installs over the packages of the distribution that depend on its containers-common" pm_update_step "$before" ;;
+	esac
 else
 	check "podman installs from the repository" pm_install podman
 fi
