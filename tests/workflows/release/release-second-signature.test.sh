@@ -24,7 +24,7 @@ check() { # <desc> <want> <got>
 . "$HERE/tests/lib/workflow-step.sh"
 
 S="$WORK/sign"
-if step release.yml publish secret=GLYNDOR_RELEASE_ED25519_KEY "$S"; then
+if step release.yml sign secret=GLYNDOR_RELEASE_ED25519_KEY "$S"; then
 	mkdir -p "$S/bin"
 	cat > "$S/venv-python" <<'PY'
 #!/usr/bin/env bash
@@ -37,23 +37,21 @@ case " $* " in
 esac
 exit 0
 PY
-	cat > "$S/bin/python3" <<'PY'
-#!/bin/sh
-[ "$1 $2" = "-m venv" ] || exit 99
-mkdir -p "$3/bin" && cp "$FAKE_PYTHON" "$3/bin/python" && chmod +x "$3/bin/python"
-PY
-	chmod +x "$S/venv-python" "$S/bin/python3"
+	chmod +x "$S/venv-python"
 	WS="$S/ws"
 	SWITCH="$WS/keyring/second-signature-required"
 	head='# Whether every release must carry the ML-DSA-65 signature.\n'
 	# sign <switch: on|off|committed|missing|raw> <anchor: keyed|empty> <secret> <second signature: present|absent>
 	# With "raw", $RAW is written to the switch with printf %b.
 	sign() {
-		rm -rf "$S/art" "$S/rt" "$WS"; mkdir -p "$S/art" "$WS/keyring"; : > "$S/calls"; : > "$S/out"
-		local i
-		for i in 1 2; do
-			: > "$S/art/podman_6.2.0_arch$i.deb"
-			[ "$4" = absent ] || : > "$S/art/podman_6.2.0_arch$i.deb.mldsa65.sig"
+		rm -rf "$S/art" "$S/rt" "$WS"; mkdir -p "$S/art" "$S/rt/stage" "$S/rt/signvenv/bin" "$WS/keyring"; : > "$S/calls"; : > "$S/out"
+		# The virtual environment the step before this one made, and the packages the check
+		# of the download let through; a fake python stands in for the signing library.
+		cp "$S/venv-python" "$S/rt/signvenv/bin/python"
+		local a
+		for a in amd64 arm64; do
+			: > "$S/rt/stage/podman_6.2.0_$a.deb"
+			[ "$4" = absent ] || : > "$S/rt/stage/podman_6.2.0_$a.deb.mldsa65.sig"
 		done
 		case "$1" in
 			on) printf "${head}required\n" > "$SWITCH" ;;
@@ -68,7 +66,7 @@ PY
 		esac
 		cp "$HERE/keyring/glyndor-release-ed25519.b64" "$WS/keyring/"
 		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$WS" \
-			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" FAKE_PYTHON="$S/venv-python" \
+			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" TAG=v6.2.0 \
 			GLYNDOR_RELEASE_ED25519_KEY=an-ed25519-seed GLYNDOR_RELEASE_MLDSA65_KEY="$3" PREVIOUS_MLDSA=false
 	}
 	signed() { grep -c 'sign.py ' "$S/calls"; }

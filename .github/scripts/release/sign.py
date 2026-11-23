@@ -30,6 +30,7 @@ an error before anything is written: it never falls back to Ed25519 alone.
 """
 import base64
 import os
+import stat
 import sys
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -53,6 +54,28 @@ def decode_seed(env: str, seed_b64: str) -> bytes:
 		print(f"{env} must decode to 32 bytes, got {len(seed)}", file=sys.stderr)
 		sys.exit(1)
 	return seed
+
+
+def read_regular(path: str) -> bytes:
+	"""Read the file to sign: a regular file, never a link to something else."""
+	try:
+		fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+		with os.fdopen(fd, "rb") as f:
+			if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+				raise OSError(f"{path} is not a regular file")
+			return f.read()
+	except OSError as exc:
+		sys.exit(f"refusing to sign {path}: {exc}")
+
+
+def write_new(path: str, data: bytes) -> None:
+	"""Write a signature to a path that is not a link: a link there would send it elsewhere."""
+	try:
+		fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+		with os.fdopen(fd, "wb") as f:
+			f.write(data)
+	except OSError as exc:
+		sys.exit(f"cannot write {path}: {exc}")
 
 
 def mldsa65_sig_path(sig_file: str) -> str:
@@ -99,22 +122,19 @@ def main() -> None:
 			)
 			sys.exit(1)
 
-	with open(input_file, "rb") as f:
-		data = f.read()
+	data = read_regular(input_file)
 
 	sig = Ed25519PrivateKey.from_private_bytes(seed).sign(data)
 	mldsa_sig = mldsa_key.sign(data) if mldsa_key is not None else None
 
-	with open(sig_file, "wb") as f:
-		f.write(sig)
+	write_new(sig_file, sig)
 	print(f"signed {input_file} ({len(data):,} bytes) → {sig_file} ({len(sig)} bytes)")
 
 	if mldsa_sig is None:
 		print(f"{MLDSA65_KEY_ENV} is not set; wrote the Ed25519 signature only")
 		return
 	mldsa_file = mldsa65_sig_path(sig_file)
-	with open(mldsa_file, "wb") as f:
-		f.write(mldsa_sig)
+	write_new(mldsa_file, mldsa_sig)
 	print(f"signed {input_file} → {mldsa_file} ({len(mldsa_sig)} bytes, ML-DSA-65)")
 
 

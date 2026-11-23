@@ -41,6 +41,8 @@ SH
 	# upstream tag, which a component named in $LIGHTWEIGHT does not have.
 	cat > "$P/bin/git" <<'GIT'
 #!/usr/bin/env bash
+# The commit the checkout is at, which the plan hands on as the one every later job uses.
+if [ "$1 $2" = "rev-parse HEAD" ]; then echo "${FAKE_HEAD:-$GITHUB_SHA}"; exit 0; fi
 [ "$1" = ls-remote ] || exit 1
 if [ "$2" = --tags ]; then
 	for t in ${TAGS:-}; do printf '0123abcd\trefs/tags/%s\n' "$t"; done
@@ -68,7 +70,7 @@ GH
 	plan() { # [VAR=value]...: runs the step; sets $rc, $out and $P/out
 		rm -rf "$P/rt"; mkdir "$P/rt"; : > "$P/out"; : > "$P/gh.log"
 		run_step "$P" "$WS" PATH="$P/bin:$PATH" RUNNER_TEMP="$P/rt" GITHUB_OUTPUT="$P/out" GH_LOG="$P/gh.log" \
-			GH_TOKEN=a-token GH_REPO=owner/repo "$@"
+			GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 GH_TOKEN=a-token GH_REPO=owner/repo "$@"
 	}
 	said() { sed -n "s/^$1=//p" "$P/out" | paste -sd' '; }
 	old='podman v6.1.0\nnetavark v2.1.0\naardvark-dns v2.1.3\nrecipe r1\n'
@@ -96,7 +98,15 @@ GH
 	check "nothing to build: the plan succeeds even when the asset list cannot be read" "0 false" "$rc $(said build)"
 	check "and it does not ask for the list" "release list|release download" "$(paste -sd'|' "$P/gh.log")"
 	check "and hands on what it always did, and nothing about the signature" \
-		"build version podman netavark aardvark recipe podman_sha netavark_sha aardvark_sha" "$(sed 's/=.*//' "$P/out" | paste -sd' ')"
+		"sha build version podman netavark aardvark recipe podman_sha netavark_sha aardvark_sha" "$(sed 's/=.*//' "$P/out" | paste -sd' ')"
+	# One commit for the whole run: the one the checkout is at, which has to be the one the event
+	# named, so that no later job resolves a branch or a tag again.
+	plan
+	check "the plan hands on the commit it checked out" "0 0123456789abcdef0123456789abcdef01234567" "$rc $(said sha)"
+	plan FAKE_HEAD=feedface
+	check "a checkout that is not at the commit of the event stops the plan" "1 1" "$rc $(says 'is not a full commit id')"
+	plan FAKE_HEAD=89abcdef0123456789abcdef0123456789abcdef
+	check "and so does one at a different full commit" "1 1" "$rc $(says 'not at 0123456789abcdef0123456789abcdef01234567')"
 	# Each tag must be annotated: the commit the build checks out is the one its peeled
 	# ref names, and a lightweight tag has none.
 	plan LIGHTWEIGHT=aardvark-dns

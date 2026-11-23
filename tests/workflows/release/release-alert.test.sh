@@ -29,14 +29,14 @@ print("if " + " ".join(str(job.get("if", "")).split()))
 PY
 }
 check "it waits for every job of the run, and runs when one failed, except on a dispatch" \
-	"needs build plan publish|if \${{ failure() && github.event_name != 'workflow_dispatch' }}" \
+	"needs build plan publish sign|if \${{ failure() && github.event_name != 'workflow_dispatch' }}" \
 	"$(when "$HERE/.github/workflows" | paste -sd'|')"
 mkdir -p "$WORK/wf"
 sed 's/^    if: \${{ failure() /    if: ${{ success() /' "$HERE/.github/workflows/release.yml" > "$WORK/wf/release.yml"
 check "an alarm that runs on success instead is named" "if \${{ success() && github.event_name != 'workflow_dispatch' }}" \
 	"$(when "$WORK/wf" | sed -n 2p)"
-sed 's/^    needs: \[plan, build, publish\]$/    needs: [plan, build]/' "$HERE/.github/workflows/release.yml" > "$WORK/wf/release.yml"
-check "one that no longer waits for the publish job is named" "needs build plan" "$(when "$WORK/wf" | sed -n 1p)"
+sed 's/^    needs: \[plan, build, sign, publish\]$/    needs: [plan, build, sign]/' "$HERE/.github/workflows/release.yml" > "$WORK/wf/release.yml"
+check "one that no longer waits for the publish job is named" "needs build plan sign" "$(when "$WORK/wf" | sed -n 1p)"
 
 A="$WORK/alert"
 if step release.yml alert "name=Open an issue, or add to the one that is open" "$A"; then

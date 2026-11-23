@@ -22,37 +22,37 @@ check() { # <desc> <want> <got>
 # shellcheck source=tests/lib/workflow-step.sh
 . "$HERE/tests/lib/workflow-step.sh"
 
-# --- release.yml, publish: the step that holds the signing key -------------------
+# --- release.yml, sign: the step that holds the signing key -------------------
 # It is found by the secret it holds, and every other secret it is given is set, so
 # the case under test is the Ed25519 key alone. python3 stops the run where signing
 # would begin: reaching it means both refusals let the packages through.
 S="$WORK/sign"
-if step release.yml publish secret=GLYNDOR_RELEASE_ED25519_KEY "$S"; then
+if step release.yml sign secret=GLYNDOR_RELEASE_ED25519_KEY "$S"; then
 	check "the signing step's run block has no expression in it" 0 "$(grep -c '\${{' "$S/run.sh")"
 	mkdir -p "$S/bin"
-	printf '#!/bin/sh\necho "signing would start: $*"\nexit 42\n' > "$S/bin/python3"
-	chmod +x "$S/bin/python3"
+	mkdir -p "$S/rt/signvenv/bin"
+	printf '#!/bin/sh\necho "signing would start: $*"\nexit 42\n' > "$S/rt/signvenv/bin/python"
+	chmod +x "$S/rt/signvenv/bin/python"
 	others=()
 	while IFS= read -r v; do
 		[ "$v" = GLYNDOR_RELEASE_ED25519_KEY ] || others+=("$v=set-by-the-test")
 	done < "$S/secrets"
-	sign() { # <number of packages> <key>
+	sign() { # <key> [tag]
 		rm -rf "$S/art"; mkdir "$S/art"
-		local i
-		for ((i = 1; i <= $1; i++)); do : > "$S/art/podman_6.2.0_arch$i.deb"; done
-		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$HERE" \
-			"${others[@]}" GLYNDOR_RELEASE_ED25519_KEY="$2"
+		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$HERE" TAG="${2-v6.2.0}" PREVIOUS_MLDSA=false GITHUB_OUTPUT="$S/out" \
+			"${others[@]}" GLYNDOR_RELEASE_ED25519_KEY="$1"
 	}
-	sign 2 ""
+	sign ""
 	check "no signing key: refused before signing" "1 0" "$rc $(says 'signing would start')"
 	check "and it says the key is not configured" 1 "$(says 'GLYNDOR_RELEASE_ED25519_KEY is not configured')"
-	for n in 1 3; do
-		sign "$n" a-key
-		check "$n packages: refused before signing" "1 0" "$rc $(says 'signing would start')"
-		check "and it says one package per architecture is expected" 1 "$(says 'expected one package per architecture')"
+	for tag in main v6.2 'v6.2.0;x' ""; do
+		sign a-key "$tag"
+		check "the tag '$tag' is not a version: refused before signing" "1 0" "$rc $(says 'signing would start')"
+		check "and it says so" 1 "$(says 'is not a version; refusing to sign')"
 	done
-	sign 2 a-key
-	check "a key and two packages: signing starts" "42 1" "$rc $(says 'signing would start')"
+	sign a-key
+	check "a key and a version tag: signing starts, with the isolated interpreter of the prepared environment, on explicit paths" "42 1 1" \
+		"$rc $(says 'signing would start: -I') $(says "/rt/stage/podman_6.2.0_amd64.deb")"
 else
 	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the step that holds the signing key"
 fi
