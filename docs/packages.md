@@ -80,3 +80,10 @@ Amazon Linux 2023 save an edited `%config` file as `.rpmsave`. When the package 
 a `%pretrans` copies each such file that is `%ghost` or reported changed by `rpm -V` aside, and a `%posttrans` puts it
 back where nothing is. The proof writes all four files before the update and requires them to be the active ones after it.
 
+## Dependencies packaged beside Podman
+
+Where a distribution has no package Podman needs, or one that is too old, the package is built beside it from its
+upstream release and takes the name of the distribution's own (`scripts/package/extras.txt`, named per distribution in the
+`extras` column of the table): crun and catatonit are verified against their release signature and a key committed in
+`keyring/extras/`; conmon and passt publish none, so what is trusted is the commit a reviewer pinned.
+

@@ -137,21 +137,35 @@ for dir in "$HERE"/scripts/package/images/*/; do
 	done
 	check "the image $name belongs to a row of the table" 1 "$known"
 done
+for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do
+	for t in $(bash "$SCRIPT" field "$id" tests | tr ',' ' '); do
+		check "$id is also proved on $t, which has its image" 1 "$([ -f "$HERE/scripts/package/images/$t/Dockerfile" ] && echo 1 || echo 0)"
+	done
+	for e in $(bash "$SCRIPT" field "$id" extras | tr ',' ' '); do
+		check "$id takes $e beside podman, which extras.txt pins" 1 "$(grep -c "^$e|" "$HERE/scripts/package/extras.txt")"
+	done
+done
+# Every pin of a signed tarball names a key that is in the repository, by the fingerprint it holds.
+while IFS='|' read -r name _ _ kind _ _ keyfile fingerprint; do
+	[ "$kind" = tarball ] || continue
+	check "the key of $name is committed and named for its fingerprint" "1 $fingerprint" \
+		"$([ -f "$HERE/keyring/extras/$keyfile" ] && echo 1 || echo 0) $(printf '%s' "$keyfile" | sed 's/^[a-z]*-\([0-9A-F]*\)\.asc$/\1/')"
+done < <(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$HERE/scripts/package/extras.txt")
 check "the runners of the matrix are the ones the workflows name" "ubuntu-24.04 ubuntu-24.04-arm" \
-	"$(bash "$SCRIPT" matrix rpm all | grep -o '"runner":"[^"]*"' | cut -d'"' -f4 | sort -u | paste -sd' ')"
+	"$(bash "$SCRIPT" matrix any all | grep -o '"runner":"[^"]*"' | cut -d'"' -f4 | sort -u | paste -sd' ')"
 
 # --- the matrix ------------------------------------------------------------------------
 cat > "$WORK/t" <<'T'
 # a comment
-a1|rpm|fedora|x86_64,aarch64|5|2|5|upstream|0^20260716|
-b2|rpm|suse|x86_64|0|0|0|upstream|20260716|imgone,imgtwo
-c3|pacman|arch|x86_64|0|0|1|upstream|20260716|
+a1|rpm|fedora|x86_64,aarch64|5|2|5|upstream|0^20260716||
+b2|rpm|suse|x86_64|0|0|0|upstream|20260716|imgone,imgtwo|crun
+c3|pacman|arch|x86_64|0|0|1|upstream|20260716||
 T
 check "ids of a format, in table order" "a1 b2" "$(table ids rpm | paste -sd' ')"
 check "every architecture of every row of the format" \
-	'[{"id":"a1","family":"fedora","arch":"x86_64","runner":"ubuntu-24.04"},{"id":"a1","family":"fedora","arch":"aarch64","runner":"ubuntu-24.04-arm"},{"id":"b2","family":"suse","arch":"x86_64","runner":"ubuntu-24.04"}]' \
+	'[{"id":"a1","format":"rpm","family":"fedora","arch":"x86_64","runner":"ubuntu-24.04"},{"id":"a1","format":"rpm","family":"fedora","arch":"aarch64","runner":"ubuntu-24.04-arm"},{"id":"b2","format":"rpm","family":"suse","arch":"x86_64","runner":"ubuntu-24.04"}]' \
 	"$(table matrix rpm all)"
-check "one architecture leaves out the rows that do not build there" '[{"id":"a1","family":"fedora","arch":"aarch64","runner":"ubuntu-24.04-arm"}]' "$(table matrix rpm aarch64)"
+check "one architecture leaves out the rows that do not build there" '[{"id":"a1","format":"rpm","family":"fedora","arch":"aarch64","runner":"ubuntu-24.04-arm"}]' "$(table matrix rpm aarch64)"
 check "a format with no row is an empty list" "[]" "$(table matrix nothing all)"
 check "an unknown architecture is a usage error" "unknown architectures: riscv" "$(table matrix rpm riscv)"
 check "the list of images to test on" "imgone,imgtwo" "$(table field b2 tests)"
@@ -162,15 +176,16 @@ bad() { # <desc> <line> <what it says>
 	check "$1" "$3" "$(table ids rpm | tail -n 1)"
 }
 bad "a row with a field too few" 'a1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716' "distros.txt is malformed"
-bad "an id with a capital" 'A1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|' "distros.txt is malformed"
-bad "an id with a character a file name or a shell would read" 'a-1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|' "distros.txt is malformed"
-bad "a format that is neither rpm nor pacman" 'a1|deb|fedora|x86_64|5|2|5|upstream|0^20260716|' "distros.txt is malformed"
-bad "an unknown family" 'a1|rpm|gentoo|x86_64|5|2|5|upstream|0^20260716|' "distros.txt is malformed"
-bad "an unknown architecture" 'a1|rpm|fedora|riscv64|5|2|5|upstream|0^20260716|' "distros.txt is malformed"
-bad "an epoch that is not a number" 'a1|rpm|fedora|x86_64|five|2|5|upstream|0^20260716|' "distros.txt is malformed"
+bad "an id with a capital" 'A1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716||' "distros.txt is malformed"
+bad "an id with a character a file name or a shell would read" 'a-1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716||' "distros.txt is malformed"
+bad "a format that is neither rpm nor pacman" 'a1|deb|fedora|x86_64|5|2|5|upstream|0^20260716||' "distros.txt is malformed"
+bad "an unknown family" 'a1|rpm|gentoo|x86_64|5|2|5|upstream|0^20260716||' "distros.txt is malformed"
+bad "an unknown architecture" 'a1|rpm|fedora|riscv64|5|2|5|upstream|0^20260716||' "distros.txt is malformed"
+bad "an epoch that is not a number" 'a1|rpm|fedora|x86_64|five|2|5|upstream|0^20260716||' "distros.txt is malformed"
 bad "an unknown containers-common scheme" 'a1|rpm|fedora|x86_64|5|2|5|dated|0^20260716|' "distros.txt is malformed"
 bad "a passt version that is not one" 'a1|rpm|fedora|x86_64|5|2|5|upstream|new|' "distros.txt is malformed"
-bad "a test image with a character a shell would read" 'a1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|img;rm' "distros.txt is malformed"
+bad "an extra that is not one of the four" 'a1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716||nginx' "distros.txt is malformed"
+bad "a test image with a character a shell would read" 'a1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|img;rm|' "distros.txt is malformed"
 printf 'a1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|\na1|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|\n' > "$WORK/t"
 check "an id twice" "distros.txt is malformed" "$(table ids rpm | tail -n 1)"
 out="$(GLYNDOR_DISTROS_FILE="$WORK/absent" bash "$SCRIPT" ids rpm 2>&1)"; check "a table that is not there" "1" "$?"

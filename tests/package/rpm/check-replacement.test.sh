@@ -39,7 +39,7 @@ case " $* " in
 esac
 ZY
 chmod +x "$WORK/bin/dnf" "$WORK/bin/grep" "$WORK/bin/zypper"
-printf 'fc45|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|\nel9|rpm|el|x86_64|6|3|5|podman|0^20260716|\namzn2023|rpm|amzn|x86_64|0|2|5|upstream|0^20260716|\nleap161|rpm|suse|x86_64|0|0|0|upstream|20260716|\n' > "$WORK/table"
+printf 'fc45|rpm|fedora|x86_64|5|2|5|upstream|0^20260716||\nel9|rpm|el|x86_64|6|3|5|podman|0^20260716||\namzn2023|rpm|amzn|x86_64|0|2|5|upstream|0^20260716||\nleap161|rpm|suse|x86_64|0|0|0|upstream|20260716||\n' > "$WORK/table"
 export REQ_DIR="$WORK" GLYNDOR_DISTROS_FILE="$WORK/table"
 PATH="$WORK/bin:$PATH"
 run() { out="$("$SCRIPT" "$@" 2>&1)"; rc=$?; }

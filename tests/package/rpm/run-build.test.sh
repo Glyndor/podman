@@ -20,7 +20,7 @@ check() { # <desc> <want> <got>
 # The scripts directory the build reads: the real table, and fakes for what runs in a container.
 mkdir -p "$WORK/scripts/package/rpm" "$WORK/src/podman" "$WORK/bin"
 cp "$HERE/scripts/package/distros.sh" "$HERE/scripts/package/distros.txt" "$WORK/scripts/package/"
-for s in package/rpm/install-build-deps.sh package/rpm/check-replacement.sh package/build-payload.sh package/rpm/build-rpm.sh; do
+for s in package/rpm/install-build-deps.sh package/rpm/check-replacement.sh package/build-payload.sh package/rpm/build-rpm.sh package/rpm/build-extras.sh; do
 	printf '#!/bin/sh\necho "%s $*" >> "$CALLS"\n[ -z "$FAKE_FAIL" ] || [ "$FAKE_FAIL" != "%s" ] || exit 1\n' "$s" "$s" > "$WORK/scripts/$s"
 done
 mkdir "$WORK/shortnames-dir"; echo '[aliases]' > "$WORK/shortnames-dir/000-shortnames.conf"
@@ -45,7 +45,7 @@ says() { printf '%s\n' "$out" | grep -c -F -- "$1"; }
 run fc45 6.2.0+r12 "$WORK/out"
 check "a build on Fedora succeeds" 0 "$rc"
 check "its steps run in order: dependencies, the package that holds the short names, the payload, the rpm" \
-	"install-build-deps|check-replacement|dnf|build-payload|build-rpm" "$(sed 's|^package/rpm/||; s|^package/||; s|\.sh .*||; s|^.*/dnf .*|dnf|' "$CALLS" | paste -sd'|')"
+	"install-build-deps|check-replacement|dnf|build-payload|build-rpm|build-extras" "$(sed 's|^package/rpm/||; s|^package/||; s|\.sh .*||; s|^.*/dnf .*|dnf|' "$CALLS" | paste -sd'|')"
 check "the dependencies are those of the family of the table" "package/rpm/install-build-deps.sh fedora" "$(sed -n 1p "$CALLS")"
 check "the short names are asked of the distribution's containers-common" 1 "$(grep -c 'dnf install -y --setopt=install_weak_deps=False containers-common' "$CALLS")"
 check "the payload is built from the three trees, for the family, with the list the distribution ships" \
@@ -53,6 +53,8 @@ check "the payload is built from the three trees, for the family, with the list 
 check "the rpm is built from that payload, for the id and the version, into the output directory" \
 	"package/rpm/build-rpm.sh $(sed -n 4p "$CALLS" | awk '{print $5}') fc45 6.2.0+r12 $WORK/out" "$(sed -n 5p "$CALLS")"
 
+check "the extras are built last, for the id, the revision, the verified sources and the output directory" "package/rpm/build-extras.sh fc45 12 $WORK/src/extras $WORK/out" "$(sed -n 6p "$CALLS")"
+FAKE_FAIL=package/rpm/build-extras.sh run fc45 6.2.0+r12 "$WORK/out"; check "extras that cannot be built stop the build" 1 "$rc"
 FAKE_FAIL=package/rpm/install-build-deps.sh run fc45 6.2.0+r12 "$WORK/out"; check "dependencies that cannot be installed stop the build, before the payload" "1 0" "$rc $(grep -c build-payload "$CALLS")"
 FAKE_FAIL=package/rpm/check-replacement.sh run fc45 6.2.0+r12 "$WORK/out"; check "a package of the distribution that this one neither satisfies nor replaces stops the build before the payload" "1 0" "$rc $(grep -c build-payload "$CALLS")"
 FAKE_FAIL=package/build-payload.sh run fc45 6.2.0+r12 "$WORK/out"; check "a payload that fails stops the build before the rpm" "1 0" "$rc $(grep -c build-rpm "$CALLS")"
