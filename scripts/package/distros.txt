@@ -15,3 +15,5 @@
 # Which dependencies are packaged beside podman is decided where they are built.
 fc45|rpm|fedora|x86_64,aarch64|5|2|5|upstream|0^20260716|
 fc44|rpm|fedora|x86_64,aarch64|5|2|5|upstream|0^20260716|
+el10|rpm|el|x86_64,aarch64|7|4|6|podman|0^20260716|rocky10,ubi10
+tumbleweed|rpm|suse|x86_64,aarch64|0|0|0|upstream|20260716|
