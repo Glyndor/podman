@@ -45,6 +45,10 @@ WRITABLE = {
     ("reusable-build.yml", "Build the package", "$RUNNER_TEMP/netavark"): "cargo writes the build tree of netavark",
     ("reusable-build.yml", "Build the package", "$RUNNER_TEMP/aardvark"): "cargo writes the build tree of aardvark-dns",
     ("reusable-build.yml", "Build the package", "$RUNNER_TEMP/out"): "the package is written here",
+    ("reusable-package.yml", "Build the package in the container of the distribution", "$RUNNER_TEMP/podman"): "make writes the build tree of Podman",
+    ("reusable-package.yml", "Build the package in the container of the distribution", "$RUNNER_TEMP/netavark"): "cargo writes the build tree of netavark",
+    ("reusable-package.yml", "Build the package in the container of the distribution", "$RUNNER_TEMP/aardvark"): "cargo writes the build tree of aardvark-dns",
+    ("reusable-package.yml", "Build the package in the container of the distribution", "$RUNNER_TEMP/out"): "the packages are written here",
 }
 # How many times each step mounts the scripts directory, which is once for every
 # `docker run` that runs a script from it.
@@ -52,6 +56,8 @@ SCRIPT_MOUNTS = {
     ("reusable-build.yml", "Build the package"): 1,
     ("reusable-build.yml", "Smoke-test the package on Debian 13 and Ubuntu 24.04 and 26.04"): 2,
     ("reusable-build.yml", "Check an older release refuses the package"): 1,
+    ("reusable-package.yml", "Build the package in the container of the distribution"): 1,
+    ("reusable-package.yml", "Install it with the package manager on a clean image and over the distribution's Podman, and run containers"): 1,
 }
 CHAINS = {";", "&&", "||", "|", "&", "(", ")"}
 
