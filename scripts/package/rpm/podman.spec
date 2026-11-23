@@ -62,6 +62,17 @@ Obsoletes:      podman-remote
 Provides:       podman-quadlet = %{epoch}:%{version}-%{release}
 Obsoletes:      podman-quadlet
 Provides:       podman-manpages = %{epoch}:%{version}-%{release}
+# Two packages of the distribution that require podman at an exact version, which would stop
+# the update of a host that has them. They are cheaper to replace than to rebuild.
+Obsoletes:      podman-machine
+Obsoletes:      podman-tests
+%if "%{gl_id}" == "el9"
+# What the distribution's podman provides on EL 9 beyond its own name.
+Provides:       podman-catatonit = %{epoch}:%{version}-%{release}
+Provides:       podman-podmansh = %{epoch}:%{version}-%{release}
+Provides:       podman-shell = %{epoch}:%{version}-%{release}
+Provides:       podmansh = %{epoch}:%{version}-%{release}
+%endif
 Provides:       netavark = %{gl_nv_epoch}:%{gl_netavark}-%{release}
 Obsoletes:      netavark
 Provides:       aardvark-dns = %{gl_nv_epoch}:%{gl_aardvark}-%{release}
@@ -125,6 +136,11 @@ container.
 cp -a %{gl_payload}/main/. %{buildroot}/
 cp -a %{gl_payload}/docker/. %{buildroot}/
 cp -a %{gl_payload}/sh/. %{buildroot}/
+# A directory that two packages own has to have the same mode in both, or the transaction
+# stops on a conflict: Fedora's catatonit owns /usr/libexec/podman as 0755, and the payload
+# was written by whoever ran the build, with whatever umask. Nothing here is group or world
+# writable.
+chmod -R u+rwX,go+rX,go-w %{buildroot}
 # The file lists are read from the payload, so a file it gains is owned by the package, and
 # one the package names that is not there stops the build. Files under /etc are
 # configuration, and the directories of the containers configuration are owned: nothing

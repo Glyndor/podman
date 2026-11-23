@@ -25,6 +25,9 @@ scripts="${GLYNDOR_SCRIPTS:-/scripts}"
 
 family="$(bash "$scripts/package/distros.sh" field "$id" family)"
 bash "$scripts/package/rpm/install-build-deps.sh" "$family"
+# What the distribution has that requires podman has to be satisfied or replaced by this package.
+# dnf answers it; openSUSE is held to it by the test that installs the distribution's packages first.
+case "$family" in suse) ;; *) bash "$scripts/package/rpm/check-replacement.sh" "$id" ;; esac
 
 case "$family" in
 	suse) common_package=libcontainers-common; install=(zypper --non-interactive install --no-recommends) ;;
