@@ -282,20 +282,48 @@ chmod 0755 "$stage/DEBIAN/preinst"
 # The AppArmor profiles of passt are loaded when the package is configured, as Debian's
 # package does; without it they would only apply after the next boot. A profile that does
 # not load does not fail the installation, as in Debian's own snippet, but it says so.
+#
+# What postinst copies into /etc/containers is the package's own act, and a purge takes it away
+# again, only when nobody changed it: the sum of the copy is written to /var/lib/glyndor-podman/policy.md5,
+# and postrm purge removes the file when it still has that sum. An edited file stays, and so does one
+# the administrator made, since no sum was written for it. A copy that an earlier release made (the
+# release that stopped shipping the file copied it without a record) is adopted at the first
+# configuration after this one when it is byte for byte the default of the package.
+# A .glyndor-kept that is still there after the upgrade it was made for, because that was
+# interrupted, is the administrator's file: it is put back when /etc has none, and kept under another name when
+# /etc has a different one, never deleted.
 cat > "$stage/DEBIAN/postinst" <<POSTINST
 #!/bin/sh
 set -e
 if [ "\$1" = configure ]; then
-	f="\${DPKG_ROOT:-}/etc/containers/policy.json"
+	root="\${DPKG_ROOT:-}"
+	f="\$root/etc/containers/policy.json"
+	rec="\$root/var/lib/glyndor-podman/policy.md5"
+	record() {
+		mkdir -p "\$root/var/lib/glyndor-podman"
+		md5sum < "\$f" | cut -d' ' -f1 > "\$rec"
+	}
 	if [ -z "\$2" ] || dpkg --compare-versions "\$2" lt "$config_free_since"; then
 		if [ -e "\$f.glyndor-kept" ] && [ ! -e "\$f" ]; then
 			mv "\$f.glyndor-kept" "\$f"
 			echo "podman: kept your /etc/containers/policy.json, which this package no longer ships" >&2
 		elif [ ! -e "\$f" ] && [ ! -L "\$f" ]; then
-			mkdir -p "\${DPKG_ROOT:-}/etc/containers"
-			cp -p "\${DPKG_ROOT:-}/usr/share/containers/policy.json" "\$f"
+			mkdir -p "\$root/etc/containers"
+			cp -p "\$root/usr/share/containers/policy.json" "\$f"
+			record
 		fi
-		rm -f "\$f.glyndor-kept"
+	fi
+	if [ -e "\$f.glyndor-kept" ]; then
+		if [ -e "\$f" ] && ! cmp -s "\$f.glyndor-kept" "\$f"; then
+			mv "\$f.glyndor-kept" "\$f.glyndor-previous"
+			echo "podman: an upgrade that was interrupted left your earlier /etc/containers/policy.json as policy.json.glyndor-previous" >&2
+		else
+			rm -f "\$f.glyndor-kept"
+		fi
+	fi
+	if [ -f "\$f" ] && [ ! -L "\$f" ] && [ ! -e "\$rec" ] && [ -f "\$root/usr/share/containers/policy.json" ] \\
+		&& cmp -s "\$f" "\$root/usr/share/containers/policy.json"; then
+		record
 	fi
 fi
 if [ "\$1" = configure ] && command -v apparmor_parser >/dev/null 2>&1 && aa-enabled >/dev/null 2>&1; then
@@ -307,6 +335,24 @@ fi
 exit 0
 POSTINST
 chmod 0755 "$stage/DEBIAN/postinst"
+
+cat > "$stage/DEBIAN/postrm" <<'POSTRM'
+#!/bin/sh
+set -e
+if [ "$1" = purge ]; then
+	root="${DPKG_ROOT:-}"
+	f="$root/etc/containers/policy.json"
+	rec="$root/var/lib/glyndor-podman/policy.md5"
+	if [ -f "$rec" ] && [ -f "$f" ] && [ ! -L "$f" ] && [ "$(md5sum < "$f" | cut -d' ' -f1)" = "$(cat "$rec")" ]; then
+		rm -f "$f"
+		rmdir "$root/etc/containers" 2> /dev/null || true
+	fi
+	rm -f "$rec"
+	rmdir "$root/var/lib/glyndor-podman" 2> /dev/null || true
+fi
+exit 0
+POSTRM
+chmod 0755 "$stage/DEBIAN/postrm"
 
 dpkg-deb --root-owner-group -Zxz --build "$stage" "$out/podman_${version}_${arch}.deb" >/dev/null
 echo "$out/podman_${version}_${arch}.deb"

@@ -14,6 +14,13 @@
 #   edited     a policy of the administrator's: it is the same file afterwards, nothing beside it
 #   deleted    no file: the default is copied once, because buildah and skopeo read only /etc
 #   reinstall  after the edit above, the same package again: the edit is still there
+#   purge      installing the new package where there is no file, then purging it: the copy it made goes,
+#              with its record, and one the administrator edited stays
+#   interrupted  an upgrade that stops after preinst and before postinst (dpkg --unpack, no --configure): the next
+#              configuration puts the administrator's file back, and when the administrator made another in the meantime
+#              keeps it and sets the earlier one aside under another name
+#   apparmor   the configuration with no AppArmor on the machine, and with AppArmor whose parser fails: it exits 0, and
+#              says which profile did not load in the second
 # Every case has to end with the upgrade exiting 0 and no *.dpkg-* or *.glyndor-kept file left.
 # Once the published release is itself 6.2.0+r12 or later (it already ships nothing in /etc), what is proved is
 # the plain upgrade: the edit stays, the default is not copied back over an administrator's deletion.
@@ -91,6 +98,78 @@ check "deleted: nothing is left beside it" nothing_beside
 rm -f "$policy"
 out="$(apt-get install -y --reinstall "$new" < /dev/null 2>&1)"; rc=$?
 check "deleted afterwards, by an administrator who is on this release: it stays deleted" test "$rc" -eq 0 -a ! -e "$policy"
+
+# --- purge: what the maintainer script made goes with the package, unless the administrator changed it ---
+apt-get purge -y -qq podman > /dev/null 2>&1; rm -f "$policy"
+out="$(apt-get install -y "$new" < /dev/null 2>&1)"; rc=$?
+check "purge: the first install of the new package copies the default" test "$rc" -eq 0 -a "$(cat "$policy")" = "$new_default"
+out="$(apt-get purge -y podman < /dev/null 2>&1)"; rc=$?
+check "purge: the purge exits 0 and takes the copy nobody changed" test "$rc" -eq 0 -a ! -e "$policy"
+check "purge: and the record of the copy with it" test ! -e /var/lib/glyndor-podman/policy.md5
+out="$(apt-get install -y "$new" < /dev/null 2>&1)"
+printf '%s\n' "$admin_policy" > "$policy"
+out="$(apt-get purge -y podman < /dev/null 2>&1)"; rc=$?
+check "purge with the file edited: the purge exits 0 and the administrator's file is still there, byte for byte" test "$rc" -eq 0 -a "$(cat "$policy")" = "$admin_policy"
+check "purge with the file edited: nothing else of the package is left" test ! -e /var/lib/glyndor-podman -a ! -e /usr/share/containers/seccomp.json
+rm -f "$policy"
+
+# remove is not purge: the file and its record stay, and a purge of the package that is already removed takes them
+apt-get purge -y -qq podman > /dev/null 2>&1; rm -f "$policy"
+apt-get install -y -qq "$new" < /dev/null > /dev/null 2>&1
+out="$(apt-get remove -y podman < /dev/null 2>&1)"; rc=$?
+check "remove: exits 0 and the copy of the policy and its record are still there" test "$rc" -eq 0 -a -f "$policy" -a -f /var/lib/glyndor-podman/policy.md5
+out="$(apt-get purge -y podman < /dev/null 2>&1)"; rc=$?
+check "purge of a package that is already removed: exits 0 and takes the copy and its record" test "$rc" -eq 0 -a ! -e "$policy" -a ! -e /var/lib/glyndor-podman
+out="$(dpkg --purge podman 2>&1 < /dev/null)"; rc=$?
+check "purge of a package that is not installed at all: exits 0" test "$rc" -eq 0
+# the empty directories the package creates under /etc/containers: dpkg takes them when they are empty at the purge,
+# and nothing the administrator put in one is taken, so the directory stays with it
+check "purge: no directory of the package is left under /etc/containers" test ! -e /etc/containers
+apt-get install -y -qq "$new" < /dev/null > /dev/null 2>&1
+mkdir -p /etc/containers/registries.conf.d && printf 'unqualified-search-registries = ["example.org"]\n' > /etc/containers/registries.conf.d/50-admin.conf
+out="$(apt-get purge -y podman < /dev/null 2>&1)"; rc=$?
+check "purge with a file of the administrator's inside one of those directories: exits 0 and the file is still there" \
+	test "$rc" -eq 0 -a -f /etc/containers/registries.conf.d/50-admin.conf
+check "and the policy.json of the package is gone, with every directory that was left empty" test ! -e "$policy" -a "$(find /etc/containers -mindepth 1 -type f -o -mindepth 1 -type d | sort | tr '\n' ' ')" = "/etc/containers/registries.conf.d /etc/containers/registries.conf.d/50-admin.conf "
+rm -rf /etc/containers
+
+# the package of r12 and the one of this release leave a policy.json the administrator deleted deleted
+if [ "$transition" = 0 ]; then
+	reset_old deleted || exit 1
+	out="$(dpkg -i "$new" 2>&1 < /dev/null)"; rc=$?
+	check "dpkg -i over a release that already is r12 or later, with the file deleted by the administrator: exits 0 and does not create it" test "$rc" -eq 0 -a ! -e "$policy"
+fi
+
+# --- an upgrade interrupted between preinst and postinst ---
+reset_old edited || exit 1
+dpkg --unpack "$new" > /dev/null 2>&1
+if [ "$transition" = 1 ]; then
+	check "interrupted: the file of the administrator is set aside by preinst while the package is unpacked and not configured" test -e "$policy.glyndor-kept" -a ! -e "$policy"
+fi
+out="$(dpkg --configure podman 2>&1 < /dev/null)"; rc=$?
+check "interrupted: the next configuration exits 0 and the file is the administrator's, byte for byte" test "$rc" -eq 0 -a "$(cat "$policy")" = "$admin_policy"
+check "interrupted: nothing is left beside it" nothing_beside
+if [ "$transition" = 1 ]; then
+	reset_old edited || exit 1
+	dpkg --unpack "$new" > /dev/null 2>&1
+	printf '%s\n' '{"default":[{"type":"reject"}],"transports":{}}' > "$policy"
+	out="$(dpkg --configure podman 2>&1 < /dev/null)"; rc=$?
+	check "interrupted, and a file made in the meantime: it is not replaced, and the earlier one is set aside under another name" \
+		test "$rc" -eq 0 -a "$(cat "$policy")" = '{"default":[{"type":"reject"}],"transports":{}}' -a "$(cat "$policy.glyndor-previous")" = "$admin_policy"
+	check "interrupted, and a file made in the meantime: it says so" bash -c 'printf "%s\n" "$1" | grep -q glyndor-previous' _ "$out"
+	rm -f "$policy.glyndor-previous"
+fi
+
+# --- the configuration with and without AppArmor ---
+postinst=/var/lib/dpkg/info/podman.postinst
+check "apparmor: with none on the machine the configuration exits 0 and says nothing of a profile" \
+	bash -c 'out="$(PATH=/usr/bin:/bin sh "$1" configure 2>&1)"; rc=$?; [ "$rc" -eq 0 ] && ! printf "%s\n" "$out" | grep -q "did not load"' _ "$postinst"
+mkdir -p /tmp/aa /etc/apparmor.d
+printf '#!/bin/sh\nexit 1\n' > /tmp/aa/apparmor_parser; printf '#!/bin/sh\nexit 0\n' > /tmp/aa/aa-enabled; chmod +x /tmp/aa/apparmor_parser /tmp/aa/aa-enabled
+: > /etc/apparmor.d/usr.bin.passt
+check "apparmor: with it on and a parser that fails, the configuration exits 0 and names the profile" \
+	bash -c 'out="$(PATH=/tmp/aa:/usr/bin:/bin sh "$1" configure 2>&1)"; rc=$?; [ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -q "AppArmor profile usr.bin.passt did not load"' _ "$postinst"
+rm -f /etc/apparmor.d/usr.bin.passt; rm -rf /tmp/aa
 
 echo
 if [ "${#failed[@]}" -gt 0 ]; then
