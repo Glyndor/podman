@@ -23,7 +23,15 @@ on:
       - "keyring/**"
       - ".github/workflows/release.yml"
       - ".github/workflows/reusable-build.yml"
+  # A rehearsal: dry_run runs the whole path, from the plan to the check of the signed set, with a
+  # throwaway key made for the run, and neither reads the signing secrets nor attests nor creates a
+  # release. It builds even when nothing is new, under a version no release can have.
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Rehearse: build and sign with a throwaway key, publish nothing"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -60,6 +68,7 @@ jobs:
       aardvark_sha: ${{ steps.p.outputs.aardvark_sha }}
       previous_mldsa: ${{ steps.p.outputs.previous_mldsa }}
       sha: ${{ steps.p.outputs.sha }}
+      dry_run: ${{ steps.p.outputs.dry_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,6 +78,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
           w="$RUNNER_TEMP/plan"; mkdir -p "$w"
           # The commit every later job of this run signs and tags: the one this job checked
@@ -92,7 +102,14 @@ jobs:
           git ls-remote --tags "https://github.com/$GH_REPO.git" \
             | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u > "$w/tags"
           latest="$(bash scripts/upstream/read-released.sh "$w/released")"
-          bash scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" >> "$GITHUB_OUTPUT"
+          bash scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" > "$w/plan"
+          # A rehearsal builds whether or not something is new, under a version that no release has
+          # or will have: it is never published, and a name that cannot be a revision keeps it apart.
+          if [ "${DRY_RUN:-}" = true ] && ! grep -q -x build=true "$w/plan"; then
+            printf 'build=true\ntag=%s+r999\n' "$(awk '$1 == "podman" {print $2}' "$w/fresh")" > "$w/plan"
+          fi
+          cat "$w/plan" >> "$GITHUB_OUTPUT"
+          echo "dry_run=${DRY_RUN:-false}" >> "$GITHUB_OUTPUT"
           # Whether the newest release carries the second signature, which the signing
           # step reads as an alarm (see there). Asked only when this run builds: most
           # runs build nothing, and an asset list that could not be read would turn
@@ -176,6 +193,7 @@ jobs:
     env:
       TAG: ${{ needs.plan.outputs.tag }}
       PREVIOUS_MLDSA: ${{ needs.plan.outputs.previous_mldsa }}
+      DRY_RUN: ${{ needs.plan.outputs.dry_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -208,14 +226,16 @@ jobs:
         id: sign
         working-directory: ${{ runner.temp }}/tools
         env:
-          GLYNDOR_RELEASE_ED25519_KEY: ${{ secrets.GLYNDOR_RELEASE_ED25519_KEY }}
+          GLYNDOR_RELEASE_ED25519_KEY: ${{ needs.plan.outputs.dry_run != 'true' && secrets.GLYNDOR_RELEASE_ED25519_KEY || '' }}
           # The second, post-quantum key. A secret that is not configured
           # arrives as an empty string, which sign.py reads as unset: the
           # packages are then signed with Ed25519 alone, as before it existed.
-          GLYNDOR_RELEASE_MLDSA65_KEY: ${{ secrets.GLYNDOR_RELEASE_MLDSA65_KEY }}
+          GLYNDOR_RELEASE_MLDSA65_KEY: ${{ needs.plan.outputs.dry_run != 'true' && secrets.GLYNDOR_RELEASE_MLDSA65_KEY || '' }}
           PYTHONUTF8: "1"
         run: |
-          if [ -z "$GLYNDOR_RELEASE_ED25519_KEY" ]; then
+          # A rehearsal does not read the secrets at all: the expressions of the two keys give this step
+          # an empty string, and the rehearsal makes throwaway keys of its own below.
+          if [ "${DRY_RUN:-}" != true ] && [ -z "$GLYNDOR_RELEASE_ED25519_KEY" ]; then
             echo "::error::GLYNDOR_RELEASE_ED25519_KEY is not configured; refusing to publish unsigned packages."
             exit 1
           fi
@@ -281,6 +301,26 @@ jobs:
           done < "$switch"
           anchored=false
           if grep -q -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$anchor"; then anchored=true; fi
+          # A rehearsal signs what a release would sign, with keys made for this run and anchors that hold
+          # only their public halves, in the places where the real ones are read. It makes a second key
+          # exactly when the real anchor holds one, so the path it takes is the real configuration's.
+          # The seeds stay in this step: the files with them are not uploaded, and the public halves are.
+          if [ "${DRY_RUN:-}" = true ]; then
+            dry="$RUNNER_TEMP/dry"
+            dry_args=()
+            if [ "$anchored" = true ]; then dry_args=(--mldsa); fi
+            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/dry-run-keys.py" "$dry" "${dry_args[@]}"
+            GLYNDOR_RELEASE_ED25519_KEY="$(cat "$dry/ed25519.seed")"
+            ed25519="$dry/ed25519.b64"
+            if [ "$anchored" = true ]; then
+              GLYNDOR_RELEASE_MLDSA65_KEY="$(cat "$dry/mldsa65.seed")"
+              anchor="$dry/mldsa65.b64"
+            fi
+            export GLYNDOR_RELEASE_ED25519_KEY GLYNDOR_RELEASE_MLDSA65_KEY
+            mkdir "$RUNNER_TEMP/dry-public"
+            cp "$dry/ed25519.b64" "$RUNNER_TEMP/dry-public/"
+            if [ "$anchored" = true ]; then cp "$dry/mldsa65.b64" "$RUNNER_TEMP/dry-public/"; fi
+          fi
           if [ "$switched" = true ] && [ "$anchored" = false ]; then
             echo "::error::keyring/second-signature-required requires the second signature and keyring/glyndor-release-mldsa65.b64 holds no key; refusing to publish with Ed25519 alone."
             exit 1
@@ -302,7 +342,7 @@ jobs:
           for arch in amd64 arm64; do
             deb="$stage/podman_${version}_${arch}.deb"
             "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$deb"
-            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64" \
+            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$ed25519" \
               --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$anchor" "${require[@]}"
           done
           echo "require_mldsa=$required" >> "$GITHUB_OUTPUT"
@@ -310,6 +350,14 @@ jobs:
         with:
           name: signed
           path: ${{ runner.temp }}/stage/
+          retention-days: 1
+          if-no-files-found: error
+      # The public halves of the throwaway keys, for the rehearsal's own check of the signatures.
+      - if: ${{ needs.plan.outputs.dry_run == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dry-run-anchors
+          path: ${{ runner.temp }}/dry-public/
           retention-days: 1
           if-no-files-found: error
 
@@ -322,8 +370,8 @@ jobs:
     needs: [plan, sign]
     # The same guard as plan, on the job that creates the release: a skipped plan already
     # skips this one, and a later edit that makes this job run whatever its needs did (an
-    # always() above it) would otherwise publish from a branch.
-    if: github.ref == 'refs/heads/main'
+    # always() above it) would otherwise publish from a branch. A rehearsal never gets here.
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.dry_run != 'true'
     runs-on: ubuntu-26.04
     permissions:
       contents: write
@@ -394,12 +442,71 @@ jobs:
             --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \
             "${assets[@]}" "$RUNNER_TEMP/components.txt"
 
+  # The end of a rehearsal, in the place of publish: it checks the signed set and every signature the
+  # way publish does, against the public halves of the throwaway keys, and shows that no release was
+  # made. It holds a read-only token and no secret, and what it checks was signed by the same code
+  # that signs a release.
+  rehearsal:
+    name: Rehearsal check
+    needs: [sign, plan]
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.dry_run == 'true'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    # Ceiling, not measured: a download of two packages and their verification.
+    timeout-minutes: 15
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      REQUIRE_MLDSA: ${{ needs.sign.outputs.require_mldsa }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/signed
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dry-run-anchors
+          path: ${{ runner.temp }}/dry-public
+      - name: Check the signed set is exactly the packages of the tag, with the signatures that were required
+        run: bash scripts/release/check-artifacts.sh signed "$TAG" "$RUNNER_TEMP/signed" "$REQUIRE_MLDSA"
+      - name: Verify every signature against the throwaway keys
+        run: |
+          mkdir "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          python3 -I -m venv "$RUNNER_TEMP/verifyvenv"
+          py="$RUNNER_TEMP/verifyvenv/bin/python"
+          "$py" -I -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
+          version="${TAG#v}"
+          anchor="$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64"
+          if [ -f "$RUNNER_TEMP/dry-public/mldsa65.b64" ]; then anchor="$RUNNER_TEMP/dry-public/mldsa65.b64"; fi
+          require=()
+          if [ "$REQUIRE_MLDSA" = true ]; then require=(--require-mldsa); fi
+          for arch in amd64 arm64; do
+            deb="$RUNNER_TEMP/signed/podman_${version}_${arch}.deb"
+            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$RUNNER_TEMP/dry-public/ed25519.b64" \
+              --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$anchor" "${require[@]}"
+          done
+      - name: Show that no release was made
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::error::a release called $TAG exists after a rehearsal, which publishes none"
+            exit 1
+          fi
+          echo "a rehearsal of $TAG: built, signed with a throwaway key and verified; nothing attested, nothing published"
+
   # A failed release leaves no other trace until the watchdog notices a day
   # later, so this opens the issue at once. A manual dispatch is somebody
   # watching the run, so it does not open one.
   alert:
     name: alert
-    needs: [plan, build, sign, publish]
+    needs: [plan, build, sign, publish, rehearsal]
     if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
     # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest

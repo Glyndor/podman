@@ -9,6 +9,7 @@ The README shows the pipeline as a diagram; these are its steps in full.
 - It links only libc and libm (both in `libc6`), libgcc and libseccomp, so one package serves every release. Signature checks use Go's OpenPGP instead of gpgme, and subid and sqlite are not linked, because those libraries are renamed between releases. Debian 12 is not supported: its glibc is older than netavark needs.
 - On Ubuntu 24.04 the package uses `runc`, because that release's `crun` is too old for current Podman.
 - Last, the package replaces Podman on the build runner itself, an Ubuntu virtual machine, runs a rootless container on `pasta`, and stops the last container of a rootless bridge network through the API, which the containers above cannot do.
+- A rehearsal runs the same path without a release: `gh workflow run release.yml --ref main -f dry_run=true`, or Run workflow from `main` in the Actions tab with `dry_run` on. It builds even when nothing is new, under a version no release has (`+r999`), signs with keys made for that run and never reads the signing secrets, checks every signature, and ends with a job that shows no release was created. Nothing is attested or published.
 - If any step fails nothing is published, and the previous release remains the latest. A failed scheduled run also opens an issue in this repository.
 
 Each release carries one `.deb` and one detached `.sig` per architecture, and a build provenance attestation. [Verifying a package](verify.md) shows how to check them.

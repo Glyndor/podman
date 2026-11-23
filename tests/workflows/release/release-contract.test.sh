@@ -33,11 +33,13 @@ rule, path = sys.argv[1:3]
 with open(path) as fh:
     jobs = yaml.safe_load(fh)["jobs"]
 GUARD = "github.ref == 'refs/heads/main'"
+# publish never runs in a rehearsal, and the check that ends a rehearsal runs only in one.
+EXTRA = {"publish": " && needs.plan.outputs.dry_run != 'true'", "rehearsal": " && needs.plan.outputs.dry_run == 'true'"}
 
 if rule == "guard":
     # plan, sign and publish always, and any other job that can write to the repository:
     # a dispatch from a branch must not tag or sign an unreviewed commit.
-    needs = {"plan", "sign", "publish"}
+    needs = {"plan", "sign", "publish", "rehearsal"}
     for name, cfg in jobs.items():
         perms = cfg.get("permissions") or {}
         if perms.get("contents") == "write" or perms.get("attestations") == "write":
@@ -45,8 +47,33 @@ if rule == "guard":
     for name in sorted(needs):
         if name not in jobs:
             print(f"job {name} is missing")
-        elif str(jobs[name].get("if", "")).strip() != GUARD:
+        elif str(jobs[name].get("if", "")).strip() not in (GUARD, GUARD + EXTRA.get(name, "\0")):
             print(f"job {name} does not carry the main-only guard")
+elif rule == "rehearsal":
+    # A rehearsal reads no signing secret, attests nothing and creates nothing: the one job that
+    # can hold a signing secret is sign, and it gives the step an empty string in a rehearsal.
+    import json
+    for name, cfg in jobs.items():
+        text = json.dumps(cfg)
+        if "secrets.GLYNDOR_RELEASE" in text and name != "sign":
+            print(f"{name} reads a signing secret")
+    sign_env = [s.get("env") or {} for s in jobs["sign"]["steps"]]
+    keys = [e for e in sign_env if any("secrets.GLYNDOR_RELEASE" in str(v) for v in e.values())]
+    if len(keys) != 1:
+        print(f"{len(keys)} steps of sign read the signing secrets, expected 1")
+    else:
+        for k, v in keys[0].items():
+            if "secrets.GLYNDOR_RELEASE" in str(v) and not str(v).startswith("${{ needs.plan.outputs.dry_run != 'true' && "):
+                print(f"{k} is read in a rehearsal")
+    r = jobs.get("rehearsal")
+    if r is None:
+        print("job rehearsal is missing")
+    else:
+        if (r.get("permissions") or {}) != {"contents": "read"}:
+            print("rehearsal holds more than contents: read")
+        for s in r["steps"]:
+            if "attest" in str(s.get("uses", "")) or "release create" in str(s.get("run", "")):
+                print("rehearsal attests or creates a release")
 elif rule == "attest":
     cfg = jobs["publish"]
     steps = cfg["steps"]
@@ -125,20 +152,22 @@ PY
 
 BAD="$WORK/bad"
 GUARD_LINE="    if: github.ref == 'refs/heads/main'"
+PUBLISH_GUARD_LINE="    if: github.ref == 'refs/heads/main' && needs.plan.outputs.dry_run != 'true'"
+PUBLISH_COMMENT="    # always() above it) would otherwise publish from a branch. A rehearsal never gets here."
 
 # --- only main publishes ----------------------------------------------------------
 check "plan, sign and publish carry the main-only guard" "" "$(violations guard)"
 sabotage release.yml "$GUARD_LINE
     # ubuntu-latest" "    # ubuntu-latest" "$BAD" >/dev/null 2>&1
 check "a plan without the guard is named" "job plan does not carry the main-only guard" "$(violations guard "$BAD")"
-sabotage release.yml "    # always() above it) would otherwise publish from a branch.
-$GUARD_LINE" "    # always() above it) would otherwise publish from a branch." "$BAD" >/dev/null 2>&1
+sabotage release.yml "$PUBLISH_COMMENT
+$PUBLISH_GUARD_LINE" "$PUBLISH_COMMENT" "$BAD" >/dev/null 2>&1
 check "a publish without the guard is named" "job publish does not carry the main-only guard" "$(violations guard "$BAD")"
 sabotage release.yml "    # always() above it) would otherwise sign on a branch.
 $GUARD_LINE" "    # always() above it) would otherwise sign on a branch." "$BAD" >/dev/null 2>&1
 check "a sign without the guard is named" "job sign does not carry the main-only guard" "$(violations guard "$BAD")"
-sabotage release.yml "    # always() above it) would otherwise publish from a branch.
-$GUARD_LINE" "    # always() above it) would otherwise publish from a branch.
+sabotage release.yml "$PUBLISH_COMMENT
+$PUBLISH_GUARD_LINE" "$PUBLISH_COMMENT
     if: github.ref == 'refs/heads/develop'" "$BAD" >/dev/null 2>&1
 check "a guard on another branch is named" "job publish does not carry the main-only guard" "$(violations guard "$BAD")"
 
@@ -150,6 +179,32 @@ check "build runs only when the plan says there is something to build" "needs.pl
 check "build waits for the plan" "plan" "$(gate release.yml build needs)"
 check "sign waits for the plan and for the build of every architecture" "build,plan" "$(gate release.yml sign needs)"
 check "publish waits for the plan and for the signing" "plan,sign" "$(gate release.yml publish needs)"
+
+# --- a rehearsal reads no secret and publishes nothing ---------------------------
+check "only sign reads a signing secret, and not in a rehearsal; the rehearsal can only read" "" "$(violations rehearsal)"
+sabotage release.yml "GLYNDOR_RELEASE_ED25519_KEY: \${{ needs.plan.outputs.dry_run != 'true' && secrets.GLYNDOR_RELEASE_ED25519_KEY || '' }}" "GLYNDOR_RELEASE_ED25519_KEY: \${{ secrets.GLYNDOR_RELEASE_ED25519_KEY }}" "$BAD" >/dev/null 2>&1
+check "a signing secret that a rehearsal would read is named" "GLYNDOR_RELEASE_ED25519_KEY is read in a rehearsal" "$(violations rehearsal "$BAD")"
+sabotage release.yml "    permissions:
+      contents: read
+    # Ceiling, not measured: a download of two packages and their verification." "    permissions:
+      contents: write
+    # Ceiling, not measured: a download of two packages and their verification." "$BAD" >/dev/null 2>&1
+check "a rehearsal that can write is named" "rehearsal holds more than contents: read" "$(violations rehearsal "$BAD")"
+check "a rehearsal does not publish: publish skips it" "github.ref == 'refs/heads/main' && needs.plan.outputs.dry_run != 'true'" "$(gate release.yml publish if)"
+check "and the check that ends a rehearsal runs only in one" "github.ref == 'refs/heads/main' && needs.plan.outputs.dry_run == 'true'" "$(gate release.yml rehearsal if)"
+check "and waits for the plan and the signing" "plan,sign" "$(gate release.yml rehearsal needs)"
+# The last step of a rehearsal: a release called as the rehearsal's tag is an error, and none is the answer.
+N="$WORK/norelease"
+if step release.yml rehearsal "name=Show that no release was made" "$N"; then
+	mkdir -p "$N/bin"
+	printf '#!/bin/sh\n[ "$1 $2" = "release view" ] && [ "$3" = "$FAKE_EXISTS" ] && exit 0\nexit 1\n' > "$N/bin/gh"; chmod +x "$N/bin/gh"
+	run_step "$N" "$WORK" PATH="$N/bin:$PATH" TAG=v6.2.0+r999 FAKE_EXISTS=none
+	check "a rehearsal that made no release says so" "0 1" "$rc $(says 'nothing attested, nothing published')"
+	run_step "$N" "$WORK" PATH="$N/bin:$PATH" TAG=v6.2.0+r999 FAKE_EXISTS=v6.2.0+r999
+	check "one that left a release behind is refused" "1 1" "$rc $(says 'exists after a rehearsal')"
+else
+	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the last step of the rehearsal"
+fi
 
 # --- the provenance attestation ---------------------------------------------------
 check "the packages are attested between the verification of their signatures and the release" "" "$(violations attest)"
@@ -192,15 +247,25 @@ if step release.yml sign secret=GLYNDOR_RELEASE_ED25519_KEY "$S"; then
 	cat > "$S/venv-python" <<'PY'
 #!/bin/sh
 echo "$*" >> "$CALLS"
+# What the step signs with, written down for the cases that look at it.
+case "$*" in
+	*sign.py*) echo "ed=$GLYNDOR_RELEASE_ED25519_KEY mldsa=$GLYNDOR_RELEASE_MLDSA65_KEY" >> "$CALLS.keys" ;;
+	*dry-run-keys.py*)
+		# The throwaway keys: a directory with a seed and a public anchor of each.
+		dir="$3"; mkdir "$dir"
+		echo dry-ed-seed > "$dir/ed25519.seed"; echo "# throwaway" > "$dir/ed25519.b64"
+		case "$*" in *--mldsa*) echo dry-mldsa-seed > "$dir/mldsa65.seed"; echo "# throwaway" > "$dir/mldsa65.b64" ;; esac ;;
+esac
 exit 0
 PY
 	chmod +x "$S/venv-python"
 	WS="$S/ws"
+	EXTRA_ENV=()
 	ANCHOR="$WS/keyring/glyndor-release-mldsa65.b64"
 	REL="$WS/.github/scripts/release"
 	# The third argument is what the plan said about the newest release, false by default.
 	sign() { # <anchor: empty|keyed|missing|indented|committed|cr|crlf|bom|tab|nul|high> <mldsa secret, may be empty> [previous]
-		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/out"; mkdir -p "$S/art" "$S/rt/stage" "$S/rt/signvenv/bin" "$WS/keyring"
+		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/calls.keys" "$S/out"; mkdir -p "$S/art" "$S/rt/stage" "$S/rt/signvenv/bin" "$WS/keyring"
 		: > "$S/calls"; : > "$S/out"
 		# The environment the step before made, and the packages the check of the download let through.
 		cp "$S/venv-python" "$S/rt/signvenv/bin/python"
@@ -232,7 +297,7 @@ PY
 		esac
 		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$WS" \
 			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" TAG=v6.2.0 \
-			GLYNDOR_RELEASE_ED25519_KEY=an-ed25519-seed GLYNDOR_RELEASE_MLDSA65_KEY="$2" PREVIOUS_MLDSA="${3-false}"
+			GLYNDOR_RELEASE_ED25519_KEY=an-ed25519-seed GLYNDOR_RELEASE_MLDSA65_KEY="$2" PREVIOUS_MLDSA="${3-false}" "${EXTRA_ENV[@]}"
 	}
 	verify_line() { # <deb> [--require-mldsa]: the call the step must make for a package
 		printf -- '-I %s/verify-sig.py %s %s.sig %s/keyring/glyndor-release-ed25519.b64 --mldsa-sig %s.mldsa65.sig --mldsa-keys %s%s' \
@@ -240,6 +305,29 @@ PY
 	}
 	calls() { grep -c -x -F -- "$1" "$S/calls"; }
 	signed() { grep -c 'sign.py ' "$S/calls"; }
+
+	# --- a rehearsal: throwaway keys, the real path, and the secrets not read ---------
+	# The real secrets are in the environment of these runs on purpose: a rehearsal has to sign with its own.
+	EXTRA_ENV=(DRY_RUN=true)
+	sign empty ""
+	check "a rehearsal with no key in the anchor goes through, with the Ed25519 key only" "0 1" "$rc $(grep -c -x -e '-I '"$REL"'/dry-run-keys.py '"$S"'/rt/dry' "$S/calls")"
+	check "and it signs with the throwaway key, not the secret" "ed=dry-ed-seed mldsa=" "$(sort -u "$S/calls.keys")"
+	check "and each package is verified against the throwaway anchor" "1 1" \
+		"$(calls "-I $REL/verify-sig.py $S/rt/stage/podman_6.2.0_amd64.deb $S/rt/stage/podman_6.2.0_amd64.deb.sig $S/rt/dry/ed25519.b64 --mldsa-sig $S/rt/stage/podman_6.2.0_amd64.deb.mldsa65.sig --mldsa-keys $ANCHOR") $(calls "-I $REL/verify-sig.py $S/rt/stage/podman_6.2.0_arm64.deb $S/rt/stage/podman_6.2.0_arm64.deb.sig $S/rt/dry/ed25519.b64 --mldsa-sig $S/rt/stage/podman_6.2.0_arm64.deb.mldsa65.sig --mldsa-keys $ANCHOR")"
+	check "and the public half is kept for the check that follows" "ed25519.b64" "$(ls "$S/rt/dry-public" | paste -sd' ')"
+	sign keyed AAAA-a-seed
+	check "a rehearsal when the real anchor holds a key makes a second throwaway key" "0 1 ed=dry-ed-seed mldsa=dry-mldsa-seed" \
+		"$rc $(grep -c -e '--mldsa$' "$S/calls") $(sort -u "$S/calls.keys")"
+	check "and requires the second signature, as the real configuration does" "1 1" \
+		"$(calls "$(printf -- '-I %s/verify-sig.py %s %s.sig %s/rt/dry/ed25519.b64 --mldsa-sig %s.mldsa65.sig --mldsa-keys %s/rt/dry/mldsa65.b64 --require-mldsa' "$REL" "$S/rt/stage/podman_6.2.0_amd64.deb" "$S/rt/stage/podman_6.2.0_amd64.deb" "$S" "$S/rt/stage/podman_6.2.0_amd64.deb" "$S")") $(grep -c -x require_mldsa=true "$S/out")"
+	check "and its public halves are both kept" "ed25519.b64 mldsa65.b64" "$(ls "$S/rt/dry-public" | paste -sd' ')"
+	EXTRA_ENV=(DRY_RUN=true GLYNDOR_RELEASE_ED25519_KEY=)
+	sign empty ""
+	check "a rehearsal does not need the signing secret, which it is not given" "0" "$rc"
+	EXTRA_ENV=(GLYNDOR_RELEASE_ED25519_KEY=)
+	sign empty ""
+	check "a release with no signing secret is still refused" "1 1" "$rc $(says 'GLYNDOR_RELEASE_ED25519_KEY is not configured')"
+	EXTRA_ENV=()
 
 	for state in empty indented; do
 		sign "$state" ""
