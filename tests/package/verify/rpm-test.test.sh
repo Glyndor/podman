@@ -42,8 +42,9 @@ check "the proof does not use su, which a minimal image lacks" 0 "$(grep -v '^\s
 # never started, and pasta answered "connection refused" for it. The listener is waited for in /proc/net/tcp,
 # since connecting to it would take its one request.
 check "the host-side listener is not started with httpd, which the image lacks" 0 "$(grep -v '^\s*#' "$SCRIPT" | grep -c 'httpd')"
-check "and it is nc in a loop on port 18473, hex 4829" "1 1" "$(grep -c 'nc -l -p 18473' "$SCRIPT") $(grep -c '00000000:4829' "$SCRIPT")"
-check "and it is waited for until the kernel says it listens, with the reason shown when it does not" "1 1" "$(grep -c 'for _ in $(seq 1 100); do listener_up' "$SCRIPT") $(grep -c 'the listener is not up' "$SCRIPT")"
+check "and it is nc kept listening with -ll on port 18473, which it serves on :: as well" "1" "$(grep -c 'nc -ll -p 18473' "$SCRIPT")"
+check "and it is waited for by connecting to it, with a bounded number of tries, and not by reading /proc/net/tcp" "1 0" "$(grep -c 'for _ in $(seq 1 30); do listener_up' "$SCRIPT") $(grep -c '00000000:4829' "$SCRIPT")"
+check "and when it does not answer the check shows why, with the sockets of tcp and tcp6" "1 1 1" "$(grep -c 'the listener is not up' "$SCRIPT") $(grep -c 'sockets of tcp:' "$SCRIPT") $(grep -c '/proc/net/tcp6' "$SCRIPT")"
 check "the checks that need a machine of the distribution name themselves in the log" 1 "$(grep -c 'echo "== \$name"' "$SCRIPT")"
 
 echo "$pass passed, $fail failed"
