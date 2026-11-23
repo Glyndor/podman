@@ -84,6 +84,9 @@ make -C "$podman_src" install.completions PREFIX=/usr DESTDIR="$stage" >&2
 # The docker shim and the podmansh link are separate packages in every distribution, because
 # the first conflicts with Docker. They are taken out of the main tree, so each file has one
 # owner. install.docker needs envsubst, from gettext.
+# The man pages of the docker shim are made by their own target: the default one builds the
+# pages of Podman, and install.docker-docs finds none of docker's without it.
+make -C "$podman_src" docker-docs PREFIX=/usr >&2
 make -C "$podman_src" install.docker install.docker-docs PREFIX=/usr ETCDIR=/etc DESTDIR="$payload/docker" >&2
 [ -L "$stage/usr/bin/podmansh" ] || { echo "make install left no podmansh link" >&2; exit 1; }
 install -d "$payload/sh/usr/bin" "$payload/sh/usr/share/man/man1"
