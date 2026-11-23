@@ -20,7 +20,7 @@ check() { # <desc> <want> <got>
 # shellcheck source=scripts/upstream/gpg-verdict.sh
 . "$HERE/scripts/upstream/gpg-verdict.sh"
 
-verdict() { local out; out="$(gpg_verdict "$@")"; echo "$? $out"; }
+verdict() { local out rc; out="$(gpg_verdict "$@" 2> /dev/null)"; rc=$?; echo "$rc $out"; }
 
 # --- the statuses as text -----------------------------------------------------------------------
 FPR=0123456789ABCDEF0123456789ABCDEF01234567
@@ -29,11 +29,18 @@ good="[GNUPG:] NEWSIG
 [GNUPG:] GOODSIG 89ABCDEF01234567 someone <s@x>
 [GNUPG:] VALIDSIG $FPR 2026-11-23 1 0 4 0 22 10 00 $FPR"
 check "a good signature by the pinned key is accepted" "0 " "$(verdict "$good" "$FPR")"
-check "and with no key pinned too" "0 " "$(verdict "$good")"
-check "a good signature by another key than the pinned one is refused, and says so" "1 not made by AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" "$(verdict "$good" AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA)"
-check "a fingerprint that is only the beginning of the primary key's is refused" "1 not made by ${FPR%????????}" "$(verdict "$good" "${FPR%????????}")"
+check "with no key pinned it is a mistake of the caller, not a verdict of anyone will do" "2 " "$(verdict "$good")"
+check "and so is something that is no fingerprint" "2 " "$(verdict "$good" 1234)"
+check "a good signature by another key than the pinned one is refused, and says so" "1 not made by a pinned key ($FPR)" "$(verdict "$good" AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA)"
+check "a fingerprint that is only the beginning of the primary key's is no fingerprint" "2 " "$(verdict "$good" "${FPR%????????}")"
 check "a signing subkey of the pinned key is accepted: the primary fingerprint ends the line" "0 " \
 	"$(verdict "${good/VALIDSIG $FPR/VALIDSIG BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB}" "$FPR")"
+two="$good
+[GNUPG:] GOODSIG 1111111111111111 other <o@x>
+[GNUPG:] VALIDSIG AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 2026-11-23 1 0 4 0 22 10 00 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+check "two good signatures, both by pinned keys, are accepted" "0 " "$(verdict "$two" "$FPR" AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA)"
+check "two good signatures of which one is by a key that is not pinned are refused, and the key is named" "1 not made by a pinned key (AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA)" "$(verdict "$two" "$FPR")"
+check "the fingerprints are compared whatever their case" "0 " "$(verdict "$good" "$(tr 'A-F' 'a-f' <<< "$FPR")")"
 check "VALIDSIG alone is not a verdict" "1 no good signature" "$(verdict "[GNUPG:] VALIDSIG $FPR 2026-11-23 1 0 4 0 22 10 00 $FPR" "$FPR")"
 check "nor GOODSIG alone" "1 no good signature" "$(verdict "[GNUPG:] GOODSIG 89ABCDEF01234567 someone" "$FPR")"
 check "no status at all is not a verdict" "1 no good signature" "$(verdict "" "$FPR")"
@@ -73,7 +80,7 @@ other_fpr="$(mkkey "$WORK/other" other never)"
 sign "$WORK/other" "$other_fpr" "$WORK/file" "$WORK/other.asc"
 check "a signature of a key the verifier does not know is refused" "1 ERRSIG" "$(verdict "$(verify "$WORK/other.asc" "$WORK/file")" "$good_fpr")"
 trust "$WORK/other" "$other_fpr"
-check "a good signature of another key that it does know is refused, for not being the pinned one" "1 not made by $good_fpr" \
+check "a good signature of another key that it does know is refused, for not being the pinned one" "1 not made by a pinned key ($other_fpr)" \
 	"$(verdict "$(verify "$WORK/other.asc" "$WORK/file")" "$good_fpr")"
 
 cp "$WORK/file" "$WORK/changed"; echo "changed after it was signed" >> "$WORK/changed"
