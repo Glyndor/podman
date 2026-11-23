@@ -47,7 +47,8 @@ build_passt() {
 build_crun() {
 	curl -fsSL --retry 3 -o "$work/crun.tar.gz" "https://github.com/containers/crun/releases/download/$1/crun-$1.tar.gz" \
 		&& tar -C "$work" -xzf "$work/crun.tar.gz" \
-		&& (cd "$work/crun-$1" && ./configure --prefix=/usr && make -j"$(nproc)" && make install)
+		&& (cd "$work/crun-$1" && { ./configure --prefix=/usr || { grep -n -B2 -A12 'seccomp' config.log | tail -n 60; false; }; } \
+			&& make -j"$(nproc)" && make install)
 }
 
 build_conmon() {

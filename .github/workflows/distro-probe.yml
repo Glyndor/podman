@@ -81,7 +81,9 @@ jobs:
         run: bash scripts/probe/prepare-runner.sh
       - name: Fetch the upstream tags and verify their signatures
         run: bash scripts/probe/fetch-sources.sh "$RUNNER_TEMP/src" "$PODMAN_TAG" "$NETAVARK_TAG" "$AARDVARK_TAG"
-      - name: Download the official Go and Rust installers and check them
+      - name: Download the official Go, Rust and protoc installers and check them
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/probe/fetch-toolchains.sh "$RUNNER_TEMP/tools" "$RUNNER_TEMP/src/podman"
       - name: Build, install and start Podman in ${{ matrix.name }}
         run: |
@@ -103,34 +105,3 @@ jobs:
           path: ${{ runner.temp }}/out
           retention-days: 14
           if-no-files-found: error
-  # Why the rootless checks cannot map a range of ids in a container on this runner: the
-  # same mapping by hand on the runner and under four sets of docker options.
-  userns:
-    name: userns diagnosis
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    timeout-minutes: 10
-    env:
-      IMAGE: quay.io/fedora/fedora:45@sha256:6d8462b7b0474af891c3e84e680df7bdfb487cf37ccb6239b5e05444d1b92cbd
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: On the runner, before and after the restriction is lifted
-        run: |
-          sudo bash scripts/probe/diag-userns.sh || true
-          bash scripts/probe/prepare-runner.sh
-          sudo bash scripts/probe/diag-userns.sh || true
-      - name: In a container
-        run: |
-          for opts in "--privileged" \
-            "--privileged --security-opt seccomp=unconfined --security-opt apparmor=unconfined" \
-            "--privileged --pid=host" \
-            "--cap-add=ALL --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt label=disable"; do
-            echo "::group::docker run $opts"
-            # shellcheck disable=SC2086
-            docker run --rm $opts -v "$GITHUB_WORKSPACE:/repo:ro" "$IMAGE" \
-              bash -c 'dnf install -y -q shadow-utils util-linux libcap > /dev/null 2>&1; bash /repo/scripts/probe/diag-userns.sh' || true
-            echo "::endgroup::"
-          done

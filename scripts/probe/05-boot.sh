@@ -73,6 +73,31 @@ export -f dns_root
 check root-dns "a container resolves another by name (aardvark-dns), root" dns_root
 p rm -f probe-a > /dev/null 2>&1 || true
 
+# Rootless needs newuidmap and newgidmap to be setuid root or to carry file capabilities.
+# A container image that lost either in its layers cannot map a range of ids, which is the
+# image and not the distribution: the package is reinstalled in its place, and the result
+# says it was.
+pm_try libcap libcap-progs > /dev/null
+helper_state() {
+	local f
+	f="$(command -v newuidmap)" || { echo missing; return; }
+	if [ -u "$f" ]; then echo setuid
+	elif getcap "$f" 2> /dev/null | grep -q cap_setuid; then echo filecaps
+	else echo none; fi
+}
+state="$(helper_state)"
+if [ "$state" = none ]; then
+	case "$PM" in
+		dnf) rpm --setperms --setugids shadow-utils && rpm --setcaps shadow-utils ;;
+		zypper) rpm --setperms --setugids shadow && rpm --setcaps shadow ;;
+		pacman) pacman -S --noconfirm shadow ;;
+	esac
+	state="none in the image, $(helper_state) after restoring them from the package"
+fi
+fact boot.newuidmap "$state"
+{ ls -l "$(command -v newuidmap)" "$(command -v newgidmap)"; getcap "$(command -v newuidmap)" "$(command -v newgidmap)"
+	grep -E '^(CapEff|CapBnd|NoNewPrivs|Seccomp)' /proc/self/status; } > "$PROBE_OUT/logs/boot-newuidmap.log" 2>&1
+
 # Rootless. The user gets subuid and subgid ranges if the distribution's useradd gave none.
 id probe > /dev/null 2>&1 || useradd -m probe
 grep -q '^probe:' /etc/subuid || echo 'probe:100000:65536' >> /etc/subuid
@@ -87,7 +112,7 @@ set -u
 export HOME=/home/probe XDG_RUNTIME_DIR=/run/user/$uid CONTAINERS_CONF_OVERRIDE="$PROBE_OUT/firewall.conf"
 P="podman --storage-driver vfs"
 case "\$1" in
-	userns) unshare -Ur true && podman unshare true ;;
+	userns) unshare -Ur true && \$P unshare true ;;
 	pull) \$P pull "docker://$image" ;;
 	run) \$P run --rm --network pasta "$image" echo rootless-ok ;;
 	net) \$P run --rm --network pasta "$image" wget -q -T 30 -O /dev/null http://example.com/ ;;

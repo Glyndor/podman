@@ -5,7 +5,10 @@
 # Go: the newest release of the minor version Podman's go.mod asks for, with the sha256
 # go.dev lists for that file. Rust: rustup-init, with the .sha256 file next to it.
 #
-# Usage: fetch-toolchains.sh <directory> <podman source dir>
+# The protobuf compiler of its latest release, with the digest GitHub lists for the asset,
+# for a distribution whose repositories carry none (netavark needs protoc to build).
+#
+# Usage: fetch-toolchains.sh <directory> <podman source dir>   (GH_TOKEN set)
 
 set -euo pipefail
 dest="$(mkdir -p "${1:?directory}" && cd "$1" && pwd)"
@@ -29,3 +32,13 @@ curl -fsSL --retry 3 -o "$dest/rustup-init" "$url"
 curl -fsSL --retry 3 -o "$dest/rustup-init.sha256" "$url.sha256"
 (cd "$dest" && sha256sum -c rustup-init.sha256)
 chmod 0755 "$dest/rustup-init"
+
+asset="$(gh release view --repo protocolbuffers/protobuf --json assets \
+	-q '.assets[] | select(.name | test("^protoc-[0-9.]+-linux-x86_64[.]zip$")) | [.name, .digest, .url] | @tsv')"
+IFS=$'\t' read -r name digest url <<< "$asset"
+case "$digest" in sha256:*) ;; *) echo "GitHub lists no sha256 for the protoc release asset" >&2; exit 1 ;; esac
+curl -fsSL --retry 3 -o "$dest/$name" "$url"
+echo "${digest#sha256:}  $dest/$name" | sha256sum -c -
+mkdir -p "$dest/protoc"
+unzip -q -o "$dest/$name" -d "$dest/protoc"
+rm "$dest/$name"

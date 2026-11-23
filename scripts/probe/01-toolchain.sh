@@ -23,7 +23,7 @@ case "$PM" in
 		go_pkg=golang
 		rust_pkgs=(rust cargo) ;;
 	zypper)
-		required=(gcc make git-core pkgconf-pkg-config tar xz gzip findutils diffutils which file gawk
+		required=(gcc make git-core pkgconf-pkg-config tar xz gzip findutils diffutils which file gawk python3
 			glibc-devel libseccomp-devel systemd-devel protobuf-devel)
 		optional=(libselinux-devel libbtrfs-devel shadow util-linux)
 		go_pkg=go
@@ -34,7 +34,18 @@ case "$PM" in
 		go_pkg=go
 		rust_pkgs=(rust) ;;
 esac
-pm_install "${required[@]}"
+# One transaction when it works. When it does not, the packages go one at a time so the
+# result lists every one the repositories lack, not only the first.
+if ! pm_install "${required[@]}"; then
+	lacking="$(pm_try "${required[@]}" | paste -sd' ')"
+	fact toolchain.required-missing "${lacking:-none}"
+	# The protobuf compiler is the one thing that can come from elsewhere (the official
+	# release the runner checked); anything else the repositories lack ends the step.
+	if [ "${lacking// /}" != "protobuf-compiler" ] && [ "${lacking// /}" != "protobuf-devel" ]; then
+		fail "the repositories of $PRETTY_NAME lack: ${lacking:-nothing it could name}"
+		exit 1
+	fi
+fi
 if ! command -v curl > /dev/null; then pm_install curl; fi
 missing="$(pm_try "${optional[@]}" | paste -sd' ')"
 fact toolchain.headers-missing "${missing:-none}"
@@ -83,4 +94,9 @@ else
 fi
 rustc --version
 cargo --version
-protoc --version || { fail "no protoc: netavark needs the protobuf compiler to build"; exit 1; }
+if ! command -v protoc > /dev/null; then
+	cp -r "$PROBE_TOOLS/protoc" /opt/protoc
+	use_path /opt/protoc/bin
+	fact toolchain.protoc "official release (digest checked by the runner), the distribution has none"
+fi
+protoc --version
