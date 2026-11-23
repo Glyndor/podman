@@ -39,6 +39,8 @@ install:
 	install -D -m644 /dev/null \$(DESTDIR)\$(PREFIX)/share/man/man1/podmansh.1
 install.completions:
 	install -D -m644 /dev/null \$(DESTDIR)\$(PREFIX)/share/bash-completion/completions/podman
+docker-docs:
+	@echo built >> $WORK/docker-docs.calls
 install.docker:
 	install -D -m755 /dev/null \$(DESTDIR)\$(PREFIX)/bin/docker
 	install -D -m644 /dev/null \$(DESTDIR)\$(ETCDIR)/profile.d/podman-docker.sh
@@ -73,6 +75,7 @@ check "and prints the payload directory" "$P" "$(printf '%s\n' "$out" | tail -n 
 check "podman, podman-remote and the network stack are in the main tree" "usr/bin/podman usr/bin/podman-remote usr/libexec/podman/aardvark-dns usr/libexec/podman/netavark" \
 	"$(cd "$P/main" && ls usr/bin/podman usr/bin/podman-remote usr/libexec/podman/aardvark-dns usr/libexec/podman/netavark | paste -sd' ')"
 check "the containers-common configuration is in the main tree" "usr/share/containers/seccomp.json" "$(cd "$P/main" && ls usr/share/containers/seccomp.json)"
+check "the man pages of the docker shim are made before they are installed" 1 "$(grep -c built "$WORK/docker-docs.calls")"
 check "the docker shim and its man page are in the docker tree" "usr/bin/docker usr/share/man/man1/docker.1" "$(cd "$P/docker" && ls usr/bin/docker usr/share/man/man1/docker.1 | paste -sd' ')"
 check "podmansh is a link to podman in the sh tree, with its man page" "podman usr/share/man/man1/podmansh.1" \
 	"$(readlink "$P/sh/usr/bin/podmansh") $(cd "$P/sh" && ls usr/share/man/man1/podmansh.1)"

@@ -19,13 +19,13 @@ case "$family" in
 	fedora | el | amzn)
 		install=(dnf install -y --setopt=install_weak_deps=False)
 		required=(rpm-build gcc make git-core pkgconf-pkg-config golang cargo rust glibc-devel
-			libseccomp-devel systemd-devel libselinux-devel protobuf-compiler gettext
+			libseccomp-devel systemd-devel libselinux-devel protobuf-compiler gettext python3
 			file binutils findutils which tar xz gzip shadow-utils)
 		optional=(btrfs-progs-devel) ;;
 	suse)
 		install=(zypper --non-interactive install --no-recommends)
 		required=(rpm-build gcc make git-core pkgconf-pkg-config go cargo rust glibc-devel
-			libseccomp-devel systemd-devel libselinux-devel protobuf-devel gettext-runtime
+			libseccomp-devel systemd-devel libselinux-devel protobuf-devel gettext-runtime python3
 			file binutils findutils which tar xz gzip shadow)
 		optional=(libbtrfs-devel) ;;
 	*) echo "no build dependencies are known for the family: $family" >&2; exit 2 ;;
@@ -48,3 +48,5 @@ esac
 for pkg in "${optional[@]}"; do
 	"${install[@]}" "$pkg" || echo "no $pkg here: the build goes without btrfs" >&2
 done
+# What the build runs has to be there now, not found in the middle of make.
+bash "$(dirname "${BASH_SOURCE[0]}")/../require-tools.sh" rpm
