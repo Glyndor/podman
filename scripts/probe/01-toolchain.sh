@@ -6,16 +6,18 @@
 # their place, so the rest of the build can still be measured, and the result says which
 # one was used and what the distribution had.
 
-set -euo pipefail
+set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "$here/lib.sh"
+# A command that stops the step under set -e names itself, so the result quotes it.
+trap 'fail "stopped at line $LINENO: $BASH_COMMAND"' ERR
 
 pm_refresh
 
 case "$PM" in
 	dnf)
-		required=(gcc make git-core pkgconf-pkg-config tar xz gzip findutils diffutils which file
+		required=(gcc make git-core pkgconf-pkg-config tar xz gzip findutils diffutils which file python3
 			glibc-devel libseccomp-devel systemd-devel protobuf-compiler)
 		optional=(libselinux-devel btrfs-progs-devel shadow-utils util-linux)
 		go_pkg=golang

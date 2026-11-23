@@ -46,16 +46,22 @@ ver_ge() {
 	[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]
 }
 
-# The headers of the RHEL family live in a repository that is off by default. It is a
-# build-time repository: nothing installed from it is a run-time dependency.
+# The headers of the RHEL family live in a repository that is off by default, called crb
+# or codeready-builder depending on the clone. It is a build-time repository: nothing
+# installed from it is a run-time dependency. The subscription plugin of UBI prints a
+# banner on every call and is switched off for it.
 enable_build_repos() {
 	case "$ID" in
-		almalinux | rocky)
+		almalinux | rocky | rhel)
+			if [ -f /etc/dnf/plugins/subscription-manager.conf ]; then
+				sed -i 's/^enabled *=.*/enabled=0/' /etc/dnf/plugins/subscription-manager.conf
+			fi
 			dnf install -y dnf-plugins-core > /dev/null 2>&1 || true
-			dnf config-manager --set-enabled crb || true ;;
-		rhel)
-			dnf install -y dnf-plugins-core > /dev/null 2>&1 || true
-			dnf config-manager --set-enabled "codeready-builder-for-ubi-${VERSION_ID%%.*}-$(uname -m)-rpms" || true ;;
+			dnf repolist --all > "$PROBE_OUT/logs/repolist-before.log" 2>&1 || true
+			for r in $(dnf repolist --all 2> /dev/null | awk '$1 ~ /(^crb$|codeready)/ {print $1}'); do
+				dnf config-manager --set-enabled "$r" || true
+			done
+			dnf repolist > "$PROBE_OUT/logs/repolist.log" 2>&1 || true ;;
 	esac
 }
 
@@ -88,7 +94,7 @@ pm_try() {
 pm_version() {
 	case "$PM" in
 		dnf)
-			dnf repoquery --latest-limit=1 --queryformat '%{version}-%{release}\n' "$1" 2>/dev/null | sort -V | tail -n 1 ;;
+			dnf repoquery --latest-limit=1 --queryformat '%{version}-%{release}\n' "$1" 2>/dev/null | grep -E '^[0-9]' | sort -V | tail -n 1 ;;
 		zypper)
 			zypper --non-interactive info "$1" 2>/dev/null | sed -n 's/^Version *: *//p' | head -n 1 ;;
 		pacman)
@@ -113,3 +119,19 @@ fact_get() {
 
 # dep_verdict <name>: ok, short or missing, as step 4 wrote it.
 dep_verdict() { fact_get "dep.$1" | awk -F'|' '{print $3}'; }
+
+# prepare_cgroups: a container owns its cgroup but passes no controllers to its children,
+# so crun fails with "controller pids is not available". Every process of the container
+# moves into a child cgroup and the controllers are enabled for the siblings, as
+# smoke-test.sh does. It has to run in the first process of the container, before that
+# one starts any other: a process left in the cgroup of the container keeps the
+# controllers from being delegated.
+prepare_cgroups() {
+	[ -w /sys/fs/cgroup/cgroup.subtree_control ] || return 0
+	mkdir -p /sys/fs/cgroup/probe-init
+	echo $$ > /sys/fs/cgroup/probe-init/cgroup.procs 2> /dev/null || return 0
+	local c
+	for c in $(< /sys/fs/cgroup/cgroup.controllers); do
+		echo "+$c" > /sys/fs/cgroup/cgroup.subtree_control 2> /dev/null || true
+	done
+}

@@ -66,7 +66,7 @@ if [ "$(dep_verdict passt)" != ok ]; then
 	built passt "$tag" build_passt "$tag"
 fi
 if [ "$(dep_verdict crun)" != ok ]; then
-	pm_try libcap-devel libcap yajl-devel libyajl-devel autoconf automake libtool python3 > /dev/null
+	pm_try libcap-devel libcap yajl-devel libyajl-devel json-c-devel libjson-c-devel json-c glibc-static glibc-devel-static autoconf automake libtool python3 > /dev/null
 	tag="$(latest_tag https://github.com/containers/crun '^[0-9]+\.[0-9]+(\.[0-9]+)?$')"
 	built crun "$tag" build_crun "$tag"
 fi

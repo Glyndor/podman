@@ -37,13 +37,12 @@ build() { # <fact name> <log name> <command...>
 	fi
 }
 
+# Podman's Makefile builds go-md2man from its own vendor tree. The manual pages of the two
+# Rust components need it, whether or not Podman itself builds.
+make -C "$PROBE_SRC/podman" .install.md2man > "$PROBE_OUT/logs/build-md2man.log" 2>&1 \
+	&& install -m 0755 "$PROBE_SRC/podman/test/tools/build/go-md2man" /usr/local/bin/go-md2man
 build podman podman make -C "$PROBE_SRC/podman" PREFIX=/usr EXTRA_BUILDTAGS=containers_image_openpgp \
 	BUILD_INFO="$SOURCE_DATE_EPOCH" BUILD_ORIGIN="Glyndor"
-# Podman's Makefile builds go-md2man from its own vendor tree; the manual pages of the two
-# Rust components are built with it.
-if [ -x "$PROBE_SRC/podman/test/tools/build/go-md2man" ]; then
-	install -m 0755 "$PROBE_SRC/podman/test/tools/build/go-md2man" /usr/local/bin/go-md2man
-fi
 build netavark netavark make -C "$PROBE_SRC/netavark" CARGO="cargo --locked"
 build aardvark-dns aardvark make -C "$PROBE_SRC/aardvark-dns" CARGO="cargo --locked"
 exit "$status"

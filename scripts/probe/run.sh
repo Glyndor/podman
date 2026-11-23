@@ -27,6 +27,7 @@ first_error() {
 	} > "$PROBE_OUT/first-error.txt"
 }
 
+prepare_cgroups
 for step in 01-toolchain 02-build 03-install 04-inventory 04b-short-deps 05-boot; do
 	log="$PROBE_OUT/logs/$step.log"
 	echo "::group::$step"

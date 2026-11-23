@@ -37,16 +37,6 @@ check() { # <fact> <description> <command...>
 	fi
 }
 
-# A container owns its cgroup but passes no controllers to its children, so crun fails
-# with "controller pids is not available". The shell moves into a child cgroup and the
-# controllers are enabled for its siblings, as smoke-test.sh does.
-if [ -w /sys/fs/cgroup/cgroup.subtree_control ]; then
-	mkdir -p /sys/fs/cgroup/probe-init
-	echo $$ > /sys/fs/cgroup/probe-init/cgroup.procs 2> /dev/null || true
-	for c in $(< /sys/fs/cgroup/cgroup.controllers); do
-		echo "+$c" > /sys/fs/cgroup/cgroup.subtree_control 2> /dev/null || true
-	done
-fi
 # netavark 2 has no iptables driver; a distribution that names it in its own
 # containers.conf would stop every bridge network.
 printf '[network]\nfirewall_driver = "nftables"\n' > "$PROBE_OUT/firewall.conf"
@@ -87,10 +77,14 @@ p rm -f probe-a > /dev/null 2>&1 || true
 id probe > /dev/null 2>&1 || useradd -m probe
 grep -q '^probe:' /etc/subuid || echo 'probe:100000:65536' >> /etc/subuid
 grep -q '^probe:' /etc/subgid || echo 'probe:100000:65536' >> /etc/subgid
-install -d -m 0700 -o probe /tmp/xdg-probe
+# The runtime directory a login session would give the user: the rootless storage
+# configuration of the package puts its runroot under /run/user/<uid>.
+uid="$(id -u probe)"
+install -d -m 0755 /run/user
+install -d -m 0700 -o probe "/run/user/$uid"
 cat > "$PROBE_OUT/rootless.sh" <<ROOTLESS
 set -u
-export HOME=/home/probe XDG_RUNTIME_DIR=/tmp/xdg-probe CONTAINERS_CONF_OVERRIDE="$PROBE_OUT/firewall.conf"
+export HOME=/home/probe XDG_RUNTIME_DIR=/run/user/$uid CONTAINERS_CONF_OVERRIDE="$PROBE_OUT/firewall.conf"
 P="podman --storage-driver vfs"
 case "\$1" in
 	userns) unshare -Ur true && podman unshare true ;;
