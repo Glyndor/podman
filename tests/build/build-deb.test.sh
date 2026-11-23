@@ -147,6 +147,54 @@ check "from r11, the file of the empty default (r2 to r6): the new default repla
 check "from r11, deleted by the administrator: the default is copied, once, so buildah and skopeo have a policy" "00|$want_new|" "$(upgrade_case 6.2.0+r11 absent)"
 check "from a release that already is this one, nothing is done: an edited file is whatever dpkg left, and an absent one stays absent" "00||" "$(upgrade_case 6.2.0+r12 absent)"
 check "a policy.json that is a link is not read, copied or replaced by the preinst" "00||" "$(upgrade_case 6.2.0+r11 link)"
+# --- what a purge takes away, and what an interrupted upgrade leaves ----------------------------------------
+# postrm purge removes /etc/containers/policy.json when postinst made it and nobody changed it, and only then.
+root="$WORK/root"
+state() { # what is left of the policy, its record and the directory, after the steps run on $root
+	echo "$([ -e "$root/etc/containers/policy.json" ] && echo file || echo nofile)|$([ -e "$root/var/lib/glyndor-podman/policy.md5" ] && echo record || echo norecord)|$([ -d "$root/etc/containers" ] && echo dir || echo nodir)|$(find "$root/etc/containers" -name "*glyndor*" 2> /dev/null | wc -l)"
+}
+purge() { DPKG_ROOT="$root" sh "$ctl/postrm" purge > "$WORK/purge.out" 2>&1; echo "$?"; }
+upgrade_case "" absent > /dev/null
+check "a first install makes the file and records its sum" "file|record|dir|0" "$(state)"
+check "a removal that is not a purge touches nothing" "0 file|record|dir|0" "$(DPKG_ROOT="$root" sh "$ctl/postrm" remove > /dev/null 2>&1; echo "$? $(state)")"
+check "a purge takes away the copy that was never changed, with its record and the directory it made empty" "0 nofile|norecord|nodir|0" "$(echo "$(purge) $(state)")"
+upgrade_case "" absent > /dev/null; printf '{"default":[{"type":"reject"}]}\n' > "$root/etc/containers/policy.json"
+check "a purge of a file the administrator edited after the copy keeps it, and still takes the record" "0 file|norecord|dir|0" "$(echo "$(purge) $(state)")"
+upgrade_case "" edited > /dev/null
+check "a file the administrator made before the first install has no record, and a purge keeps it" "0 file|norecord|dir|0" "$(echo "$(purge) $(state)")"
+upgrade_case 6.2.0+r11 edited > /dev/null
+check "an edited file put back by an upgrade has no record, and a purge keeps it" "0 file|norecord|dir|0" "$(echo "$(purge) $(state)")"
+upgrade_case 6.2.0+r11 unedited-r11 > /dev/null
+check "the default that an upgrade from r11 copied is recorded, and a purge takes it" "0 nofile|norecord|nodir|0" "$(echo "$(purge) $(state)")"
+# the copy that r12 made had no record: the configuration of this release adopts it when it is the default, and only then
+upgrade_case "" absent > /dev/null; rm -rf "$root/var/lib/glyndor-podman"
+DPKG_ROOT="$root" sh "$ctl/postinst" configure 6.2.0+r12 > /dev/null 2>&1
+check "a copy made by r12, with no record, is adopted when it is the default of the package, and a purge takes it" "record 0 nofile|norecord|nodir|0" \
+	"$(echo "$(state | cut -d'|' -f2) $(purge) $(state)")"
+upgrade_case "" edited > /dev/null; DPKG_ROOT="$root" sh "$ctl/postinst" configure 6.2.0+r12 > /dev/null 2>&1
+check "a file of the administrator's that differs from the default is not adopted by the configuration of a later release" "norecord" "$(state | cut -d'|' -f2)"
+# postrm does nothing and does not fail when it is not a purge, or when there is nothing of the package's to take
+for action in remove upgrade disappear failed-upgrade abort-install abort-upgrade; do
+	upgrade_case "" absent > /dev/null
+	check "postrm $action exits 0 and leaves the file and its record" "0 file|record|dir|0" "$(DPKG_ROOT="$root" sh "$ctl/postrm" "$action" > /dev/null 2>&1; echo "$? $(state)")"
+done
+rm -rf "$root/var/lib/glyndor-podman"
+check "postrm purge with no /var/lib/glyndor-podman exits 0 and keeps a file that has no record" "0 file|norecord|dir|0" "$(echo "$(purge) $(state)")"
+rm -rf "$root"; mkdir -p "$root"
+check "postrm purge with nothing of the package on the machine exits 0" "0" "$(purge)"
+check "and a second purge exits 0 as well" "0" "$(purge)"
+# an upgrade that stops between preinst and postinst leaves the kept file; the next configuration is the one that puts it back
+interrupted() { # <what the administrator does in /etc before the next configuration: nothing|other|same>
+	rm -rf "$root"; mkdir -p "$root/etc/containers" "$root/usr/share/containers"; printf '%s\n' "$DEFAULT_NEW" > "$root/usr/share/containers/policy.json"
+	printf '{"default":[{"type":"reject"}]}\n' > "$root/etc/containers/policy.json"
+	DPKG_ROOT="$root" sh "$ctl/preinst" upgrade 6.2.0+r11 > /dev/null 2>&1; rm -f "$root/etc/containers/policy.json"
+	case "$1" in other) printf '{"default":[{"type":"reject"},{"x":1}]}\n' > "$root/etc/containers/policy.json" ;; same) printf '{"default":[{"type":"reject"}]}\n' > "$root/etc/containers/policy.json" ;; esac
+	DPKG_ROOT="$root" sh "$ctl/postinst" configure 6.2.0+r11 > "$WORK/post.out" 2>&1
+	echo "$(tr -d '\n' < "$root/etc/containers/policy.json" 2> /dev/null)|$(find "$root/etc/containers" -name "*.glyndor-kept" | wc -l)|$(find "$root/etc/containers" -name "*.glyndor-previous" | wc -l)|$(grep -c 'interrupted' "$WORK/post.out")"
+}
+check "an interrupted upgrade: the next configuration puts the administrator's file back, and the kept copy is gone" "{\"default\":[{\"type\":\"reject\"}]}|0|0|0" "$(interrupted nothing)"
+check "an interrupted upgrade and a file the administrator made in the meantime: that file stays, the earlier one is kept under another name, and it is said" "{\"default\":[{\"type\":\"reject\"},{\"x\":1}]}|0|1|1" "$(interrupted other)"
+check "an interrupted upgrade and the same file made again: the kept copy is dropped, nothing is lost" "{\"default\":[{\"type\":\"reject\"}]}|0|0|0" "$(interrupted same)"
 for f in ./usr/bin/passt ./usr/bin/pasta ./etc/apparmor.d/usr.bin.passt ./etc/apparmor.d/abstractions/passt \
 	./etc/apparmor.d/usr.bin.pasta ./etc/apparmor.d/abstractions/pasta; do
 	check "passt ships $f" "$f" "$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "$f")"
@@ -314,6 +362,23 @@ for lib in libgpgme11t64 libassuan9 libsubid5 libsqlite3-0 libapparmor1 libbtrfs
 	check "a build that also links $lib is refused" "1 1" "$rc $(printf '%s' "$err" | grep -c -- "^build links a library that differs between releases: .*\\<$lib\\>")"
 	check "and no package is written for $lib" 0 "$(find "$last_out" -name '*.deb' 2>/dev/null | wc -l)"
 done
+
+# What the build reads from passt and from ldd has to be there: each refusal is by name, and writes no package.
+cp -r "$WORK/passt" "$WORK/passt-bad"
+printf 'all:\n\t@true\ninstall:\n\t@true\n' > "$WORK/passt-bad/Makefile"
+GLYNDOR_PASST_SRC="$WORK/passt-bad" refused "$WORK/out-nopasstbin"
+check "a passt that installs no usr/bin/passt is refused, and says so, not just a failed link" "1 1 0" \
+	"$rc $(printf '%s' "$err" | grep -c 'passt did not install an executable usr/bin/passt\|ln: failed to access') $(find "$WORK/out-nopasstbin" -name '*.deb' 2>/dev/null | wc -l)"
+mkdir "$WORK/fakeparse"; printf '#!/bin/sh\nexit 0\n' > "$WORK/fakeparse/dpkg-parsechangelog"; chmod +x "$WORK/fakeparse/dpkg-parsechangelog"
+PATH="$WORK/fakeparse:$PATH" refused "$WORK/out-nopasstversion"
+check "a changelog that gives no version is refused with a message, and no Provides: passt (= ) is written" "1 1 0" \
+	"$rc $(printf '%s' "$err" | grep -c 'no version in .*debian/changelog') $(find "$WORK/out-nopasstversion" -name '*.deb' 2>/dev/null | wc -l)"
+links libgcc-s1 libseccomp2
+check "binaries that link no libc6 are refused, and say that the list has none" "1 1 0" \
+	"$rc $(printf '%s' "$err" | grep -c 'do not include libc6') $(find "$last_out" -name '*.deb' 2>/dev/null | wc -l)"
+printf '#!/bin/sh\n[ "$1" = -S ] && exit 1\nexec "%s" "$@"\n' "$real_dpkg" > "$WORK/fakeldd/dpkg"
+links libc6
+check "a library that no package owns stops the build with a message" "1 1" "$rc $(printf '%s' "$err" | grep -c 'could not work out which packages own the libraries')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
