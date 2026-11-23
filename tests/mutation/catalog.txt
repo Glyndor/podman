@@ -135,8 +135,7 @@ verify-tag-no-keys	scripts/upstream/verify-tag.sh	[ ${#files[@]} -gt 0 ] || { ec
 verify-tag-keys-that-do-not-import	scripts/upstream/verify-tag.sh	[ "$rc" -eq 0 ] || { echo "could not import the keys under $keys" >&2; exit "$rc"; }	true	tests/upstream/verify-tag.test.sh
 # The mutation keeps the caller's GNUPGHOME, which the script then deletes on exit: the suite points it at a throwaway of its own.
 verify-tag-the-keyring-is-the-callers	scripts/upstream/verify-tag.sh	GNUPGHOME="$(mktemp -d)"	GNUPGHOME="${GNUPGHOME:-$(mktemp -d)}"	tests/upstream/verify-tag.test.sh
-verify-tag-bad-signature-status	scripts/upstream/verify-tag.sh	if grep -q "\[GNUPG:\] $bad" <<<"$status"; then	if false; then	tests/upstream/verify-tag.test.sh
-verify-tag-no-good-signature	scripts/upstream/verify-tag.sh	if ! { grep -q '\[GNUPG:\] GOODSIG' <<<"$status" && grep -q '\[GNUPG:\] VALIDSIG' <<<"$status"; }; then	if false; then	tests/upstream/verify-tag.test.sh
+verify-tag-bad-signature-status	scripts/upstream/verify-tag.sh	if ! reason="$(gpg_verdict "$status")"; then	if false; then	tests/upstream/verify-tag.test.sh
 package-state-ships-usage	scripts/verify/package-state.sh	[ "$#" -eq 0 ] || { echo "ships takes no argument" >&2; exit 2; }	[ "$#" -eq 0 ] || true	tests/verify/package-state-contents.test.sh
 package-state-a-file-not-shipped	scripts/verify/package-state.sh	[ -e "$root$f" ] || { echo "the package does not ship $f" >&2; exit 1; }	[ -e "$root$f" ] || true	tests/verify/package-state-contents.test.sh
 package-state-a-helper-not-executable	scripts/verify/package-state.sh	[ -x "$root/usr/libexec/podman/$helper" ] || { echo "missing $helper in the package" >&2; exit 1; }	[ -x "$root/usr/libexec/podman/$helper" ] || true	tests/verify/package-state-contents.test.sh
@@ -457,3 +456,8 @@ release-upgrade-test-package-missing	.github/workflows/release.yml	|| { echo "::
 dockerfile-debian12-is-not-pinned-by-digest	scripts/build/Dockerfile	FROM debian:12@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8 AS debian12	FROM debian:12 AS debian12	tests/build/dockerfile-base-images.test.sh
 upstream-repo-unknown-component	scripts/upstream/repo.sh	*) echo "unknown upstream component: ${1:-}" >&2; exit 2 ;;	*) echo "unknown upstream component: ${1:-}" >&2; exit 0 ;;	tests/upstream/repo.test.sh
 dockerfile-debian12-is-the-digest-of-one-architecture	scripts/build/Dockerfile	FROM debian:12@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8 AS debian12	FROM debian:12@sha256:366a6da5efcceffbaa19c560a101b97b87a1a9664eeeac8bc3d24395ddbf14f3 AS debian12	tests/build/dockerfile-base-images.test.sh
+gpg-verdict-a-refused-status	scripts/upstream/gpg-verdict.sh	if grep -q -E "^\[GNUPG:\] $bad( |\$)" <<< "$status"; then	if false; then	tests/upstream/gpg-verdict.test.sh
+gpg-verdict-no-good-signature	scripts/upstream/gpg-verdict.sh	if ! grep -q '^\[GNUPG:\] GOODSIG ' <<< "$status" || ! grep -q '^\[GNUPG:\] VALIDSIG ' <<< "$status"; then	if false; then	tests/upstream/gpg-verdict.test.sh
+gpg-verdict-not-the-pinned-key	scripts/upstream/gpg-verdict.sh	if [ -n "$fingerprint" ] && ! grep -q -E "^\[GNUPG:\] VALIDSIG .* $fingerprint\$" <<< "$status"; then	if false; then	tests/upstream/gpg-verdict.test.sh
+gpg-verdict-keyrevoked-is-not-refused	scripts/upstream/gpg-verdict.sh	for bad in BADSIG EXPSIG EXPKEYSIG REVKEYSIG KEYREVOKED ERRSIG NO_PUBKEY; do	for bad in BADSIG EXPSIG EXPKEYSIG REVKEYSIG ERRSIG NO_PUBKEY; do	tests/upstream/gpg-verdict.test.sh
+gpg-verdict-expired-key-is-not-refused	scripts/upstream/gpg-verdict.sh	for bad in BADSIG EXPSIG EXPKEYSIG REVKEYSIG KEYREVOKED ERRSIG NO_PUBKEY; do	for bad in BADSIG KEYREVOKED ERRSIG NO_PUBKEY; do	tests/upstream/gpg-verdict.test.sh
