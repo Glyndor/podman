@@ -148,6 +148,7 @@ P="$WORK/plan"
 if step build-check.yml plan "name=Resolve the newest stable upstream tags" "$P"; then
 	check "the plan step's run block has no expression in it" 0 "$(grep -c '\${{' "$P/run.sh")"
 	mkdir -p "$P/ws/scripts/upstream" "$P/bin"
+	cp "$HERE/scripts/upstream/repo.sh" "$P/ws/scripts/upstream/"
 	printf '#!/bin/sh\ncase "$1" in */podman.git) echo v6.2.0 ;; *) echo v2.1.0 ;; esac\n' > "$P/ws/scripts/upstream/latest-stable.sh"
 	cat > "$P/bin/git" <<'GIT'
 #!/usr/bin/env bash

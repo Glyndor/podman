@@ -91,7 +91,7 @@ jobs:
           [ "$sha" = "$GITHUB_SHA" ] || { echo "the checkout is at $sha, not at $GITHUB_SHA" >&2; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           for c in podman netavark aardvark-dns; do
-            echo "$c $(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")" >> "$w/fresh"
+            echo "$c $(bash scripts/upstream/latest-stable.sh "https://github.com/$(bash scripts/upstream/repo.sh "$c").git")" >> "$w/fresh"
           done
           # How the package is built counts as a component: upstream tags cannot
           # see a packaging fix, so without this one never produces a release.
@@ -135,7 +135,7 @@ jobs:
           # cannot give the two architectures different sources.
           for c in podman netavark aardvark-dns; do
             tag="$(awk -v c="$c" '$1 == c {print $2}' "$w/fresh")"
-            sha="$(git ls-remote "https://github.com/containers/$c.git" "refs/tags/$tag^{}" | awk '{print $1}')"
+            sha="$(git ls-remote "https://github.com/$(bash scripts/upstream/repo.sh "$c").git" "refs/tags/$tag^{}" | awk '{print $1}')"
             [ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }
             echo "${c%-dns}_sha=$sha" >> "$GITHUB_OUTPUT"
           done

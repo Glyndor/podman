@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Prove a release that cannot run the package refuses it. Run as root inside a
-# clean container of that release (Ubuntu 22.04: glibc 2.35, older than the
-# 2.39 netavark needs). Installing must fail, and fail because of libc6, not
+# clean container of that release (Ubuntu 22.04: glibc 2.35, Debian 12: glibc 2.36,
+# both older than the 2.39 netavark needs). Installing must fail, and fail because of libc6, not
 # for an unrelated reason that would leave the real gap unnoticed.
 #
 # The package once declared libc6 without a version, apt installed it on Ubuntu

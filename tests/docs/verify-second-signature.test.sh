@@ -101,6 +101,7 @@ guide() { # <file>: what is wrong with what the guide says about the line, or no
 	case "$flat" in *"newest release"*) ;; *) echo "it does not name the newest release as a third requirement" ;; esac
 }
 check "CONTRIBUTING.md says what the line does and what else requires the second signature" "" "$(guide "$HERE/CONTRIBUTING.md")"
+check "docs/verify.md says it too" "" "$(guide "$HERE/docs/verify.md")"
 printf 'The line is one of three: the secret GLYNDOR_RELEASE_MLDSA65_KEY and the newest release also require it.\n' > "$WORK/guide-good.md"
 printf 'While that line is there it is required, and taking the line\nout is what retires the second signature.\n' > "$WORK/guide-old.md"
 printf 'The line requires it.\n' > "$WORK/guide-short.md"

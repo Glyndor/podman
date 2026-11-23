@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        This repository packages upstream Podman. A change to Podman's behaviour belongs to containers/podman.
+        This repository packages upstream Podman. A change to Podman's behaviour belongs to podman-container-tools/podman.
   - type: textarea
     id: problem
     attributes:

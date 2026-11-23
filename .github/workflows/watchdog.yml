@@ -71,11 +71,11 @@ jobs:
         run: |
           w="$RUNNER_TEMP/lag"; mkdir -p "$w"
           for c in podman netavark aardvark-dns; do
-            tag="$(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")"
+            tag="$(bash scripts/upstream/latest-stable.sh "https://github.com/$(bash scripts/upstream/repo.sh "$c").git")"
             echo "$c $tag" >> "$w/fresh"
             # When upstream published it. A tag with no GitHub release has no
             # date, so it counts as appearing now rather than raising a false alarm.
-            when="$(gh release view "$tag" --repo "containers/$c" --json publishedAt --jq .publishedAt 2>/dev/null || true)"
+            when="$(gh release view "$tag" --repo "$(bash scripts/upstream/repo.sh "$c")" --json publishedAt --jq .publishedAt 2>/dev/null || true)"
             epoch="$(date -d "${when:-now}" +%s)"
             echo "$c $tag $epoch" >> "$w/dates"
           done

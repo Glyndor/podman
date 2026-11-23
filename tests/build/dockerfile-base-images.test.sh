@@ -47,7 +47,7 @@ PY
 }
 
 check "every image the build's Dockerfile starts from is pinned by digest" "" "$(violations "$HERE/scripts/build/Dockerfile")"
-check "and it starts from the four images the build and the smoke tests use" "4" \
+check "and it starts from the five images the build, the smoke tests and the refusal tests use" "5" \
 	"$(grep -c -E '^FROM [a-z0-9./-]+:[0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64} AS ' "$HERE/scripts/build/Dockerfile")"
 
 D="$WORK/Dockerfile"

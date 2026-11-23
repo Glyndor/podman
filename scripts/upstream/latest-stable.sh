@@ -3,11 +3,11 @@
 # Print the highest stable upstream tag (vMAJOR.MINOR.PATCH) of Podman.
 # Pre-releases (-rc1, -dev) and anything that is not plain SemVer are ignored.
 #
-# Usage: latest-stable.sh [repository-url]   (default: containers/podman)
+# Usage: latest-stable.sh [repository-url]   (default: podman-container-tools/podman)
 
 set -euo pipefail
 
-repo="${1:-https://github.com/containers/podman.git}"
+repo="${1:-https://github.com/podman-container-tools/podman.git}"
 
 tag="$(git ls-remote --tags --refs "$repo" \
 	| sed 's#.*refs/tags/##' \

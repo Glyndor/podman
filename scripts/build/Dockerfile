@@ -16,6 +16,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 FROM ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde AS ubuntu2204
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Debian 12, glibc 2.36, for the same proof.
+FROM debian:12@sha256:366a6da5efcceffbaa19c560a101b97b87a1a9664eeeac8bc3d24395ddbf14f3 AS debian12
+ENV DEBIAN_FRONTEND=noninteractive
+
 # No gpgme, assuan, subid or sqlite headers on purpose: those libraries change
 # name between releases (libgpgme11t64 / libgpgme45, libsubid4 / libsubid5), and
 # a package linked against one fails to start on the others. Without the headers

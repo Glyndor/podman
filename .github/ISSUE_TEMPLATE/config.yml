@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/Glyndor/podman/security/policy
     about: "Do not open a public issue. Use the Security tab of this repository and click 'Report a vulnerability'."
   - name: Bug in Podman itself
-    url: https://github.com/containers/podman/issues
-    about: "This repository only packages Podman. A bug that also happens with the upstream binary belongs to containers/podman."
+    url: https://github.com/podman-container-tools/podman/issues
+    about: "This repository only packages Podman. A bug that also happens with the upstream binary belongs to podman-container-tools/podman."
