@@ -1,6 +1,6 @@
 name: Build and prove a native package (reusable)
 
-# Builds the rpm of one distribution for one architecture from the three verified upstream
+# Builds the packages of one distribution for one architecture from the three verified upstream
 # tags, in the container of that distribution, and then installs it with the package manager
 # of that distribution on a clean image and on one that has the distribution's own Podman,
 # starts containers with and without root, and uninstalls it. release.yml and
@@ -55,7 +55,7 @@ on:
         type: string
         required: true
       upload:
-        description: Upload the packages as the artifact rpm-<id>-<arch>
+        description: Upload the packages as the artifact package-<id>-<arch>
         type: boolean
         required: true
 
@@ -102,40 +102,53 @@ jobs:
           fetch podman podman "$PODMAN" "$PODMAN_SHA"
           fetch netavark netavark "$NETAVARK" "$NETAVARK_SHA"
           fetch aardvark aardvark-dns "$AARDVARK" "$AARDVARK_SHA"
+      - name: Fetch the dependencies this distribution takes beside Podman, and verify them
+        run: bash scripts/package/rpm/fetch-extras.sh "$ID" "$RUNNER_TEMP/extras"
       - name: Let an unprivileged user create a user namespace in a container
         run: bash scripts/package/verify/prepare-runner.sh
       - name: Build the package in the container of the distribution
         run: |
           pv="$(bash scripts/package/package-version.sh "$VERSION")"
+          format="$(bash scripts/package/distros.sh field "$ID" format)"
           mkdir -p "$RUNNER_TEMP/out"
           docker build --quiet --tag "package-$ID" "scripts/package/images/$ID"
+          case "$format" in
+            rpm) build=(bash /scripts/package/rpm/run-build.sh "$ID" "$pv" /out) ;;
+            pacman) build=(bash /scripts/package/pacman/run-build.sh "$pv" /out) ;;
+          esac
           docker run --rm \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
             -v "$RUNNER_TEMP/podman:/src/podman" -v "$RUNNER_TEMP/netavark:/src/netavark" \
-            -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
-            -v "$RUNNER_TEMP/out:/out" "package-$ID" \
-            bash /scripts/package/rpm/run-build.sh "$ID" "$pv" /out
+            -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$RUNNER_TEMP/extras:/src/extras:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
+            -v "$RUNNER_TEMP/out:/out" "package-$ID" "${build[@]}"
           ls -l "$RUNNER_TEMP/out"
       - name: Install it with the package manager on a clean image and over the distribution's Podman, and run containers
         run: |
           pv="$(bash scripts/package/package-version.sh "$VERSION")"
-          mkdir "$RUNNER_TEMP/rpms"
-          cp "$RUNNER_TEMP"/out/*."$ARCH".rpm "$RUNNER_TEMP"/out/*.noarch.rpm "$RUNNER_TEMP/rpms/"
+          format="$(bash scripts/package/distros.sh field "$ID" format)"
+          mkdir "$RUNNER_TEMP/packages"
+          case "$format" in
+            rpm) cp "$RUNNER_TEMP"/out/*."$ARCH".rpm "$RUNNER_TEMP"/out/*.noarch.rpm "$RUNNER_TEMP/packages/" ;;
+            pacman) cp "$RUNNER_TEMP"/out/*.pkg.tar.zst "$RUNNER_TEMP/packages/" ;;
+          esac
           images="$ID $(bash scripts/package/distros.sh field "$ID" tests | tr ',' ' ')"
           for image in $images; do
             docker build --quiet --tag "package-test-$image" "scripts/package/images/$image"
             for mode in clean upgrade; do
               echo "::group::$image $mode"
+              case "$format" in
+                rpm) test=(bash /scripts/package/verify/rpm-test.sh /packages "$ID" "$pv" "${PODMAN#v}" "$mode" "$TEST_IMAGE") ;;
+                pacman) test=(bash /scripts/package/verify/pacman-test.sh /packages "$pv" "${PODMAN#v}" "$mode" "$TEST_IMAGE") ;;
+              esac
               docker run --rm --privileged \
-                -v "$RUNNER_TEMP/rpms:/rpms:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "package-test-$image" \
-                bash /scripts/package/verify/rpm-test.sh /rpms "$ID" "$pv" "${PODMAN#v}" "$mode" "$TEST_IMAGE"
+                -v "$RUNNER_TEMP/packages:/packages:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "package-test-$image" "${test[@]}"
               echo "::endgroup::"
             done
           done
       - if: ${{ inputs.upload }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rpm-${{ inputs.id }}-${{ inputs.arch }}
-          path: ${{ runner.temp }}/rpms/*.rpm
+          name: package-${{ inputs.id }}-${{ inputs.arch }}
+          path: ${{ runner.temp }}/packages/*
           retention-days: 1
           if-no-files-found: error

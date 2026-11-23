@@ -9,7 +9,7 @@
 # (or its equivalent), which the package manager checked against the distribution's key:
 # upstream's spec fetches the head of a branch that carries no signature.
 #
-# Layout it expects: the sources at /src/{podman,netavark,aardvark}, this repository's
+# Layout it expects: the sources at /src/{podman,netavark,aardvark,extras}, this repository's
 # scripts/ at /scripts (read only), and /out for the packages. GLYNDOR_SRC and GLYNDOR_SCRIPTS
 # move them, for tests.
 #
@@ -23,11 +23,12 @@ out="${3:?output dir}"
 src="${GLYNDOR_SRC:-/src}"
 scripts="${GLYNDOR_SCRIPTS:-/scripts}"
 
+# distros.sh reads the table with awk, which the minimal image of openSUSE does not have.
+command -v awk > /dev/null || { zypper --non-interactive install gawk || dnf install -y gawk; } > /dev/null 2>&1 || true
 family="$(bash "$scripts/package/distros.sh" field "$id" family)"
 bash "$scripts/package/rpm/install-build-deps.sh" "$family"
 # What the distribution has that requires podman has to be satisfied or replaced by this package.
-# dnf answers it; openSUSE is held to it by the test that installs the distribution's packages first.
-case "$family" in suse) ;; *) bash "$scripts/package/rpm/check-replacement.sh" "$id" ;; esac
+bash "$scripts/package/rpm/check-replacement.sh" "$id"
 
 case "$family" in
 	suse) common_package=libcontainers-common; install=(zypper --non-interactive install --no-recommends) ;;
@@ -44,3 +45,5 @@ trap 'rm -rf "$work"' EXIT
 git config --global --add safe.directory '*'
 bash "$scripts/package/build-payload.sh" "$src/podman" "$src/netavark" "$src/aardvark" "$work/payload" "$family" "$shortnames" >&2
 bash "$scripts/package/rpm/build-rpm.sh" "$work/payload" "$id" "$version" "$out"
+# The dependencies this distribution takes beside podman, from the sources the runner verified.
+bash "$scripts/package/rpm/build-extras.sh" "$id" "${version##*+r}" "$src/extras" "$out" >&2

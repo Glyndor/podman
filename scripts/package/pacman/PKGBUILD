@@ -1,0 +1,70 @@
+# Podman with its network stack, built from the upstream releases.
+#
+# This packages a tree that scripts/package/build-payload.sh already built from the verified
+# upstream tags, so it compiles nothing and fetches nothing. scripts/package/pacman/build-pacman.sh
+# gives it, in the environment, the version (GL_VERSION, X.Y.Z+rR), the payload (GL_PAYLOAD) and the
+# versions of what the payload carries (GL_NETAVARK, GL_AARDVARK, GL_COMMON); one that is missing stops
+# the build here instead of producing a package that says something else.
+#
+# Arch rebuilds its own packages when a library changes its soname, and does not rebuild this
+# one, so the libraries the binaries link have to be declared, or pacman cannot refuse an update of
+# Arch that would leave Podman unable to start. A dependency written as libX.so is what makepkg
+# expands: it reads which soname the binaries need and writes libX.so=N-64, which is how Arch's
+# own packages provide it. The names are taken from the binaries with readelf at build time.
+
+pkgbase=podman
+pkgname=(podman podman-docker)
+pkgver="${GL_VERSION:?GL_VERSION is not set}"
+pkgrel=1
+arch=(x86_64)
+url="https://podman.io"
+license=(Apache-2.0)
+options=(!strip !debug !lto !emptydirs)
+: "${GL_PAYLOAD:?GL_PAYLOAD is not set}" "${GL_NETAVARK:?GL_NETAVARK is not set}" \
+	"${GL_AARDVARK:?GL_AARDVARK is not set}" "${GL_COMMON:?GL_COMMON is not set}"
+
+# The libraries the binaries link, as libX.so, read from them here: makepkg reads the package
+# functions as text, so what they use has to exist before them.
+_sodeps=()
+while IFS= read -r _lib; do
+	case "$_lib" in
+		# glibc and gcc-libs provide no sonames on Arch, and every package depends on them by name.
+		ld-linux* | libc.so.* | libm.so.* | libdl.so.* | libpthread.so.* | librt.so.* | libresolv.so.* | libutil.so.* | libgcc_s.so.* | libstdc++.so.*) ;;
+		lib*.so.[0-9]*) _sodeps+=("${_lib%%.so.*}.so") ;;
+	esac
+done < <(find "$GL_PAYLOAD/main" "$GL_PAYLOAD/sh" -type f -print0 | xargs -0 -r readelf -d 2> /dev/null \
+	| sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | LC_ALL=C sort -u)
+
+# Everything the payload puts under /etc is configuration of the administrator, policy.json (which
+# images may be pulled) first: an update keeps what was changed and writes the new one beside it as
+# .pacnew. The lists are read from the payload, so a file it gains is covered without an edit here.
+_backup=()
+while IFS= read -r -d '' _f; do _backup+=("${_f#"$GL_PAYLOAD/main/"}"); done \
+	< <(find "$GL_PAYLOAD/main/etc" -type f -print0 2> /dev/null | LC_ALL=C sort -z)
+_backup_docker=()
+while IFS= read -r -d '' _f; do _backup_docker+=("${_f#"$GL_PAYLOAD/docker/"}"); done \
+	< <(find "$GL_PAYLOAD/docker/etc" -type f -print0 2> /dev/null | LC_ALL=C sort -z)
+
+package_podman() {
+	pkgdesc="Podman with its network stack, built from the upstream releases"
+	depends=(glibc gcc-libs catatonit conmon oci-runtime passt nftables "${_sodeps[@]}")
+	provides=("netavark=$GL_NETAVARK" "aardvark-dns=$GL_AARDVARK" "container-network-stack=2"
+		"containers-common=1:$GL_COMMON" podman-remote)
+	conflicts=(netavark aardvark-dns containers-common)
+	replaces=(netavark aardvark-dns containers-common)
+	backup=("${_backup[@]}")
+	cp -a "$GL_PAYLOAD/main/." "$pkgdir/"
+	cp -a "$GL_PAYLOAD/sh/." "$pkgdir/"
+	chmod -R u+rwX,go+rX,go-w "$pkgdir"
+}
+
+package_podman-docker() {
+	pkgdesc="Emulate the Docker CLI using Podman"
+	arch=(any)
+	depends=("podman=$pkgver-$pkgrel")
+	provides=(docker)
+	conflicts=(docker)
+	backup=("${_backup_docker[@]}")
+	cp -a "$GL_PAYLOAD/docker/." "$pkgdir/"
+	chmod -R u+rwX,go+rX,go-w "$pkgdir"
+}

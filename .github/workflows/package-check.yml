@@ -67,8 +67,8 @@ jobs:
       - name: List the distributions and architectures to build
         id: m
         run: |
-          # The rpm rows of the table, one entry for every distribution and architecture.
-          echo "matrix=$(bash scripts/package/distros.sh matrix rpm all)" >> "$GITHUB_OUTPUT"
+          # Every row of the table, one entry for every distribution and architecture.
+          echo "matrix=$(bash scripts/package/distros.sh matrix any all)" >> "$GITHUB_OUTPUT"
 
   plan:
     name: plan

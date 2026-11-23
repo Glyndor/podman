@@ -4,19 +4,19 @@
 #
 # Usage: distros.sh field <id> <column>      one value of the row of <id>
 #        distros.sh ids <format>             the ids of that format, one per line
-#        distros.sh matrix <format> <arches> the rows as a JSON list for a workflow matrix, one
+#        distros.sh matrix <format> <arches> the rows (of every format when <format> is any) as a JSON list for a workflow matrix, one
 #                                            entry per id and architecture; <arches> is "all" or
 #                                            one architecture, and an id that does not build
 #                                            there is left out
 #
-# Columns: id format family arches epoch nv_epoch cc_epoch cc_scheme passt_min tests
+# Columns: id format family arches epoch nv_epoch cc_epoch cc_scheme passt_min tests extras
 # GLYNDOR_DISTROS_FILE names another table, for tests.
 
 set -euo pipefail
 
 table="${GLYNDOR_DISTROS_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/distros.txt}"
 [ -f "$table" ] || { echo "no distribution table at $table" >&2; exit 1; }
-columns=(id format family arches epoch nv_epoch cc_epoch cc_scheme passt_min tests)
+columns=(id format family arches epoch nv_epoch cc_epoch cc_scheme passt_min tests extras)
 
 rows() { grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$table"; }
 
@@ -33,6 +33,7 @@ validate() {
 		$8 !~ /^(upstream|podman)$/ { printf "%s: unknown containers-common scheme %s\n", $1, $8; bad = 1 }
 		$9 !~ /^[0-9^.]+$/ { printf "%s: passt_min %s is not a version\n", $1, $9; bad = 1 }
 		$10 !~ /^([a-z0-9-]+(,[a-z0-9-]+)*)?$/ { printf "%s: tests %s is not a list of image names\n", $1, $10; bad = 1 }
+		$11 !~ /^((crun|conmon|catatonit|passt)(,(crun|conmon|catatonit|passt))*)?$/ { printf "%s: extras %s is not a list of the dependencies packaged beside podman\n", $1, $11; bad = 1 }
 		seen[$1]++ { printf "id %s appears twice\n", $1; bad = 1 }
 		END { exit bad }' || { echo "distros.txt is malformed" >&2; exit 1; }
 }
@@ -57,13 +58,13 @@ case "$cmd" in
 		[ "$#" -eq 2 ] || { echo "usage: distros.sh matrix <format> <arches|all>" >&2; exit 2; }
 		case "$2" in all | x86_64 | aarch64) ;; *) echo "unknown architectures: $2" >&2; exit 2 ;; esac
 		rows | awk -F'|' -v f="$1" -v want="$2" '
-			$2 != f { next }
+			f != "any" && $2 != f { next }
 			{
 				n = split($4, a, ",")
 				for (i = 1; i <= n; i++) {
 					if (want != "all" && a[i] != want) continue
 					runner = (a[i] == "aarch64") ? "ubuntu-24.04-arm" : "ubuntu-24.04"
-					out = out (out == "" ? "" : ",") sprintf("{\"id\":\"%s\",\"family\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\"}", $1, $3, a[i], runner)
+					out = out (out == "" ? "" : ",") sprintf("{\"id\":\"%s\",\"format\":\"%s\",\"family\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\"}", $1, $2, $3, a[i], runner)
 				}
 			}
 			END { print "[" out "]" }' ;;
