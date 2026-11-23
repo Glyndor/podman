@@ -47,14 +47,19 @@ while IFS= read -r -d '' _f; do _backup_docker+=("${_f#"$GL_PAYLOAD/docker/"}");
 
 package_podman() {
 	pkgdesc="Podman with its network stack, built from the upstream releases"
-	depends=(glibc gcc-libs catatonit conmon oci-runtime passt nftables "${_sodeps[@]}")
-	provides=("netavark=$GL_NETAVARK" "aardvark-dns=$GL_AARDVARK" "container-network-stack=2"
-		"containers-common=1:$GL_COMMON" podman-remote)
-	conflicts=(netavark aardvark-dns containers-common)
-	replaces=(netavark aardvark-dns containers-common)
+	# containers-common is Arch's own, at the version the release was built with or newer, and is not replaced:
+	# it owns /etc/containers, which is the administrator's. Replacing it would delete the policy.json an
+	# administrator edited (Arch's package does not declare it as a backup file, so pacman leaves no .pacsave;
+	# measured on 2026-11-23), and Arch ships the same 0.70.0 the tag was built with.
+	depends=(glibc gcc-libs catatonit conmon oci-runtime passt nftables "containers-common>=1:$GL_COMMON" "${_sodeps[@]}")
+	provides=("netavark=$GL_NETAVARK" "aardvark-dns=$GL_AARDVARK" "container-network-stack=2" podman-remote)
+	conflicts=(netavark aardvark-dns)
+	replaces=(netavark aardvark-dns)
 	backup=("${_backup[@]}")
 	cp -a "$GL_PAYLOAD/main/." "$pkgdir/"
 	cp -a "$GL_PAYLOAD/sh/." "$pkgdir/"
+	# The containers-common configuration is Arch's own package's, and the directories of /etc/containers too.
+	rm -rf "$pkgdir/usr/share/containers" "$pkgdir/etc/containers"
 	chmod -R u+rwX,go+rX,go-w "$pkgdir"
 }
 

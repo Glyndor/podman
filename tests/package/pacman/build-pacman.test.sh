@@ -61,7 +61,10 @@ done
 PKG="$HERE/scripts/package/pacman/PKGBUILD"
 check "the PKGBUILD makes a split package of podman and podman-docker, for x86_64" "pkgbase=podman pkgname=(podman podman-docker) arch=(x86_64)" \
 	"$(grep -E '^(pkgbase|pkgname|arch)=' "$PKG" | paste -sd' ')"
-check "it replaces, conflicts with and provides what the .deb does" 1 "$(grep -c -E 'conflicts=\(netavark aardvark-dns containers-common\)' "$PKG")"
+check "it replaces and conflicts with netavark and aardvark-dns, and not with containers-common, which owns /etc/containers" "1 0" \
+	"$(grep -c -E 'conflicts=\(netavark aardvark-dns\)' "$PKG") $(grep -c -E '^[[:space:]]*(conflicts|replaces)=.*containers-common' "$PKG")"
+check "it depends on containers-common at the version of the release or newer, and ships none of its files" "1 1" \
+	"$(grep -c 'containers-common>=1:$GL_COMMON' "$PKG") $(grep -c 'rm -rf "$pkgdir/usr/share/containers"' "$PKG")"
 check "podman-docker needs podman at the version and release of the same build" 1 "$(grep -c 'depends=("podman=$pkgver-$pkgrel")' "$PKG")"
 check "the libraries the binaries link are read from them before the package functions, and declared" "1 1" "$(grep -c '_sodeps+=(' "$PKG") $(grep -c '"${_sodeps\[@\]}"' "$PKG")"
 

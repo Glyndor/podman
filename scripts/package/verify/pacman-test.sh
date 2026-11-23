@@ -33,6 +33,8 @@ image="${5:?image to run, by digest}"
 case "$mode" in clean | upgrade) ;; *) echo "mode is clean or upgrade, not $mode" >&2; exit 2 ;; esac
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+r[0-9]+$ ]] || { echo "bad version, expected X.Y.Z+rR: $version" >&2; exit 2; }
 
+# shellcheck source=engine-files.sh
+. "$here/engine-files.sh"
 failed=()
 check() { # <name> <command...>: run it, say how it went, and go on
 	local name="$1"
@@ -69,10 +71,11 @@ if [ "$mode" = upgrade ]; then
 	fi
 fi
 
-# What the administrator changed in Arch's own containers-common has to be found again after the replacement.
+# What the administrator changed in Arch's containers-common: policy.json says which images may be pulled. The
+# package does not replace containers-common, so the file stays where it is, active and as written.
 changed=0
 if [ "$mode" = upgrade ] && [ -f /etc/containers/policy.json ]; then
-	echo '{"default":[{"type":"reject"}]}' > /etc/containers/policy.json
+	printf '%s\n' '{"default":[{"type":"insecureAcceptAnything"}],"transports":{}}' > /etc/containers/policy.json
 	changed=1
 fi
 
@@ -90,19 +93,12 @@ check "the system is upgraded with the command of the README" pacman -Syu --need
 
 installed() { pacman -Q "$1" > /dev/null 2>&1; }
 if [ "$changed" = 1 ]; then
-	# Measured on Arch: its containers-common does not declare /etc/containers/policy.json as a backup
-	# file, so pacman removes it with the package, and a policy changed before the replacement is not
-	# kept (the file the new package puts there is the default one). What the channel tells a user
-	# before the first `pacman -Syu` is to copy that file; this says whether it was kept.
-	if grep -q reject /etc/containers/policy.json /etc/containers/policy.json.pacsave 2> /dev/null; then
-		note "a policy.json changed in Arch's containers-common was kept"
-	else
-		note "a policy.json changed in Arch's containers-common was NOT kept by the replacement: Arch's package does not declare it as a backup file"
-	fi
+	check "the policy.json the administrator wrote is the active one after the update" grep -q '"transports":{}' /etc/containers/policy.json
+	check "containers-common of Arch is still installed, and podman does not own its files" bash -c "pacman -Q containers-common > /dev/null && ! pacman -Ql podman | grep -q 'usr/share/containers'"
 fi
 check "podman is the Glyndor package at $version-1" test "$(pacman -Q podman 2> /dev/null)" = "podman $version-1"
 check "its packager is Glyndor" test "$(pacman -Qi podman | sed -n 's/^Packager *: //p')" = "Glyndor <noreply@glyndor.net>"
-for pkg in netavark aardvark-dns containers-common; do
+for pkg in netavark aardvark-dns; do
 	# pacman -Q answers a name that a package only provides with the package that provides it.
 	check "$pkg is provided by podman and is not a package of its own" test "$(pacman -Q "$pkg" 2> /dev/null | cut -d' ' -f1)" = podman
 done
@@ -111,7 +107,7 @@ check "container-network-stack is provided" bash -c "pacman -Qi podman | grep -q
 check "the libraries podman links are declared as dependencies, derived from the binaries" bash -c "pacman -Qi podman | grep -q '^Depends On.*libseccomp.so=2-64'"
 check "netavark and aardvark-dns of the package are the ones that run" bash -c '/usr/libexec/podman/netavark --version && /usr/libexec/podman/aardvark-dns --version'
 check "no file of the package is missing" bash -c "! pacman -Qk podman podman-docker 2>&1 | grep -E '[1-9][0-9]* missing files'"
-check "the files a customer expects are on disk" bash "$scripts/verify/package-state.sh" ships
+check "the files a customer expects are on disk" ships_engine
 check "the seccomp profile is the one of this release" bash "$scripts/verify/package-state.sh" seccomp
 check "podman says the version that was built" bash "$scripts/verify/package-state.sh" version "$podman_version"
 if [ "$mode" = upgrade ] && [ -n "$before" ]; then
@@ -119,13 +115,6 @@ if [ "$mode" = upgrade ] && [ -n "$before" ]; then
 	check "buildah survived the replacement of containers-common" installed buildah
 	check "buildah finds its policy and registries" bash -c 'buildah --version > /dev/null'
 fi
-
-# What the administrator changed under /etc survives. policy.json says which images may be pulled; it is
-# changed, the package is installed again, and the change is still there.
-echo '{"default":[{"type":"reject"}]}' > /etc/containers/policy.json
-check "the package installed again leaves a policy.json the administrator changed" bash -c "pacman -S --noconfirm podman > /dev/null 2>&1 && grep -q reject /etc/containers/policy.json"
-# The default policy again, for the checks that pull an image.
-bsdtar -xOf "$(ls "$pkgs"/podman-[0-9]*.pkg.tar.zst | head -n 1)" etc/containers/policy.json > /etc/containers/policy.json
 
 # --- containers as root and without root ------------------------------------------------------
 # shellcheck source=runtime-checks.sh

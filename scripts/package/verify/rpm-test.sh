@@ -70,6 +70,8 @@ case "$family" in
 		} ;;
 esac
 
+# shellcheck source=engine-files.sh
+. "$here/engine-files.sh"
 failed=()
 check() { # <name> <command...>: run it, say how it went, and go on
 	local name="$1"
@@ -115,6 +117,25 @@ if [ "$mode" = upgrade ]; then
 fi
 
 # --- the update, or the install ---------------------------------------------------------------------
+# What the administrator changed in the configuration of the distribution's packages: policy.json says which
+# images may be pulled, containers.conf and storage.conf how containers run. The update has to leave each of
+# them active in /etc/containers, as written (the replaced package takes its files with it).
+edited=()
+if [ "$mode" = upgrade ] && [ -n "$before" ]; then
+	# The administrator's files, which exist or not depending on the distribution: on some the package
+	# owns them as %ghost, so removing the package removes what the administrator wrote there.
+	mkdir -p /etc/containers
+	for n in containers.conf storage.conf registries.conf policy.json; do
+		f="/etc/containers/$n"
+		case "$n" in
+			policy.json) printf '%s\n' '{"default":[{"type":"insecureAcceptAnything"}],"transports":{}}' > "$f" ;;
+			*) echo '# edited by the administrator before the update' >> "$f" ;;
+		esac
+		edited+=("$f")
+	done
+	note "files written or changed before the update: ${edited[*]}"
+fi
+
 repo="$(mktemp -d)"
 cp "$rpms"/*.rpm "$repo/"
 check "the packages are put in a repository the package manager reads" pm_add_repo "$repo"
@@ -135,9 +156,16 @@ for pkg in netavark aardvark-dns "$cc"; do
 done
 check "netavark and aardvark-dns of the package are the ones that run" bash -c '/usr/libexec/podman/netavark --version && /usr/libexec/podman/aardvark-dns --version'
 check "every file of the package is as the package says, configuration aside" test -z "$(rpm -V podman podman-docker podmansh 2>&1 | grep -v -e ' c /' -e 'is not installed' || true)"
-check "the files a customer expects are on disk" bash "$scripts/verify/package-state.sh" ships
+check "the engine a customer expects is on disk" ships_engine
+check "and the configuration of the release, under /usr/share/containers" ships_config
 check "the seccomp profile is the one of this release" bash "$scripts/verify/package-state.sh" seccomp
 check "podman says the version that was built" bash "$scripts/verify/package-state.sh" version "$podman_version"
+for f in "${edited[@]}"; do
+	case "$f" in
+		*policy.json) check "the policy.json the administrator wrote is the active one after the update" grep -q '"transports":{}' "$f" ;;
+		*) check "the $f the administrator changed is still the active one after the update" grep -q 'edited by the administrator before the update' "$f" ;;
+	esac
+done
 if [ "$mode" = upgrade ]; then
 	for pkg in $before; do
 		case "$pkg" in
@@ -150,13 +178,8 @@ if [ "$mode" = upgrade ]; then
 	check "buildah and skopeo find their policy and registries" bash -c 'command -v skopeo > /dev/null && skopeo --version > /dev/null && command -v buildah > /dev/null && buildah --version > /dev/null'
 fi
 
-# What the administrator changed under /etc survives. policy.json says which images may be pulled: it is
-# a configuration file of the package that an update does not replace, whatever it holds.
-check "policy.json is a configuration file of podman" bash -c "rpm -qc podman | grep -qx /etc/containers/policy.json"
-cp /etc/containers/policy.json /tmp/policy.json.saved
-echo '{"default":[{"type":"reject"}]}' > /etc/containers/policy.json
-check "the package installed again leaves a policy.json the administrator changed" bash -c "$(declare -f pm_reinstall); pm_reinstall podman > /dev/null 2>&1 && grep -q reject /etc/containers/policy.json"
-cp /tmp/policy.json.saved /etc/containers/policy.json
+# /etc/containers is the administrator's: no file of it is the package's.
+check "no file under /etc/containers belongs to podman" test "$(rpm -ql podman | grep -c '^/etc/containers/.*\.\(conf\|json\)$')" -eq 0
 
 # --- containers as root and without root ------------------------------------------------------
 # shellcheck source=runtime-checks.sh
