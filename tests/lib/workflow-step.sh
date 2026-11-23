@@ -15,7 +15,8 @@ step() {
 import re, shlex, sys, yaml
 path, job, selector, out = sys.argv[1:5]
 with open(path) as fh:
-    steps = yaml.safe_load(fh)["jobs"][job]["steps"]
+    doc = yaml.safe_load(fh)
+steps = doc["jobs"][job]["steps"]
 kind, _, want = selector.partition("=")
 def holds(step, secret):
     pattern = re.compile(r"secrets\." + re.escape(secret) + r"(?!\w)")
@@ -29,6 +30,16 @@ if len(hits) != 1:
 env = hits[0].get("env") or {}
 with open(f"{out}/run.sh", "w") as fh:
     fh.write(hits[0]["run"])
+# The shell Actions starts for this step, not a stricter one: the step's own `shell`, else the job's
+# defaults, else the workflow's, else the implicit one, which is `bash -e` and has no pipefail.
+def default_shell(node):
+    return ((node.get("defaults") or {}).get("run") or {}).get("shell")
+shell = hits[0].get("shell") or default_shell(doc["jobs"][job]) or default_shell(doc)
+flags = {"bash": "--noprofile --norc -eo pipefail", None: "-e"}
+if shell not in flags:
+    sys.exit(f"{path}: job {job} runs its steps with shell {shell!r}, which the helper does not reproduce")
+with open(f"{out}/shell.flags", "w") as fh:
+    fh.write(flags[shell])
 with open(f"{out}/env.sh", "w") as fh:
     for k, v in env.items():
         if "${{" not in str(v):
@@ -40,9 +51,9 @@ with open(f"{out}/secrets", "w") as fh:
 PY
 }
 
-# run_step <step-dir> <working-dir> [VAR=value]...: runs the block as GitHub does
-# (bash -e -o pipefail), with the step's literal env and the given variables. Sets
-# $rc and $out.
+# run_step <step-dir> <working-dir> [VAR=value]...: runs the block as GitHub does, in the shell
+# the workflow gives that step (`bash -e` unless it says `shell: bash`, which adds pipefail), with
+# the step's literal env and the given variables. Sets $rc and $out.
 run_step() {
 	local dir="$1" wd="$2"; shift 2
 	rc=0
@@ -50,7 +61,8 @@ run_step() {
 		cd "$wd" || exit 99
 		# shellcheck source=/dev/null
 		. "$dir/env.sh"
-		env "$@" bash --noprofile --norc -eo pipefail "$dir/run.sh" 2>&1
+		# shellcheck disable=SC2046 # the flags are words
+		env "$@" bash $(cat "$dir/shell.flags") "$dir/run.sh" 2>&1
 	)" || rc=$?
 }
 says() { printf '%s\n' "$out" | grep -c -F -- "$1"; }

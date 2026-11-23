@@ -39,6 +39,12 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Every run step goes through `bash -e -o pipefail`, which is what `shell: bash` means to Actions. Without it
+# the shell is `bash -e` alone, and a pipeline hides the failure of all but its last command.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   plan:
     name: Plan
@@ -91,7 +97,7 @@ jobs:
           [ "$sha" = "$GITHUB_SHA" ] || { echo "the checkout is at $sha, not at $GITHUB_SHA" >&2; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           for c in podman netavark aardvark-dns; do
-            echo "$c $(bash scripts/upstream/latest-stable.sh "https://github.com/$(bash scripts/upstream/repo.sh "$c").git")" >> "$w/fresh"
+            echo "$c $(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")" >> "$w/fresh"
           done
           # How the package is built counts as a component: upstream tags cannot
           # see a packaging fix, so without this one never produces a release.
@@ -105,9 +111,7 @@ jobs:
           bash scripts/upstream/plan-release.sh "$w/fresh" "$w/released" "$w/tags" > "$w/plan"
           # A rehearsal builds whether or not something is new, under a version that no release has
           # or will have: it is never published, and a name that cannot be a revision keeps it apart.
-          if [ "${DRY_RUN:-}" = true ] && ! grep -q -x build=true "$w/plan"; then
-            printf 'build=true\ntag=%s+r999\n' "$(awk '$1 == "podman" {print $2}' "$w/fresh")" > "$w/plan"
-          fi
+          [ "${DRY_RUN:-}" != true ] || grep -q -x build=true "$w/plan" || printf 'build=true\ntag=%s+r999\n' "$(awk '$1 == "podman" {print $2}' "$w/fresh")" > "$w/plan"
           cat "$w/plan" >> "$GITHUB_OUTPUT"
           echo "dry_run=${DRY_RUN:-false}" >> "$GITHUB_OUTPUT"
           # Whether the newest release carries the second signature, which the signing
@@ -135,7 +139,7 @@ jobs:
           # cannot give the two architectures different sources.
           for c in podman netavark aardvark-dns; do
             tag="$(awk -v c="$c" '$1 == c {print $2}' "$w/fresh")"
-            sha="$(git ls-remote "https://github.com/$(bash scripts/upstream/repo.sh "$c").git" "refs/tags/$tag^{}" | awk '{print $1}')"
+            sha="$(git ls-remote "https://github.com/containers/$c.git" "refs/tags/$tag^{}" | awk '{print $1}')"
             [ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }
             echo "${c%-dns}_sha=$sha" >> "$GITHUB_OUTPUT"
           done
@@ -144,23 +148,20 @@ jobs:
   # The build itself lives in reusable-build.yml so that build-check.yml can run
   # the same steps on a pull request. Third-party code runs there, with
   # contents: read and no secrets; what it hands forward is the artifact
-  # deb-<arch>, and the signing job never executes anything from it.
-  build:
-    name: Build ${{ matrix.arch }}
+  # deb-<arch> and, as outputs of the job, its id, its digest and the sha256 of the
+  # package, taken before anything ran it. There is one call for each architecture
+  # and no matrix, because the outputs of the legs of a matrix overwrite each other.
+  # The signing job never executes anything from the build.
+  build-amd64:
+    name: Build amd64
     needs: plan
     if: needs.plan.outputs.build == 'true'
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { arch: amd64, runner: ubuntu-26.04 }
-          - { arch: arm64, runner: ubuntu-24.04-arm }
     uses: ./.github/workflows/reusable-build.yml
     with:
-      arch: ${{ matrix.arch }}
-      runner: ${{ matrix.runner }}
+      arch: amd64
+      runner: ubuntu-26.04
       version: ${{ needs.plan.outputs.version }}
       podman: ${{ needs.plan.outputs.podman }}
       netavark: ${{ needs.plan.outputs.netavark }}
@@ -170,6 +171,25 @@ jobs:
       aardvark_sha: ${{ needs.plan.outputs.aardvark_sha }}
       upload: true
 
+  build-arm64:
+    name: Build arm64
+    needs: [plan]
+    if: ${{ needs.plan.outputs.build == 'true' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      arch: arm64
+      runner: ubuntu-24.04-arm
+      version: ${{ needs.plan.outputs.version }}
+      podman: ${{ needs.plan.outputs.podman }}
+      netavark: ${{ needs.plan.outputs.netavark }}
+      aardvark: ${{ needs.plan.outputs.aardvark }}
+      podman_sha: ${{ needs.plan.outputs.podman_sha }}
+      netavark_sha: ${{ needs.plan.outputs.netavark_sha }}
+      aardvark_sha: ${{ needs.plan.outputs.aardvark_sha }}
+      upload: ${{ true }}
+
   # The job that holds the signing keys. It signs what the build jobs made and nothing else,
   # and it can do nothing but sign: no write permission on the repository, no token for
   # attestations. What it signs is checked against the exact list of names the verified
@@ -178,7 +198,13 @@ jobs:
   # that holds a download.
   sign:
     name: Sign
-    needs: [plan, build]
+    needs: [plan, build-amd64, build-arm64]
+    # The environment whose policy releases the keys to this job. It admits the branch main only, which
+    # GitHub decides outside this file: a branch that edits the `if:` below to run the job is refused the
+    # deployment and gets no secret. The keys are still secrets of the organization until their owner
+    # moves them into this environment; the declaration is already in place, and the test of the contract
+    # fails for any job that names a secret without it. The guard below is a courtesy.
+    environment: release
     # The same guard as plan, on the job that holds the signing keys: a skipped plan already
     # skips this one, and a later edit that makes this job run whatever its needs did (an
     # always() above it) would otherwise sign on a branch.
@@ -186,6 +212,8 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+      # To list the artifacts of this run, which is what names the ones to take.
+      actions: read
     # Ceiling, not measured: a download of two packages and their signing.
     timeout-minutes: 15
     outputs:
@@ -199,16 +227,70 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
-      # One artifact at a time, by its name, into a directory that did not exist and is not
-      # under the checkout. merge-multiple put every file of every artifact in one place.
+      # The packages are taken by the id each build job reported when it uploaded its artifact, and
+      # nothing is looked up by name here: the name can be taken by any step that ran after the build.
+      # The list of this run has to show that same id with the digest the build job reported, made for
+      # the commit the plan fixed and not expired; the download fails when what it unpacked is not
+      # the digest GitHub recorded; and the package inside has to be the one whose sha256 the build
+      # job took before anything ran it. Nothing here holds a secret.
+      - name: Check the artifact of each package is the one the build uploaded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          AMD64_ID: ${{ needs.build-amd64.outputs.artifact_id }}
+          AMD64_DIGEST: ${{ needs.build-amd64.outputs.artifact_digest }}
+          ARM64_ID: ${{ needs.build-arm64.outputs.artifact_id }}
+          ARM64_DIGEST: ${{ needs.build-arm64.outputs.artifact_digest }}
+        run: |
+          list="$(gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/artifacts" \
+            --jq '.artifacts[] | [.name, (.id | tostring), (.expired | tostring), .workflow_run.head_sha, (.digest // "")] | @tsv')"
+          for arch in amd64 arm64; do
+            id_name="${arch^^}_ID"; digest_name="${arch^^}_DIGEST"
+            want_id="${!id_name}"; want_digest="${!digest_name}"
+            [[ "$want_id" =~ ^[0-9]+$ ]] || { echo "::error::the build of $arch reported the artifact id '$want_id', not a number; refusing to sign."; exit 1; }
+            want_digest="${want_digest#sha256:}"
+            [[ "$want_digest" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the build of $arch reported the digest '$want_digest', not a sha256; refusing to sign."; exit 1; }
+            rows="$(printf '%s\n' "$list" | awk -F'\t' -v id="$want_id" '$2 == id')"
+            [ "$(printf '%s\n' "$rows" | grep -c .)" = 1 ] \
+              || { echo "::error::this run does not list exactly one artifact with the id $want_id that the build of $arch reported; refusing to sign."; exit 1; }
+            IFS=$'\t' read -r name _ expired head digest <<< "$rows"
+            [ "$name" = "deb-$arch" ] || { echo "::error::the artifact $want_id is called $name, not deb-$arch; refusing to sign."; exit 1; }
+            [ "$expired" = false ] || { echo "::error::the artifact deb-$arch has expired; refusing to sign."; exit 1; }
+            [ "$head" = "$SHA" ] || { echo "::error::the artifact deb-$arch was made for $head, not for $SHA; refusing to sign."; exit 1; }
+            [ "${digest#sha256:}" = "$want_digest" ] || { echo "::error::the list of this run gives deb-$arch the digest '$digest', and the build reported sha256:$want_digest; refusing to sign."; exit 1; }
+            echo "deb-$arch is artifact $want_id, sha256:$want_digest"
+          done
+      # One artifact at a time, by its id, into a directory that did not exist and is not under the
+      # checkout. The download fails when what it unpacked is not the digest recorded for the id.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: deb-amd64
+          artifact-ids: ${{ needs.build-amd64.outputs.artifact_id }}
+          merge-multiple: true
+          digest-mismatch: error
           path: ${{ runner.temp }}/built/deb-amd64
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: deb-arm64
+          artifact-ids: ${{ needs.build-arm64.outputs.artifact_id }}
+          merge-multiple: true
+          digest-mismatch: error
           path: ${{ runner.temp }}/built/deb-arm64
+      - name: Check each package is the file the build hashed before it ran
+        env:
+          AMD64_SHA256: ${{ needs.build-amd64.outputs.sha256 }}
+          ARM64_SHA256: ${{ needs.build-arm64.outputs.sha256 }}
+        run: |
+          version="${TAG#v}"
+          for arch in amd64 arm64; do
+            hash_name="${arch^^}_SHA256"; want="${!hash_name}"
+            [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the build of $arch reported the sha256 '$want', not a sha256; refusing to sign."; exit 1; }
+            file="$RUNNER_TEMP/built/deb-$arch/podman_${version}_${arch}.deb"
+            [ "$(stat -c %F "$file" 2> /dev/null)" = "regular file" ] \
+              || { echo "::error::$file is not a regular file; refusing to sign."; exit 1; }
+            got="$(sha256sum "$file" | cut -d' ' -f1)"
+            [ "$got" = "$want" ] || { echo "::error::podman_${version}_${arch}.deb is $got, and the build hashed $want before it ran; refusing to sign."; exit 1; }
+          done
       # No secret is in the environment of the next two steps. The first is the only reader of
       # the download; what it lets through is copied to a directory of its own, as regular files
       # whose names and control fields are the ones the tag implies. The second makes the
@@ -307,19 +389,16 @@ jobs:
           # The seeds stay in this step: the files with them are not uploaded, and the public halves are.
           if [ "${DRY_RUN:-}" = true ]; then
             dry="$RUNNER_TEMP/dry"
-            dry_args=()
-            if [ "$anchored" = true ]; then dry_args=(--mldsa); fi
+            dry_args=(); [ "$anchored" != true ] || dry_args=(--mldsa)
             "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/dry-run-keys.py" "$dry" "${dry_args[@]}"
-            GLYNDOR_RELEASE_ED25519_KEY="$(cat "$dry/ed25519.seed")"
+            read -r GLYNDOR_RELEASE_ED25519_KEY < "$dry/ed25519.seed"
             ed25519="$dry/ed25519.b64"
             if [ "$anchored" = true ]; then
-              GLYNDOR_RELEASE_MLDSA65_KEY="$(cat "$dry/mldsa65.seed")"
+              read -r GLYNDOR_RELEASE_MLDSA65_KEY < "$dry/mldsa65.seed"
               anchor="$dry/mldsa65.b64"
             fi
-            export GLYNDOR_RELEASE_ED25519_KEY GLYNDOR_RELEASE_MLDSA65_KEY
             mkdir "$RUNNER_TEMP/dry-public"
-            cp "$dry/ed25519.b64" "$RUNNER_TEMP/dry-public/"
-            if [ "$anchored" = true ]; then cp "$dry/mldsa65.b64" "$RUNNER_TEMP/dry-public/"; fi
+            cp "$dry"/*.b64 "$RUNNER_TEMP/dry-public/"
           fi
           if [ "$switched" = true ] && [ "$anchored" = false ]; then
             echo "::error::keyring/second-signature-required requires the second signature and keyring/glyndor-release-mldsa65.b64 holds no key; refusing to publish with Ed25519 alone."
@@ -369,7 +448,7 @@ jobs:
   # (they only install packages and read files), and the copy of the new package that they see is read only.
   config-upgrade:
     name: Upgrade from the published release
-    needs: [build, plan]
+    needs: [build-amd64, build-arm64, plan]
     if: github.ref == 'refs/heads/main' && needs.plan.outputs.build == 'true'
     runs-on: ubuntu-26.04
     permissions:
@@ -498,9 +577,13 @@ jobs:
             assets+=("podman_${version}_${arch}.deb" "podman_${version}_${arch}.deb.sig")
             if [ "$REQUIRE_MLDSA" = true ]; then assets+=("podman_${version}_${arch}.deb.mldsa65.sig"); fi
           done
-          # --target is the commit the plan fixed, which this job checked out, and the tag the
-          # release creates points there. A run that finds the tag already taken stops.
-          gh release create "$TAG" --target "$SHA" --title "Podman ${TAG#v}" \
+          # The tag is made here, on the commit the plan fixed and on nothing else. The API refuses a
+          # reference that exists, whatever commit it points at, so a tag that somebody made while the
+          # build ran stops the run instead of being adopted by the release; --verify-tag then refuses to
+          # make a tag of its own, which would be one on whatever the default branch is by then.
+          gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" > /dev/null \
+            || { echo "::error::the tag $TAG could not be created on $SHA: it exists already, or the API refused; refusing to publish."; exit 1; }
+          gh release create "$TAG" --verify-tag --title "Podman ${TAG#v}" \
             --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \
             "${assets[@]}" "$RUNNER_TEMP/components.txt"
 
@@ -570,7 +653,7 @@ jobs:
   # watching the run, so it does not open one.
   alert:
     name: alert
-    needs: [plan, build, sign, config-upgrade, publish, rehearsal]
+    needs: [plan, build-amd64, build-arm64, sign, config-upgrade, publish, rehearsal]
     if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
     # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest

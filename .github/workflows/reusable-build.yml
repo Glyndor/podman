@@ -1,17 +1,21 @@
 name: Build the package (reusable)
 
 # Fetches and verifies the upstream tags, builds the package for one
-# architecture in the Debian 13 container, installs it on clean Debian 13 and
-# Ubuntu 24.04 and 26.04, and checks that Ubuntu 22.04 and Debian 12 refuse it. release.yml
-# calls it for every architecture and uploads the result for signing;
-# build-check.yml calls it on a pull request that changes how the package is
-# built, with upload false, so a broken recipe fails before it reaches main.
+# architecture in the Debian 13 container and uploads it, and then, in a job of its
+# own that downloads that artifact, installs it on clean Debian 13 and Ubuntu 24.04
+# and 26.04 and checks that Ubuntu 22.04 and Debian 12 refuse it. The artifact is uploaded before
+# anything runs the package, so code in the package cannot change the bytes the
+# signer will take: it can only change what its own job has downloaded. release.yml
+# calls it for every architecture, and the artifact it makes is the one that is
+# signed; build-check.yml calls it on a pull request that changes how the package is
+# built, with upload false, which names the artifact check-<arch>, so a broken
+# recipe fails before it reaches main.
 #
 # Third-party code runs here (a compiler, the Go toolchain, upstream sources),
 # so it holds contents: read and no secrets, and the checkout keeps no
 # credentials. What it hands forward is an artifact; the signing job runs the
 # signing tools from a checkout of its own and executes nothing this job built
-# or checked out.
+# or checked out. Neither job here can write to the repository or reach a secret.
 
 on:
   workflow_call:
@@ -56,8 +60,24 @@ on:
         description: Upload the package as the artifact deb-<arch>
         type: boolean
         required: true
+    outputs:
+      artifact_id:
+        description: Id of the artifact the package was uploaded as
+        value: ${{ jobs.build.outputs.artifact_id }}
+      artifact_digest:
+        description: Digest GitHub recorded for that artifact when it was uploaded
+        value: ${{ jobs.build.outputs.artifact_digest }}
+      sha256:
+        description: sha256 of the .deb, taken before anything ran it
+        value: ${{ jobs.build.outputs.sha256 }}
 
 permissions: {}
+
+# Every run step goes through `bash -e -o pipefail`, which is what `shell: bash` means to Actions. Without it
+# the shell is `bash -e` alone, and a pipeline hides the failure of all but its last command.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
@@ -65,6 +85,11 @@ jobs:
     runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
+    # What the signer checks the package against: taken where the package was made, before any test ran it.
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+      sha256: ${{ steps.hash.outputs.sha256 }}
     # Measured on 2026-11-21 with the rootless test included: 11 min 42 s on
     # amd64 and 11 min 4 s on arm64. Three times that, so a slow runner is not a
     # red and a hang does not hold the release group for six hours.
@@ -105,6 +130,57 @@ jobs:
             -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
             -v "$RUNNER_TEMP/out:/out" podman-deb-build \
             bash /scripts/build/build-deb.sh /src/podman /src/netavark /src/aardvark "$VERSION" /out
+      # The hash of the one package, before the artifact is made and before anything runs it.
+      - name: Hash the package
+        id: hash
+        run: |
+          shopt -s nullglob
+          debs=("$RUNNER_TEMP"/out/*.deb)
+          if [ "${#debs[@]}" -ne 1 ] || [ ! -f "${debs[0]}" ] || [ -L "${debs[0]}" ]; then
+            echo "::error::the build left ${#debs[@]} packages in out/, not one"
+            exit 1
+          fi
+          [ "$(basename "${debs[0]}")" = "podman_${VERSION}_${ARCH}.deb" ] || { echo "::error::the package is called $(basename "${debs[0]}"), not podman_${VERSION}_${ARCH}.deb"; exit 1; }
+          echo "sha256=$(sha256sum "${debs[0]}" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      # Before anything runs the package: this is the artifact that is signed, and from here on nothing in
+      # this workflow writes to it. The test job downloads it by name; the signer takes it by the id and
+      # the digest this step reports, which the job hands on as its outputs.
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.upload && 'deb' || 'check' }}-${{ inputs.arch }}
+          path: ${{ runner.temp }}/out/*.deb
+          retention-days: 1
+          if-no-files-found: error
+
+  test:
+    name: Test ${{ inputs.arch }}
+    needs: build
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+    # Ceiling, not measured since the split: both jobs together took 11 min 42 s on amd64
+    # and 11 min 4 s on arm64 on 2026-11-21. Three times that for each, so a slow runner
+    # is not a red and a hang does not hold the release group for six hours.
+    timeout-minutes: 35
+    env:
+      ARCH: ${{ inputs.arch }}
+      VERSION: ${{ inputs.version }}
+      PODMAN: ${{ inputs.podman }}
+      NETAVARK: ${{ inputs.netavark }}
+      AARDVARK: ${{ inputs.aardvark }}
+      PODMAN_SHA: ${{ inputs.podman_sha }}
+      NETAVARK_SHA: ${{ inputs.netavark_sha }}
+      AARDVARK_SHA: ${{ inputs.aardvark_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The package, as the build job uploaded it, into the directory the steps below read it from.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.upload && 'deb-' || 'check-' }}${{ inputs.arch }}
+          path: ${{ runner.temp }}/out
       - name: Smoke-test the package on Debian 13 and Ubuntu 24.04 and 26.04
         run: |
           for target in base ubuntu2404 ubuntu2604; do
@@ -148,10 +224,3 @@ jobs:
         env:
           ROOTLESS_STOP_TEST_SUDO: "1"
         run: bash scripts/verify/rootless-stop-test.sh
-      - if: ${{ inputs.upload }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: deb-${{ inputs.arch }}
-          path: ${{ runner.temp }}/out/*.deb
-          retention-days: 1
-          if-no-files-found: error

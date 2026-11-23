@@ -240,12 +240,12 @@ mutation-gate-decide-did-not-succeed	.github/workflows/mutation.yml	if [ "$DECID
 mutation-gate-an-answer-and-a-result-that-do-not-match	.github/workflows/mutation.yml	*)	__never__)	tests/mutation/mutation-workflow.test.sh
 release-plan-lightweight-tag	.github/workflows/release.yml	[ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }	[ -n "$sha" ] || true	tests/workflows/release/release-plan.test.sh
 release-no-signing-key	.github/workflows/release.yml	if [ "${DRY_RUN:-}" != true ] && [ -z "$GLYNDOR_RELEASE_ED25519_KEY" ]; then	if false; then	tests/workflows/policy/workflows-contract.test.sh
-release-previous-signature-unknown	.github/workflows/release.yml	*) echo "::error::the plan did not say whether the newest release carries the second signature ('$PREVIOUS_MLDSA'); refusing to guess."; exit 1 ;;	*) ;;	tests/workflows/release/release-contract.test.sh
+release-previous-signature-unknown	.github/workflows/release.yml	*) echo "::error::the plan did not say whether the newest release carries the second signature ('$PREVIOUS_MLDSA'); refusing to guess."; exit 1 ;;	*) ;;	tests/workflows/release/release-signing-step.test.sh
 release-a-keyring-file-missing	.github/workflows/release.yml	[ -f "$f" ] || { echo "::error::$f is missing; refusing to publish without the keys and the switch it reads."; exit 1; }	[ -f "$f" ] || true	tests/workflows/release/release-contract.test.sh,tests/workflows/release/release-second-signature.test.sh
 release-a-keyring-file-byte	.github/workflows/release.yml	if [ "$outside" -ne 0 ]; then	if false; then	tests/workflows/release/release-contract.test.sh,tests/workflows/release/release-second-signature.test.sh
 release-switch-unreadable-line	.github/workflows/release.yml	elif ! [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]]; then	elif false; then	tests/workflows/release/release-second-signature.test.sh
 release-switch-on-without-a-key	.github/workflows/release.yml	if [ "$switched" = true ] && [ "$anchored" = false ]; then	if false; then	tests/workflows/release/release-second-signature.test.sh
-release-second-signature-dropped	.github/workflows/release.yml	if [ "$PREVIOUS_MLDSA" = true ] && [ "$anchored" = false ]; then	if false; then	tests/workflows/release/release-contract.test.sh
+release-second-signature-dropped	.github/workflows/release.yml	if [ "$PREVIOUS_MLDSA" = true ] && [ "$anchored" = false ]; then	if false; then	tests/workflows/release/release-signing-step.test.sh
 release-key-without-secret	.github/workflows/release.yml	if [ "$anchored" = true ] && [ -z "$GLYNDOR_RELEASE_MLDSA65_KEY" ]; then	if false; then	tests/workflows/release/release-contract.test.sh,tests/workflows/release/release-second-signature.test.sh
 reusable-build-tag-moved	.github/workflows/reusable-build.yml	[ "$commit" = "$4" ] || { echo "$2 $3 is at $commit, the plan saw $4" >&2; exit 1; }	[ "$commit" = "$4" ] || true	tests/workflows/policy/workflows-contract.test.sh
 reusable-build-the-build-can-write-the-verification-scripts	.github/workflows/reusable-build.yml	-v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \	-v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts" \	tests/workflows/mounts/verification-scripts-read-only.test.sh
@@ -302,7 +302,7 @@ watchdog-a-stale-keyring-watch-fails-the-job	.github/workflows/watchdog.yml	exit
 watchdog-a-stale-sweep-fails-the-job	.github/workflows/watchdog.yml	exit "$sweep_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
 keyring-diff-a-change-is-the-exit-status	scripts/upstream/keyring-diff.sh	exit "$changed"	exit 0	tests/upstream/keyring-diff.test.sh
 release-build-runs-when-there-is-nothing-to-build	.github/workflows/release.yml	if: needs.plan.outputs.build == 'true'	if: always()	tests/workflows/release/release-contract.test.sh
-release-sign-does-not-wait-for-the-build	.github/workflows/release.yml	needs: [plan, build]	needs: [plan]	tests/workflows/release/release-contract.test.sh
+release-sign-does-not-wait-for-the-build	.github/workflows/release.yml	needs: [plan, build-amd64, build-arm64]	needs: [plan]	tests/workflows/release/release-contract.test.sh
 keyring-watch-branch-step-runs-when-the-keys-agree	.github/workflows/keyring-watch.yml	if: steps.diff.outputs.differs == 'true'	if: always()	tests/workflows/keyring/keyring-watch-copy.test.sh
 dependabot-rebase-runs-on-every-event	.github/workflows/dependabot-automerge.yml	if: github.event_name == 'push'	if: always()	tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh
 check-secrets-sample-words-are-read-in-the-whole-line	scripts/quality/check-secrets.sh	grep -qiE -- "$sample_word" <<< "$value"	grep -qiE -- "$sample_word" <<< "$1"	tests/quality/check-secrets.test.sh
@@ -347,8 +347,6 @@ reusable-workflow-lint-a-shell-is-read-past-its-name	.github/workflows/reusable-
 reusable-workflow-lint-a-tool-is-read-inside-a-longer-name	.github/workflows/reusable-workflow-lint.yml	NAME = r"(?<![\w.-])"	NAME = r""	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-workflow-lint-forgets-the-flags-between-a-tool-and-its-verb	.github/workflows/reusable-workflow-lint.yml	FLAGS = r"(?:\s+-\S+)*"	FLAGS = r""	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 reusable-workflow-lint-exception-always-applies	.github/workflows/reusable-workflow-lint.yml	except_marker and except_marker in line	True	tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
-reusable-build-the-package-is-never-uploaded	.github/workflows/reusable-build.yml	- if: ${{ inputs.upload }}	- if: ${{ false }}	tests/workflows/build/reusable-build-upload-gate.test.sh
-reusable-build-the-pull-request-check-always-uploads	.github/workflows/reusable-build.yml	- if: ${{ inputs.upload }}	- if: ${{ true }}	tests/workflows/build/reusable-build-upload-gate.test.sh
 release-build-does-not-ask-for-the-artifact	.github/workflows/release.yml	upload: true	upload: false	tests/workflows/build/reusable-build-upload-gate.test.sh
 build-check-uploads-the-package	.github/workflows/build-check.yml	upload: false	upload: true	tests/workflows/build/reusable-build-upload-gate.test.sh
 watchdog-no-verdict-is-said-as-behind	.github/workflows/watchdog.yml	title="The release pipeline's delivery check could not decide"	title="Release pipeline is behind upstream"	tests/workflows/watchdog/watchdog-delivery-lag.test.sh
@@ -471,3 +469,21 @@ build-deb-passt-version-empty	scripts/build/build-deb.sh	[ -n "$passt_version" ]
 build-deb-passt-binary-missing	scripts/build/build-deb.sh	[ -x "$stage/usr/bin/passt" ] ||	true ||	tests/build/build-deb.test.sh
 build-deb-libs-pipeline-fails	scripts/build/build-deb.sh	|| { echo "could not work out which packages own the libraries the binaries link" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
 build-deb-libs-without-libc6	scripts/build/build-deb.sh	refusing a package that declares none" >&2; exit 1 ;;	refusing a package that declares none" >&2; exit 0 ;;	tests/build/build-deb.test.sh
+release-default-shell-is-bash	.github/workflows/release.yml	    shell: bash	    shell: sh	tests/workflows/policy/default-shell.test.sh
+release-publish-tag-already-exists	.github/workflows/release.yml	|| { echo "::error::the tag $TAG could not be created on $SHA: it exists already, or the API refused; refusing to publish."; exit 1; }	|| true	tests/workflows/release/release-publish.test.sh
+release-sign-environment	.github/workflows/release.yml	    environment: release	    environment: staging	tests/workflows/release/release-contract.test.sh
+reusable-build-the-signed-package-is-uploaded-as-a-check	.github/workflows/reusable-build.yml	inputs.upload && 'deb' || 'check'	inputs.upload && 'check' || 'check'	tests/workflows/build/reusable-build-upload-gate.test.sh
+reusable-build-the-test-job-downloads-another-name	.github/workflows/reusable-build.yml	inputs.upload && 'deb-' || 'check-'	inputs.upload && 'deb-' || 'chek-'	tests/workflows/build/reusable-build-upload-gate.test.sh
+
+release-sign-reported-id-is-not-a-number	.github/workflows/release.yml	[[ "$want_id" =~ ^[0-9]+$ ]] || {	[[ "$want_id" =~ ^[0-9]+$ ]] || true || {	tests/workflows/release/release-artifacts.test.sh
+release-sign-reported-digest-is-not-a-sha256	.github/workflows/release.yml	[[ "$want_digest" =~ ^[0-9a-f]{64}$ ]] || {	[[ "$want_digest" =~ ^[0-9a-f]{64}$ ]] || true || {	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-id-is-not-listed-once	.github/workflows/release.yml	[ "$(printf '%s\n' "$rows" | grep -c .)" = 1 ] \	true \	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-artifact-has-another-name	.github/workflows/release.yml	[ "$name" = "deb-$arch" ] || {	[ "$name" = "deb-$arch" ] || true || {	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-artifact-expired	.github/workflows/release.yml	[ "$expired" = false ] || {	[ "$expired" = false ] || true || {	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-artifact-is-for-another-commit	.github/workflows/release.yml	[ "$head" = "$SHA" ] || {	[ "$head" = "$SHA" ] || true || {	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-digest-differs	.github/workflows/release.yml	[ "${digest#sha256:}" = "$want_digest" ] || {	[ "${digest#sha256:}" = "$want_digest" ] || true || {	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-reported-hash-is-not-a-sha256	.github/workflows/release.yml	[[ "$want" =~ ^[0-9a-f]{64}$ ]] || {	[[ "$want" =~ ^[0-9a-f]{64}$ ]] || true || {	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-package-is-not-a-regular-file	.github/workflows/release.yml	[ "$(stat -c %F "$file" 2> /dev/null)" = "regular file" ] \	true \	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-package-is-not-the-hashed-file	.github/workflows/release.yml	[ "$got" = "$want" ] || {	[ "$got" = "$want" ] || true || {	tests/workflows/release/release-artifacts.test.sh
+reusable-build-hash-not-exactly-one-package	.github/workflows/reusable-build.yml	if [ "${#debs[@]}" -ne 1 ] || [ ! -f "${debs[0]}" ] || [ -L "${debs[0]}" ]; then	if false; then	tests/workflows/build/reusable-build-hash.test.sh
+reusable-build-hash-the-package-has-another-name	.github/workflows/reusable-build.yml	[ "$(basename "${debs[0]}")" = "podman_${VERSION}_${ARCH}.deb" ] || {	[ "$(basename "${debs[0]}")" = "podman_${VERSION}_${ARCH}.deb" ] || true || {	tests/workflows/build/reusable-build-hash.test.sh
