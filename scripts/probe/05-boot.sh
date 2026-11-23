@@ -136,6 +136,12 @@ case "\$1" in
 		timeout 30 pasta --debug -- true
 		ls -l "\$(command -v pasta)"; getcap "\$(command -v pasta)"; ldd "\$(command -v pasta)"
 		cat /proc/sys/kernel/yama/ptrace_scope /proc/sys/fs/suid_dumpable 2>&1
+		echo "-- the same file, read by the user"
+		ls -ld /proc/sys/net/ipv4/ip_local_port_range; cat /proc/sys/net/ipv4/ip_local_port_range
+		echo "-- the system calls of pasta around the first refusal"
+		strace -f -o /tmp/pasta.strace -e trace=openat,prctl,setresuid,setresgid,setuid,setgid,capset,clone,clone3,unshare,landlock_restrict_self \\
+			timeout 30 pasta -- true > /dev/null 2>&1
+		grep -n -m2 -B8 -A2 EACCES /tmp/pasta.strace
 		echo "-- the user namespace of Podman, a new network namespace in it"
 		\$P unshare unshare -n cat /proc/sys/net/ipv4/ip_local_port_range
 		grep -E '^(CapEff|CapBnd|NoNewPrivs|Seccomp)' /proc/self/status
@@ -158,6 +164,7 @@ if [ "$(fact_get boot.rootless-userns)" = ok ]; then
 	check rootless-pull "pull the test image, rootless" rl pull
 	check rootless-run "a container runs on pasta, rootless" rl run
 	# Written for every distribution, so a failure can be read against one that passes.
+	pm_try strace > /dev/null
 	rl diag > "$PROBE_OUT/logs/boot-rootless-diag.log" 2>&1
 	rl debug > "$PROBE_OUT/logs/boot-rootless-pasta-debug.log" 2>&1
 	if [ "$(fact_get boot.rootless-run)" != ok ]; then
