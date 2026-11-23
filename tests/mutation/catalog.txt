@@ -487,3 +487,8 @@ package-distros-no-usage	scripts/package/distros.sh	echo "usage: distros.sh fiel
 rpm-deps-unknown-family	scripts/package/rpm/install-build-deps.sh	*) echo "no build dependencies are known for the family: $family" >&2; exit 2 ;;	*) true ;;	tests/package/rpm/install-build-deps.test.sh
 package-check-gate-decide-did-not-succeed	.github/workflows/package-check.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/workflows/build/package-check-gate.test.sh
 package-check-gate-decide-gave-no-answer	.github/workflows/package-check.yml	*)	__never__)	tests/workflows/build/package-check-gate.test.sh
+rpm-check-replacement-something-uncovered	scripts/package/rpm/check-replacement.sh	if [ -n "$bad" ]; then	if false; then	tests/package/rpm/check-replacement.test.sh
+rpm-check-replacement-requirers-unreadable	scripts/package/rpm/check-replacement.sh	|| { echo "cannot ask the repositories what requires podman" >&2; exit 1; }	|| true	tests/package/rpm/check-replacement.test.sh
+rpm-check-replacement-no-podman-docker	scripts/package/rpm/check-replacement.sh	|| { echo "the repositories do not list podman-docker among what requires podman, so the answer cannot be trusted" >&2; exit 1; } ;;	|| true ;;	tests/package/rpm/check-replacement.test.sh
+rpm-check-replacement-requires-unreadable	scripts/package/rpm/check-replacement.sh	reqs="$(dnf repoquery --requires "$pkg")" || { echo "cannot ask the repositories what $pkg requires" >&2; exit 1; }	reqs="$(dnf repoquery --requires "$pkg")" || true	tests/package/rpm/check-replacement.test.sh
+rpm-check-replacement-grep-fails	scripts/package/rpm/check-replacement.sh	[ "$rc" -le 1 ] || { echo "cannot read what $pkg requires" >&2; exit 1; }	[ "$rc" -le 1 ] || true	tests/package/rpm/check-replacement.test.sh
