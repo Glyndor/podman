@@ -52,11 +52,6 @@ on:
         description: Commit the aardvark-dns tag pointed at when the plan ran
         type: string
         required: true
-      sha:
-        description: Commit to build, when the caller fixed one; empty builds the commit of the event
-        type: string
-        required: false
-        default: ""
       upload:
         description: Upload the package as the artifact deb-<arch>
         type: boolean
@@ -86,7 +81,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.sha }}
           persist-credentials: false
       - name: Fetch the upstream tags and verify their signatures
         run: |

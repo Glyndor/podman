@@ -71,10 +71,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           w="$RUNNER_TEMP/plan"; mkdir -p "$w"
-          # The commit every later job of this run builds, signs and tags: the one this
-          # job checked out, which is the one the event named. Nothing later resolves a
-          # branch or a tag again, so a ref that moves during the run cannot change what
-          # is signed.
+          # The commit every later job of this run signs and tags: the one this job checked
+          # out, which is the one the event named. The build jobs check out the commit of
+          # the event, which is the same for the whole run, and the jobs that sign and
+          # publish check out this one by its id; nothing resolves a branch or a tag again,
+          # so a ref that moves during the run cannot change what is signed.
           sha="$(git rev-parse HEAD)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "the checkout is at '$sha', which is not a full commit id" >&2; exit 1; }
           [ "$sha" = "$GITHUB_SHA" ] || { echo "the checkout is at $sha, not at $GITHUB_SHA" >&2; exit 1; }
@@ -143,7 +144,6 @@ jobs:
     with:
       arch: ${{ matrix.arch }}
       runner: ${{ matrix.runner }}
-      sha: ${{ needs.plan.outputs.sha }}
       version: ${{ needs.plan.outputs.version }}
       podman: ${{ needs.plan.outputs.podman }}
       netavark: ${{ needs.plan.outputs.netavark }}
