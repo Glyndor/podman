@@ -130,6 +130,12 @@ case "\$1" in
 		unshare -r -n cat /proc/sys/net/ipv4/ip_local_port_range
 		echo "-- pasta on its own, with a command"
 		timeout 30 pasta -- cat /proc/sys/net/ipv4/ip_local_port_range
+		echo "-- pasta that keeps the user it was started as"
+		timeout 30 pasta --runas "\$(id -u)" -- cat /proc/sys/net/ipv4/ip_local_port_range
+		echo "-- pasta with its own debug output"
+		timeout 30 pasta --debug -- true
+		ls -l "\$(command -v pasta)"; getcap "\$(command -v pasta)"; ldd "\$(command -v pasta)"
+		cat /proc/sys/kernel/yama/ptrace_scope /proc/sys/fs/suid_dumpable 2>&1
 		echo "-- the user namespace of Podman, a new network namespace in it"
 		\$P unshare unshare -n cat /proc/sys/net/ipv4/ip_local_port_range
 		grep -E '^(CapEff|CapBnd|NoNewPrivs|Seccomp)' /proc/self/status

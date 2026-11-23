@@ -48,8 +48,6 @@ jobs:
         include:
           - name: fedora-45
             image: quay.io/fedora/fedora:45@sha256:6d8462b7b0474af891c3e84e680df7bdfb487cf37ccb6239b5e05444d1b92cbd
-          - name: fedora-44
-            image: quay.io/fedora/fedora:44@sha256:0daf6a73fb6ad75dcd62d9a5270e58572f1aea95bb9331db7c2eedd6e47c9cb5
           - name: opensuse-tumbleweed
             image: registry.opensuse.org/opensuse/tumbleweed:latest@sha256:815edf2ba0730167a9e87199cfe36c07ef391915131b2e44d116a84290a07c87
           - name: opensuse-leap-16.1
