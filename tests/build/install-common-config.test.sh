@@ -34,7 +34,8 @@ check "prints the version of common the tag pins" 0.70.0 "$out"
 for f in containers.conf seccomp.json registries.conf registries.d/default.yaml registries.conf.d/000-shortnames.conf; do
 	check "installs $f under /usr/share/containers" 1 "$([ -s "$WORK/stage/usr/share/containers/$f" ] && echo 1 || echo 0)"
 done
-check "installs policy.json under /etc/containers, where buildah and skopeo read it" 1 "$([ -s "$WORK/stage/etc/containers/policy.json" ] && echo 1 || echo 0)"
+check "installs policy.json under /usr/share/containers, like the rest" 1 "$([ -s "$WORK/stage/usr/share/containers/policy.json" ] && echo 1 || echo 0)"
+check "and puts nothing under /etc/containers, which is the administrator's" 0 "$([ -e "$WORK/stage/etc/containers/policy.json" ] && echo 1 || echo 0)"
 check "a rootless user gets its own runroot even if the system storage.conf sets one" 1 \
 	"$(grep -c 'runroot = "/run/user/$UID/containers"' "$WORK/stage/usr/share/containers/storage.rootless.conf.d/10-glyndor-rootless-paths.conf")"
 check "and its own graphroot" 1 \

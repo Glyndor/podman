@@ -16,11 +16,15 @@
 # from its signed archive by the build image: upstream's spec fetches the head of
 # a branch with no signature.
 #
-# policy.json goes to /etc/containers, as the spec does, and is a conffile there:
-# buildah and skopeo read only that path, and with the distribution's containers-common
-# gone they would stop with "no policy.json file found". registries.conf stays under
-# /usr/share/containers: in Debian /etc/containers/registries.conf belongs to
-# golang-github-containers-image, which this package does not replace.
+# Every file goes under /usr/share/containers and nothing under /etc: /etc/containers is the
+# administrator's, and no package writes or replaces what is there. Podman 6.2.0 reads
+# containers.conf, registries.conf and policy.json from /etc first and from /usr/share when
+# /etc has none (measured with strace, 2026-11-23), and seccomp.json only from /usr/share.
+# buildah and skopeo of Debian 13 read policy.json only from /etc/containers ("no policy.json
+# file found at ... /etc/containers/policy.json"), so the package's postinst copies this default
+# there when there is none; see build-deb.sh. registries.conf stays under /usr/share/containers:
+# in Debian /etc/containers/registries.conf belongs to golang-github-containers-image, which
+# this package does not replace.
 #
 # Prints the version of common that was installed.
 #
@@ -63,7 +67,7 @@ put() { # <source> <destination under the stage>
 }
 put "$common/pkg/config/containers.conf" usr/share/containers/containers.conf
 put "$common/pkg/seccomp/seccomp.json" usr/share/containers/seccomp.json
-put "$common/rpm/policy.json" etc/containers/policy.json
+put "$common/rpm/policy.json" usr/share/containers/policy.json
 put "$image/registries.conf" usr/share/containers/registries.conf
 put "$image/default.yaml" usr/share/containers/registries.d/default.yaml
 put "$shortnames" usr/share/containers/registries.conf.d/000-shortnames.conf

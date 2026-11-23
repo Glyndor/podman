@@ -16,8 +16,12 @@ Each release carries one `.deb` and one detached `.sig` per architecture, and a 
 
 ## What the package contains
 
+The configuration of the release is under `/usr/share/containers`, and the package ships no file under `/etc/containers`, which is the administrator's: Podman reads `containers.conf`, `registries.conf` and `policy.json` from there when `/etc` has none. buildah and skopeo of Debian and Ubuntu read the policy only from `/etc/containers/policy.json`, so `postinst` copies the default there when there is none, once. Releases before `6.2.0+r12` shipped that file as part of the package; on the upgrade from one of them an edited file is kept and an unedited one is replaced by the new default.
+
 The package replaces Debian's `netavark` and `aardvark-dns`. It also ships `passt` and `pasta`, built from Debian's signed source of a release newer than the one Podman 6.2.0 asks for, and the containers-common configuration of the release. Other dependencies such as `conmon` and `crun` come from Debian.
 
 ## Versions
 
 Release versions follow Podman's (`6.2.0`), with a `+rN` suffix when netavark, aardvark-dns or the way the package is built (everything under `scripts/build/`) changes under the same Podman. The first build of a version is revision 1 and carries no suffix, so the second one is `+r2` and there is no `+r1`. A packaging fix is the most common reason for one.
+
+Before anything is signed, the job `config-upgrade` of `release.yml` runs on a machine of its own: it downloads the newest published release, verifies its signatures against the keys committed in `keyring/`, and upgrades it to the new package on Debian 13 and Ubuntu 24.04 and 26.04 with `scripts/verify/config-upgrade-test.sh`, with `policy.json` unedited, edited and deleted. `publish` waits for it.

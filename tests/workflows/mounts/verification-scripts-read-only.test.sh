@@ -52,6 +52,7 @@ SCRIPT_MOUNTS = {
     ("reusable-build.yml", "Build the package"): 1,
     ("reusable-build.yml", "Smoke-test the package on Debian 13 and Ubuntu 24.04 and 26.04"): 2,
     ("reusable-build.yml", "Check an older release refuses the package"): 1,
+    ("release.yml", "Upgrade from it without losing an edited policy.json"): 1,
 }
 CHAINS = {";", "&&", "||", "|", "&", "(", ")"}
 

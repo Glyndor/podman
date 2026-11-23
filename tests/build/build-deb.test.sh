@@ -102,8 +102,51 @@ check "criu is recommended, as Debian's package does, for checkpoint and restore
 	"$(dpkg-deb -f "$deb" Recommends 2>/dev/null | grep -c 'criu')"
 check "the seccomp profile of this release is installed" ./usr/share/containers/seccomp.json \
 	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/containers/seccomp.json')"
-check "policy.json is a conffile under /etc/containers" ./etc/containers/policy.json \
-	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './etc/containers/policy.json')"
+check "policy.json is shipped under /usr/share/containers, like the rest of the configuration" ./usr/share/containers/policy.json \
+	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x './usr/share/containers/policy.json')"
+check "and nothing is shipped under /etc/containers but the empty directories: no file of the administrator's is the package's" 0 \
+	"$(dpkg-deb -c "$deb" 2>/dev/null | awk '$1 ~ /^-/ {print $6}' | grep -c '^./etc/containers/')"
+check "so nothing is a conffile and dpkg never asks about one" 0 "$(dpkg-deb -e "$deb" "$WORK/ctl" 2>/dev/null; [ -e "$WORK/ctl/conffiles" ] && echo 1 || echo 0)"
+
+# --- the maintainer scripts that keep an edited policy.json across the upgrade from a release that shipped it ---
+# Run against a root of their own (DPKG_ROOT), with the real dpkg --compare-versions.
+ctl="$WORK/ctl"
+mkdir -p "$ctl"; dpkg-deb -e "$deb" "$ctl"
+EMPTY=d41d8cd98f00b204e9800998ecf8427e
+upgrade_case() { # <old version, "" for a first install> <setup: unedited-r11|unedited-empty|edited|absent|link> -> prints what is left
+	local root="$WORK/root"; rm -rf "$root"; mkdir -p "$root/etc/containers" "$root/usr/share/containers"
+	printf '%s\n' "$DEFAULT_NEW" > "$root/usr/share/containers/policy.json"
+	case "$2" in
+		unedited-r11) cp "$HERE/tests/build/fixtures/policy.json.r7-to-r11" "$root/etc/containers/policy.json" ;;
+		unedited-empty) : > "$root/etc/containers/policy.json" ;;
+		edited) printf '{"default":[{"type":"reject"}]}\n' > "$root/etc/containers/policy.json" ;;
+		link) ln -s /nonexistent "$root/etc/containers/policy.json" ;;
+		absent) ;;
+	esac
+	if [ -n "$1" ]; then
+		DPKG_ROOT="$root" sh "$ctl/preinst" upgrade "$1" > "$WORK/pre.out" 2>&1; pre_rc=$?
+		# dpkg removes what the old package had and the new one does not list
+		[ "$2" = link ] || rm -f "$root/etc/containers/policy.json"
+		[ "$2" != link ] || true
+		DPKG_ROOT="$root" sh "$ctl/postinst" configure "$1" > "$WORK/post.out" 2>&1; post_rc=$?
+	else
+		pre_rc=0; DPKG_ROOT="$root" sh "$ctl/postinst" configure > "$WORK/post.out" 2>&1; post_rc=$?
+	fi
+	left="$(cat "$root/etc/containers/policy.json" 2>/dev/null | tr -d '\n')"; kept="$([ -e "$root/etc/containers/policy.json.glyndor-kept" ] && echo kept-file-left)"
+	echo "$pre_rc$post_rc|$left|$kept"
+}
+DEFAULT_NEW='{"default":[{"type":"insecureAcceptAnything"},{"new":"default"}]}'
+want_new="$(printf '%s' "$DEFAULT_NEW")"
+check "the scripts know the sums of the policy.json that releases shipped, the empty one and the default of r7 to r11" "$EMPTY ff61005e84c18498ed1b9d3f1b48db0a" \
+	"$(grep -o 'case " [0-9a-f ]* " in' "$ctl/preinst" | head -n 1 | sed 's/case " //; s/ " in//')"
+check "a first install with no file in /etc: the default is copied there" "00|$want_new|" "$(upgrade_case "" absent)"
+check "a first install where the administrator already put one: it is not touched" "00|{\"default\":[{\"type\":\"reject\"}]}|" "$(upgrade_case "" edited)"
+check "from r11, edited: the edited file is back, nothing is left beside it" "00|{\"default\":[{\"type\":\"reject\"}]}|" "$(upgrade_case 6.2.0+r11 edited)"
+check "from r11, unedited (the file of releases r7 to r11 as published): the new default replaces it and nothing is kept beside" "00|$want_new|" "$(upgrade_case 6.2.0+r11 unedited-r11)"
+check "from r11, the file of the empty default (r2 to r6): the new default replaces it" "00|$want_new|" "$(upgrade_case 6.2.0+r4 unedited-empty)"
+check "from r11, deleted by the administrator: the default is copied, once, so buildah and skopeo have a policy" "00|$want_new|" "$(upgrade_case 6.2.0+r11 absent)"
+check "from a release that already is this one, nothing is done: an edited file is whatever dpkg left, and an absent one stays absent" "00||" "$(upgrade_case 6.2.0+r12 absent)"
+check "a policy.json that is a link is not read, copied or replaced by the preinst" "00||" "$(upgrade_case 6.2.0+r11 link)"
 for f in ./usr/bin/passt ./usr/bin/pasta ./etc/apparmor.d/usr.bin.passt ./etc/apparmor.d/abstractions/passt \
 	./etc/apparmor.d/usr.bin.pasta ./etc/apparmor.d/abstractions/pasta; do
 	check "passt ships $f" "$f" "$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "$f")"

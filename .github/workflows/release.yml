@@ -361,13 +361,75 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  # The release that is published ships /etc/containers/policy.json as a plain file of the package, which the new
+  # package does not, so dpkg removes it on the upgrade: what an administrator edited has to come back, and dpkg
+  # must ask nothing. This runs the published package, so it runs on a machine of its own, after the build and
+  # before publish, and nothing it starts shares a runner with the job that builds what is signed. The published
+  # package is checked against the release key before any container starts, the containers are not privileged
+  # (they only install packages and read files), and the copy of the new package that they see is read only.
+  config-upgrade:
+    name: Upgrade from the published release
+    needs: [build, plan]
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    # Ceiling, not measured: three container images, an apt update and two installs in each.
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deb-amd64
+          path: ${{ runner.temp }}/new
+      - name: Fetch the newest published release and verify it against the release key
+        run: |
+          # Releases that are drafts or pre-releases are not what a host has installed.
+          tag="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          if [ -z "$tag" ]; then echo "no release to upgrade from"; echo "published=" > "$RUNNER_TEMP/published.env"; exit 0; fi
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] || { echo "::error::the newest release is called '$tag', which is not a version"; exit 1; }
+          version="${tag#v}"
+          deb="podman_${version}_amd64.deb"
+          mkdir "$RUNNER_TEMP/published"
+          gh release download "$tag" --pattern "$deb" --pattern "$deb.sig" --dir "$RUNNER_TEMP/published"
+          # A second signature is required whenever the anchor in the repository holds a key for it, so that
+          # dropping the file from a release cannot make a package pass with one signature.
+          anchor="$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64"
+          args=("$RUNNER_TEMP/published/$deb" "$RUNNER_TEMP/published/$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64")
+          if grep -qvE '^[[:space:]]*(#|$)' "$anchor" 2> /dev/null; then
+            gh release download "$tag" --pattern "$deb.mldsa65.sig" --dir "$RUNNER_TEMP/published"
+            args+=(--mldsa-sig "$RUNNER_TEMP/published/$deb.mldsa65.sig" --mldsa-keys "$anchor" --require-mldsa)
+          fi
+          [ "$(find "$RUNNER_TEMP/published" -type f -name "$deb" | wc -l)" -eq 1 ] || { echo "::error::the release $tag does not carry exactly $deb"; exit 1; }
+          python3 -I -m venv "$RUNNER_TEMP/verifyvenv"
+          py="$RUNNER_TEMP/verifyvenv/bin/python"
+          "$py" -I -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
+          "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "${args[@]}"
+          echo "published=$deb" > "$RUNNER_TEMP/published.env"
+      - name: Upgrade from it without losing an edited policy.json
+        run: |
+          . "$RUNNER_TEMP/published.env"
+          [ -n "$published" ] || { echo "nothing was published before: nothing to upgrade from"; exit 0; }
+          for target in base ubuntu2404 ubuntu2604; do
+            docker build --quiet --target "$target" -t "podman-deb-$target" scripts/build
+            docker run --rm \
+              -v "$RUNNER_TEMP/new:/new:ro" -v "$RUNNER_TEMP/published:/published:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \
+              bash /scripts/verify/config-upgrade-test.sh "/published/$published" "/new/podman_${VERSION}_amd64.deb"
+          done
+
   # The job that attests and publishes. It holds the write permissions and no signing key: it
   # takes the signed set, requires it to be exactly what the tag implies, verifies every
   # signature against the committed anchors with the same isolated Python, and only then
   # attests and creates the release, on the commit the plan fixed.
   publish:
     name: Attest and publish
-    needs: [plan, sign]
+    needs: [plan, sign, config-upgrade]
     # The same guard as plan, on the job that creates the release: a skipped plan already
     # skips this one, and a later edit that makes this job run whatever its needs did (an
     # always() above it) would otherwise publish from a branch. A rehearsal never gets here.
@@ -508,7 +570,7 @@ jobs:
   # watching the run, so it does not open one.
   alert:
     name: alert
-    needs: [plan, build, sign, publish, rehearsal]
+    needs: [plan, build, sign, config-upgrade, publish, rehearsal]
     if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
     # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest

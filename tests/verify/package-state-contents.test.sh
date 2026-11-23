@@ -46,7 +46,7 @@ present="/usr/bin/podman /usr/bin/podman-remote /usr/libexec/podman/quadlet /usr
 /usr/lib/systemd/system-generators/podman-system-generator /usr/lib/systemd/user-generators/podman-user-generator
 /usr/lib/tmpfiles.d/podman.conf /usr/share/bash-completion/completions/podman /usr/share/zsh/site-functions/_podman
 /usr/share/fish/vendor_completions.d/podman.fish"
-configured="/etc/containers/policy.json /usr/share/containers/registries.conf /usr/share/containers/containers.conf
+configured="/usr/share/containers/policy.json /usr/share/containers/registries.conf /usr/share/containers/containers.conf
 /usr/share/containers/registries.conf.d/000-shortnames.conf"
 tree() { # a tree that ships everything, empty files where only presence is asked
 	rm -rf "$WORK/root"
