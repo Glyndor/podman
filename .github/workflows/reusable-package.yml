@@ -1,0 +1,153 @@
+name: Build and prove a native package (reusable)
+
+# Builds the rpm of one distribution for one architecture from the three verified upstream
+# tags, in the container of that distribution, and then installs it with the package manager
+# of that distribution on a clean image and on one that has the distribution's own Podman,
+# starts containers with and without root, and uninstalls it. release.yml and
+# package-check.yml call it once for every id of scripts/package/distros.txt and every
+# architecture of its row.
+#
+# Third-party code runs here (a compiler, the distribution's repositories, upstream sources),
+# so it holds contents: read and no secrets, and the checkout keeps no credentials. What it
+# hands forward is an artifact, and the signing job executes nothing this job built.
+
+on:
+  workflow_call:
+    inputs:
+      id:
+        description: Distribution id, a row of scripts/package/distros.txt
+        type: string
+        required: true
+      arch:
+        description: Architecture in the names of the package format, x86_64 or aarch64
+        type: string
+        required: true
+      runner:
+        description: Runner label that matches the architecture
+        type: string
+        required: true
+      version:
+        description: Release version, the tag without the leading v
+        type: string
+        required: true
+      podman:
+        description: Upstream Podman tag
+        type: string
+        required: true
+      netavark:
+        description: Upstream netavark tag
+        type: string
+        required: true
+      aardvark:
+        description: Upstream aardvark-dns tag
+        type: string
+        required: true
+      podman_sha:
+        description: Commit the Podman tag pointed at when the plan ran
+        type: string
+        required: true
+      netavark_sha:
+        description: Commit the netavark tag pointed at when the plan ran
+        type: string
+        required: true
+      aardvark_sha:
+        description: Commit the aardvark-dns tag pointed at when the plan ran
+        type: string
+        required: true
+      sha:
+        description: Commit to build, when the caller fixed one; empty builds the commit of the event
+        type: string
+        required: false
+        default: ""
+      upload:
+        description: Upload the packages as the artifact rpm-<id>-<arch>
+        type: boolean
+        required: true
+
+permissions: {}
+
+# Every run step goes through `bash -e -o pipefail`, which is what `shell: bash` means to Actions. Without it
+# the shell is `bash -e` alone, and a pipeline hides the failure of all but its last command.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    name: ${{ inputs.id }} ${{ inputs.arch }}
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+    # Ceiling, not measured: a Go build, two Rust builds and the tests of the package, run for
+    # the first time in the pull request that adds this file. The probe of 2026-11-23 built the
+    # three components in 5 to 7.5 minutes per distribution; the ceiling is eight times that
+    # until there is a run to read it from.
+    timeout-minutes: 60
+    env:
+      ID: ${{ inputs.id }}
+      ARCH: ${{ inputs.arch }}
+      VERSION: ${{ inputs.version }}
+      PODMAN: ${{ inputs.podman }}
+      NETAVARK: ${{ inputs.netavark }}
+      AARDVARK: ${{ inputs.aardvark }}
+      PODMAN_SHA: ${{ inputs.podman_sha }}
+      NETAVARK_SHA: ${{ inputs.netavark_sha }}
+      AARDVARK_SHA: ${{ inputs.aardvark_sha }}
+      # The image the started containers run: Podman's own test image, by digest.
+      TEST_IMAGE: quay.io/libpod/alpine@sha256:fa93b01658e3a5a1686dc3ae55f170d8de487006fb53a28efcd12ab0710a2e5f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Fetch the upstream tags and verify their signatures
+        run: |
+          fetch() { # <directory> <repository> <tag> <commit the plan resolved>
+            git clone --quiet --branch "$3" "https://github.com/containers/$2.git" "$RUNNER_TEMP/$1"
+            commit="$(bash scripts/upstream/verify-tag.sh "$RUNNER_TEMP/$1" "$3")"
+            [ "$(git -C "$RUNNER_TEMP/$1" rev-parse HEAD)" = "$commit" ]
+            # Every distribution and architecture builds the commit the plan saw, so an
+            # upstream tag moved in between cannot give them different sources.
+            [ "$commit" = "$4" ] || { echo "$2 $3 is at $commit, the plan saw $4" >&2; exit 1; }
+            echo "verified $2 $3 at $commit"
+          }
+          fetch podman podman "$PODMAN" "$PODMAN_SHA"
+          fetch netavark netavark "$NETAVARK" "$NETAVARK_SHA"
+          fetch aardvark aardvark-dns "$AARDVARK" "$AARDVARK_SHA"
+      - name: Let an unprivileged user create a user namespace in a container
+        run: bash scripts/package/verify/prepare-runner.sh
+      - name: Build the package in the container of the distribution
+        run: |
+          pv="$(bash scripts/package/package-version.sh "$VERSION")"
+          mkdir -p "$RUNNER_TEMP/out"
+          docker build --quiet --tag "package-$ID" "scripts/package/images/$ID"
+          docker run --rm \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            -v "$RUNNER_TEMP/podman:/src/podman" -v "$RUNNER_TEMP/netavark:/src/netavark" \
+            -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
+            -v "$RUNNER_TEMP/out:/out" "package-$ID" \
+            bash /scripts/package/rpm/run-build.sh "$ID" "$pv" /out
+          ls -l "$RUNNER_TEMP/out"
+      - name: Install it with the package manager on a clean image and over the distribution's Podman, and run containers
+        run: |
+          pv="$(bash scripts/package/package-version.sh "$VERSION")"
+          mkdir "$RUNNER_TEMP/rpms"
+          cp "$RUNNER_TEMP"/out/*."$ARCH".rpm "$RUNNER_TEMP"/out/*.noarch.rpm "$RUNNER_TEMP/rpms/"
+          images="$ID $(bash scripts/package/distros.sh field "$ID" tests | tr ',' ' ')"
+          for image in $images; do
+            docker build --quiet --tag "package-test-$image" "scripts/package/images/$image"
+            for mode in clean upgrade; do
+              echo "::group::$image $mode"
+              docker run --rm --privileged \
+                -v "$RUNNER_TEMP/rpms:/rpms:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "package-test-$image" \
+                bash /scripts/package/verify/rpm-test.sh /rpms "$ID" "$pv" "${PODMAN#v}" "$mode" "$TEST_IMAGE"
+              echo "::endgroup::"
+            done
+          done
+      - if: ${{ inputs.upload }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rpm-${{ inputs.id }}-${{ inputs.arch }}
+          path: ${{ runner.temp }}/rpms/*.rpm
+          retention-days: 1
+          if-no-files-found: error

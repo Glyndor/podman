@@ -2,12 +2,10 @@
 # line, three fields separated by TAB:
 #
 #   file <TAB> a text that lies on the lines of the refusal <TAB> the reason
-#
 # The text lies on the refusal itself, its condition, or the header of the block that
 # holds it. A text of `*` exempts every refusal of the file. A reason says what was
 # measured: that the refusal cannot be reached, that its mutation is equivalent, or
 # that only the real build of the package exercises it, named.
-#
 # scripts/quality/check-mutation-coverage.sh fails when a refusal it reads has neither
 # an entry nor a line here, and when a line here has outlived its premise: its text is
 # gone, it reaches no refusal, or an entry now covers what it exempts. A line is
@@ -24,3 +22,4 @@ scripts/upstream/latest-stable.sh	[ -n "$tag" ] || { echo "no stable tag found i
 .github/scripts/release/verify-sig.py	fail(REFUSED, f"no ML-DSA-65 release key verifies {args.file}")	reached only by a real ML-DSA-65 signature of a key that is not configured, which needs cryptography 50.0.2 (the wheel pinned in .github/scripts/release/sign-requirements.txt): tests/release/release-signing-mldsa.test.sh makes one and kills this mutation (measured 2026-11-23 in a virtual environment with that wheel, on PATH ahead of the system python3-cryptography 46.0.5, which has no ML-DSA), but the sweep of mutation.yml runs on the system python3, where that suite cannot run; it becomes an entry when mutation.yml installs the wheel as tests.yml does
 scripts/verify/config-upgrade-test.sh	*	only the real run reaches what this script checks: the job config-upgrade of .github/workflows/release.yml runs it, on a runner of its own and after verifying the published package against the release key, in an unprivileged clean container of Debian 13, Ubuntu 24.04 and Ubuntu 26.04 with the published package installed by apt and the new one upgraded over it; no fake reaches dpkg and apt on a real install, and its argument contract has a suite of its own (tests/verify/config-upgrade-test.test.sh); the maintainer scripts it exercises are run against a root of their own in tests/build/build-deb.test.sh; measured 2026-11-23 by hand on the three releases: it passes
 scripts/upstream/verify-tag.sh	[ "${#pinned[@]}" -gt 0 ] || { echo "the keys under $keys hold no key" >&2; exit 1; }	gpg --import of a file with no key exits with an error, which stops the script one step earlier ("could not import the keys"), so no keys directory reaches this line empty; it stays as the guard of a future change of that step
+scripts/package/verify/rpm-test.sh	*	only the real run reaches what this script checks: the step "Install it with the package manager on a clean image and over the distribution's Podman, and run containers" of .github/workflows/reusable-package.yml runs it as root in a privileged container of the distribution, with the package installed from a repository on disk and the distribution's own Podman first in the upgrade case; no fake reaches the package manager, the network stack, buildah and skopeo of a real install, and its argument contract has a suite of its own (tests/package/verify/rpm-test.test.sh); a refusal in it is a red job of that workflow, which package-check.yml runs on a pull request; not measured by the mutation sweep because it cannot be run without those machines

@@ -1,0 +1,171 @@
+name: package-check
+
+# Builds the native packages on a pull request that changes how they are built or checked,
+# so a broken recipe fails here and not in the release run that would publish them.
+#
+# Events. pull_request into main, for the default activity types. A push to main is
+# release.yml's job.
+#
+# What makes it skip. The decide job lists the changed paths and asks
+# scripts/ci/decide-package.sh, read from the base commit so the pull request cannot edit its
+# own gate, whether any of them can change a package. It fails open: a list it cannot read,
+# a base without the script, or any error builds.
+#
+# What it builds. Every distribution and architecture of scripts/package/distros.txt, in
+# parallel, and the first one to fail cancels the rest: one broken recipe is one answer.
+#
+# Concurrency. One run per pull request ref; a new push cancels the run for the commit that no
+# longer exists. This workflow only runs on pull_request.
+#
+# Check name. "packages build", from the gate job. The build jobs can be skipped by decision
+# and a skipped job reports success, so the gate reads the results of its needs and fails
+# unless the skip was decided. Require that name, not the build jobs.
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every run step goes through `bash -e -o pipefail`, which is what `shell: bash` means to Actions. Without it
+# the shell is `bash -e` alone, and a pipeline hides the failure of all but its last command.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  decide:
+    name: decide
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    # Ceiling, not measured: a checkout of the full history and one git diff.
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.d.outputs.build }}
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Does this change touch what the packages are built from
+        id: d
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Any step that fails leaves the answer at true. The script is the one on the base
+          # commit; a base that does not have it yet builds. --no-renames lists a moved file
+          # under both its old and its new path.
+          decision=true
+          git show "$BASE:scripts/ci/decide-package.sh" > "$RUNNER_TEMP/decide-package.sh" \
+            && paths="$(git -c core.quotePath=false diff --no-renames --name-only "$BASE...$HEAD")" \
+            && out="$(printf '%s\n' "$paths" | bash "$RUNNER_TEMP/decide-package.sh")" \
+            && case "$out" in true | false) decision="$out" ;; esac \
+            || decision=true
+          printf 'changed paths:\n%s\n' "${paths:-<none or unreadable>}"
+          echo "build=$decision" >> "$GITHUB_OUTPUT"
+      - name: List the distributions and architectures to build
+        id: m
+        run: |
+          # The rpm rows of the table, one entry for every distribution and architecture.
+          echo "matrix=$(bash scripts/package/distros.sh matrix rpm all)" >> "$GITHUB_OUTPUT"
+
+  plan:
+    name: plan
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    # Measured in this repository's runs: 6 to 8 seconds for six git ls-remote calls.
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.p.outputs.version }}
+      podman: ${{ steps.p.outputs.podman }}
+      netavark: ${{ steps.p.outputs.netavark }}
+      aardvark: ${{ steps.p.outputs.aardvark }}
+      podman_sha: ${{ steps.p.outputs.podman_sha }}
+      netavark_sha: ${{ steps.p.outputs.netavark_sha }}
+      aardvark_sha: ${{ steps.p.outputs.aardvark_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve the newest stable upstream tags
+        id: p
+        run: |
+          for c in podman netavark aardvark-dns; do
+            tag="$(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")"
+            sha="$(git ls-remote "https://github.com/containers/$c.git" "refs/tags/$tag^{}" | awk '{print $1}')"
+            [ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }
+            echo "${c%-dns}=$tag" >> "$GITHUB_OUTPUT"
+            echo "${c%-dns}_sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "$c $tag $sha"
+            [ "$c" != podman ] || echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          done
+
+  package:
+    name: ${{ matrix.id }} ${{ matrix.arch }}
+    needs: [decide, plan]
+    if: needs.decide.outputs.build == 'true'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.decide.outputs.matrix) }}
+    uses: ./.github/workflows/reusable-package.yml
+    with:
+      id: ${{ matrix.id }}
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
+      version: ${{ needs.plan.outputs.version }}
+      podman: ${{ needs.plan.outputs.podman }}
+      netavark: ${{ needs.plan.outputs.netavark }}
+      aardvark: ${{ needs.plan.outputs.aardvark }}
+      podman_sha: ${{ needs.plan.outputs.podman_sha }}
+      netavark_sha: ${{ needs.plan.outputs.netavark_sha }}
+      aardvark_sha: ${{ needs.plan.outputs.aardvark_sha }}
+      upload: false
+
+  gate:
+    name: packages build
+    needs: [decide, plan, package]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    # Ceiling, not measured: it reads four strings.
+    timeout-minutes: 5
+    env:
+      DECIDE: ${{ needs.decide.result }}
+      WANTED: ${{ needs.decide.outputs.build }}
+      PLAN: ${{ needs.plan.result }}
+      PACKAGE: ${{ needs.package.result }}
+    steps:
+      - name: Pass only when the build was skipped on purpose or succeeded
+        run: |
+          if [ "$DECIDE" != success ]; then
+            echo "::error::decide ended as $DECIDE, so it is not known whether the packages have to be built"
+            exit 1
+          fi
+          case "$WANTED" in
+            false)
+              [ "$PACKAGE" = skipped ] || { echo "::error::decide said no build is needed but package ended as $PACKAGE"; exit 1; }
+              echo "decide said this change does not touch the packages; the build was skipped on purpose"
+              ;;
+            true)
+              [ "$PLAN" = success ] || { echo "::error::plan ended as $PLAN, so nothing was built"; exit 1; }
+              [ "$PACKAGE" = success ] || { echo "::error::package ended as $PACKAGE"; exit 1; }
+              echo "plan and package succeeded"
+              ;;
+            *)
+              echo "::error::decide gave no usable answer ('$WANTED')"
+              exit 1
+              ;;
+          esac

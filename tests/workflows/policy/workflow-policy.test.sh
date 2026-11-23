@@ -92,7 +92,7 @@ for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
         # the image's own tools names the image it was measured on. The jobs below
         # only call gh or read strings, and are the only ones left on the moving label.
         only_gh = {
-            ("build-check.yml", "gate"), ("dependabot-automerge.yml", "arm"),
+            ("build-check.yml", "gate"), ("package-check.yml", "gate"), ("dependabot-automerge.yml", "arm"),
             ("dependabot-automerge.yml", "disarm"), ("dependabot-automerge.yml", "rebase"),
             ("release.yml", "alert"), ("watchdog.yml", "alert"),
         }
@@ -106,7 +106,10 @@ for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
                     print(f"{name}: {job} only calls gh and is listed as left on ubuntu-latest, it runs on {runs_on}")
             elif runs_on is not None and runs_on not in pinned:
                 print(f"{name}: {job} runs on {runs_on}")
-            for entry in ((cfg.get("strategy") or {}).get("matrix") or {}).get("include") or []:
+            include = ((cfg.get("strategy") or {}).get("matrix") or {}).get("include") or []
+            # A matrix read from a script at run time is a string: its runners are held to the
+            # pinned list by the suite of that script.
+            for entry in [] if isinstance(include, str) else include:
                 if entry.get("runner") not in pinned:
                     print(f"{name}: {job} builds {entry.get('arch')} on {entry.get('runner')}")
             # One call for each architecture, with no matrix: the runner is an input of the call.
