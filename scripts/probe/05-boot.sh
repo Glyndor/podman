@@ -136,6 +136,8 @@ case "\$1" in
 		timeout 30 pasta --debug -- true
 		ls -l "\$(command -v pasta)"; getcap "\$(command -v pasta)"; ldd "\$(command -v pasta)"
 		cat /proc/sys/kernel/yama/ptrace_scope /proc/sys/fs/suid_dumpable 2>&1
+		echo "-- credentials of the user's shell, and whether the kernel treats it as dumpable"
+		grep -E '^(Uid|Gid|Groups|Cap)' /proc/self/status; ls -ld /proc/self; ls -lL "\$(command -v pasta)"
 		echo "-- the same file, read by the user"
 		ls -ld /proc/sys/net/ipv4/ip_local_port_range; cat /proc/sys/net/ipv4/ip_local_port_range
 		echo "-- the system calls of pasta around the first refusal"
