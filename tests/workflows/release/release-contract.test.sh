@@ -74,6 +74,8 @@ elif rule == "rehearsal":
         for s in r["steps"]:
             if "attest" in str(s.get("uses", "")) or "release create" in str(s.get("run", "")):
                 print("rehearsal attests or creates a release")
+            if str(s.get("uses", "")).startswith("actions/checkout@") and "ref" in (s.get("with") or {}):
+                print("rehearsal checks out a ref that is not the event's own")
 elif rule == "attest":
     cfg = jobs["publish"]
     steps = cfg["steps"]
@@ -190,11 +192,33 @@ sabotage release.yml "    permissions:
       contents: write
     # Ceiling, not measured: a download of two packages and their verification." "$BAD" >/dev/null 2>&1
 check "a rehearsal that can write is named" "rehearsal holds more than contents: read" "$(violations rehearsal "$BAD")"
+sabotage release.yml "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: \${{ runner.temp }}/signed
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dry-run-anchors" "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: \${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: \${{ runner.temp }}/signed
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dry-run-anchors" "$BAD" >/dev/null 2>&1
+check "a rehearsal that checks out a commit an output named is named" "rehearsal checks out a ref that is not the event's own" "$(violations rehearsal "$BAD")"
 check "a rehearsal does not publish: publish skips it" "github.ref == 'refs/heads/main' && needs.plan.outputs.dry_run != 'true'" "$(gate release.yml publish if)"
 check "and the check that ends a rehearsal runs only in one" "github.ref == 'refs/heads/main' && needs.plan.outputs.dry_run == 'true'" "$(gate release.yml rehearsal if)"
 check "and waits for the plan and the signing" "plan,sign" "$(gate release.yml rehearsal needs)"
 # The last step of a rehearsal: a release called as the rehearsal's tag is an error, and none is the answer.
 N="$WORK/norelease"
+rc=0
 if step release.yml rehearsal "name=Show that no release was made" "$N"; then
 	mkdir -p "$N/bin"
 	printf '#!/bin/sh\n[ "$1 $2" = "release view" ] && [ "$3" = "$FAKE_EXISTS" ] && exit 0\nexit 1\n' > "$N/bin/gh"; chmod +x "$N/bin/gh"
