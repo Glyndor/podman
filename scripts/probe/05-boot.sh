@@ -88,8 +88,8 @@ helper_state() {
 state="$(helper_state)"
 if [ "$state" = none ]; then
 	case "$PM" in
-		dnf) rpm --setperms shadow-utils && rpm --setcaps shadow-utils ;;
-		zypper) rpm --setperms shadow && rpm --setcaps shadow ;;
+		dnf) rpm --setperms shadow-utils; rpm --setcaps shadow-utils ;;
+		zypper) rpm --setperms shadow; rpm --setcaps shadow ;;
 		pacman) pacman -S --noconfirm shadow ;;
 	esac
 	state="none in the image, $(helper_state) after restoring them from the package"
@@ -116,6 +116,10 @@ case "\$1" in
 	pull) \$P pull "docker://$image" ;;
 	run) \$P run --rm --network pasta "$image" echo rootless-ok ;;
 	runas) \$P run --rm --network pasta:--runas,0 "$image" echo rootless-ok ;;
+	open)
+		chmod 0755 "/run/user/\$(id -u)"
+		\$P run --rm --network pasta "$image" echo rootless-ok ;;
+	debug) \$P run --rm --network pasta:--debug "$image" echo rootless-ok ;;
 	diag)
 		pasta --version | head -n 1
 		getent passwd nobody
@@ -142,6 +146,8 @@ if [ "$(fact_get boot.rootless-userns)" = ok ]; then
 	if [ "$(fact_get boot.rootless-run)" != ok ]; then
 		# What pasta runs as and where it looks, and whether keeping it as the user changes the answer.
 		rl diag > "$PROBE_OUT/logs/boot-rootless-diag.log" 2>&1
+		rl debug > "$PROBE_OUT/logs/boot-rootless-pasta-debug.log" 2>&1
+		check rootless-run-open-rundir "the same with the runtime directory open to everyone" rl open
 		check rootless-run-runas0 "the same with pasta kept as root of the namespace" rl runas
 	fi
 	check rootless-net "a rootless container on pasta reaches the network" rl net
