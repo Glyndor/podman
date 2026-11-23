@@ -43,6 +43,14 @@ for family in "fedora | el | amzn" suse; do
 		check "the build dependencies of $family name a package of $pkg" 1 "$(printf '%s\n' "$block" | grep -c -E "(^|[[:space:]])($pkg|$pkg-db|$pkg-interpreter)([[:space:]]|\))")"
 	done
 done
+# The image of every distribution installs the packages that carry the programs of the proof.
+installs() { grep -E '^RUN ' "$1" | grep -q -E "$2"; }
+for dockerfile in "$HERE"/scripts/package/images/*/Dockerfile; do
+	id="$(basename "$(dirname "$dockerfile")")"
+	got=0
+	if installs "$dockerfile" 'util-linux' && installs "$dockerfile" 'shadow' && installs "$dockerfile" 'libcap'; then got=1; fi
+	check "the image of $id installs util-linux, shadow and libcap, which carry runuser, useradd, newuidmap and getcap" 1 "$got"
+done
 check "and rpmbuild for rpm only, makepkg for pacman only" "rpmbuild rpm makepkg pacman" "$(grep -E '^(rpmbuild|makepkg)' "$HERE/scripts/package/build-tools.txt" | paste -sd' ')"
 
 echo "$pass passed, $fail failed"

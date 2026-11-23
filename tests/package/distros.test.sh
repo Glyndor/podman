@@ -32,7 +32,8 @@ for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do
 	check "$id has its image" 1 "$([ -f "$file" ] && echo 1 || echo 0)"
 	check "$id's image is one FROM, a release tag and a sha256 digest" 1 \
 		"$(grep -c -E '^FROM [a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$' "$file")"
-	check "$id's image has no other instruction" 0 "$(grep -v -e '^#' -e '^$' -e '^FROM ' "$file" | wc -l | tr -d ' ')"
+	check "$id's image has no other instruction than the one RUN that installs the programs of the proof" "1 1" \
+		"$(grep -v -e '^#' -e '^$' -e '^FROM ' "$file" | wc -l | tr -d ' ') $(grep -c '^RUN ' "$file")"
 done
 for dir in "$HERE"/scripts/package/images/*/; do
 	name="$(basename "$dir")"
