@@ -1,0 +1,105 @@
+name: distro-probe
+
+# A measurement, not a release path: builds Podman, netavark and aardvark-dns from the
+# upstream tags inside the container of each distribution below, installs them, and
+# starts containers as root and as an unprivileged user with a bridge network and name
+# resolution between containers. One job and one result.json per distribution. The
+# probe is run by a pull request that changes it and is not meant to be merged.
+#
+# Third-party code runs here (compilers, upstream sources, the distribution's own
+# repositories), so the workflow holds contents: read and no secrets, and the checkout
+# keeps no credentials.
+#
+# Every distribution is its own job and none cancels the others: what is wanted is the
+# answer for each one, not the first failure.
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - .github/workflows/distro-probe.yml
+      - scripts/probe/**
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PODMAN_TAG: v6.2.0
+  NETAVARK_TAG: v2.1.0
+  AARDVARK_TAG: v2.1.0
+  # The image the started containers run: Podman's own test image, by digest.
+  PODMAN_IMAGE: quay.io/libpod/alpine:latest@sha256:fa93b01658e3a5a1686dc3ae55f170d8de487006fb53a28efcd12ab0710a2e5f
+
+jobs:
+  probe:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    # A Go build, two Rust builds and a few containers. The longest the first runs took
+    # is written here once there is one; until then the ceiling is generous.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: fedora-45
+            image: quay.io/fedora/fedora:45@sha256:6d8462b7b0474af891c3e84e680df7bdfb487cf37ccb6239b5e05444d1b92cbd
+          - name: fedora-44
+            image: quay.io/fedora/fedora:44@sha256:aca68c361f2a89de8a64e8d91a47494f37fad05f88c2f503cdd8a284a74c70ac
+          - name: almalinux-9
+            image: quay.io/almalinuxorg/almalinux:9@sha256:b47d8370be0b2981b257c5ecbb02ead92be6c9a248502e84de149ee51c1eaf2f
+          - name: almalinux-10
+            image: quay.io/almalinuxorg/almalinux:10@sha256:498b0b31dab82c3be22ac50efb8bf865adce85576495da20de8cedc48b29eec6
+          - name: rockylinux-9
+            image: quay.io/rockylinux/rockylinux:9@sha256:bb5755f96bec05ff26165e779ec843d7167544be9e50770508f307019a6d05c4
+          - name: rockylinux-10
+            image: quay.io/rockylinux/rockylinux:10@sha256:d24beedc58f79b9e0e9289fedaa4fcbcbe692b1438883a86f177fd7c51053ca8
+          - name: rhel-ubi-9
+            image: registry.access.redhat.com/ubi9/ubi:latest@sha256:6636b79fba9e5044360366f189333c30b5ce528efd92c40c68b074592b971fcd
+          - name: rhel-ubi-10
+            image: registry.access.redhat.com/ubi10/ubi:latest@sha256:87ceab8634a53a36c75a8ba7282f09f11c46ab3e8906db6c6d2b3cd2a7dc4f4e
+          - name: opensuse-tumbleweed
+            image: registry.opensuse.org/opensuse/tumbleweed:latest@sha256:815edf2ba0730167a9e87199cfe36c07ef391915131b2e44d116a84290a07c87
+          - name: opensuse-leap-16.1
+            image: registry.opensuse.org/opensuse/leap:16.1@sha256:755746c7eec92fbdd3c4b02be194bfded4a8d4fde0abedf1835f945d403f43c8
+          - name: amazonlinux-2023
+            image: public.ecr.aws/amazonlinux/amazonlinux:2023@sha256:5c38fd85b00ce8c094315d9b71f671f880052314a22bd25f1a027821bf61d9d7
+          - name: archlinux
+            image: docker.io/library/archlinux:latest@sha256:d4594bb2300cba11f41c2f27923eb56f63d9988909c402f9c95517d1e362c899
+    env:
+      NAME: ${{ matrix.name }}
+      IMAGE: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Let an unprivileged user create a user namespace in a container
+        run: bash scripts/probe/prepare-runner.sh
+      - name: Fetch the upstream tags and verify their signatures
+        run: bash scripts/probe/fetch-sources.sh "$RUNNER_TEMP/src" "$PODMAN_TAG" "$NETAVARK_TAG" "$AARDVARK_TAG"
+      - name: Download the official Go and Rust installers and check them
+        run: bash scripts/probe/fetch-toolchains.sh "$RUNNER_TEMP/tools" "$RUNNER_TEMP/src/podman"
+      - name: Build, install and start Podman in ${{ matrix.name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          docker run --rm --privileged \
+            -e PODMAN_TAG -e PODMAN_IMAGE \
+            -v "$GITHUB_WORKSPACE:/repo:ro" -v "$RUNNER_TEMP/src:/src" \
+            -v "$RUNNER_TEMP/tools:/toolchains:ro" -v "$RUNNER_TEMP/out:/out" \
+            "$IMAGE" bash /repo/scripts/probe/run.sh
+      - name: Write the result
+        if: ${{ !cancelled() }}
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/out"
+          python3 -I scripts/probe/result.py "$NAME" "$IMAGE" "$RUNNER_TEMP/out"
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: probe-${{ matrix.name }}
+          path: ${{ runner.temp }}/out
+          retention-days: 14
+          if-no-files-found: error
