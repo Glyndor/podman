@@ -1,6 +1,9 @@
 # The programs the build of a native package runs, one per line: the program, then the formats
 # that need it (all when there is no second field). `make` and `install.man` of Podman call
-# python3 (hack/markdown-preprocess) and envsubst (install.docker); the rest are the compilers and
+# python3 (hack/markdown-preprocess) and envsubst (install.docker), and its docs check every man page
+# with `man -l` piped to perl; the Makefiles of netavark and aardvark-dns use awk and sed, git describe, and
+# install and ln; hack/*_tag.sh use pkg-config and cc. go-md2man is not here on purpose: Podman builds its
+# own from the source it vendors, and build-payload.sh hands it to netavark. The rest are the compilers and
 # the tools build-payload.sh reads binaries with. A build container that lacks one is refused by
 # scripts/package/require-tools.sh before anything is compiled, not found in the middle of make.
 gcc
@@ -12,6 +15,17 @@ rustc
 protoc
 python3
 envsubst
+man
+perl
+awk
+sed
+grep
+install
+ln
+mktemp
+date
+cc
+pkg-config
 file
 readelf
 strip

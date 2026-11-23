@@ -36,8 +36,9 @@ PM
 # The programs the build needs, so the check that they are there passes on a machine that has not got them.
 while read -r tool _; do
 	case "$tool" in '' | '#'*) continue ;; esac
-	[ -e "$WORK/bin/$tool" ] || printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/$tool"
-	chmod +x "$WORK/bin/$tool"
+	# Only a stand-in for what the machine lacks: sed, grep and install of the tests themselves stay real.
+	[ -e "$WORK/bin/$tool" ] || [ -n "$(command -v "$tool")" ] || printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/$tool"
+	[ ! -e "$WORK/bin/$tool" ] || chmod +x "$WORK/bin/$tool"
 done < "$HERE/scripts/package/build-tools.txt"
 chmod +x "$WORK/bin/dnf" "$WORK/bin/zypper"
 printf 'gcc\nno-such-tool-xyz\n' > "$WORK/tools"
@@ -50,6 +51,7 @@ run fedora
 check "Fedora: the build succeeds" 0 "$rc"
 check "and python3 is installed, which the documentation of Podman is generated with" 1 "$(calls "gettext python3")"
 check "and the toolchain, the headers and rpmbuild are installed in one transaction" 1 "$(calls 'dnf install -y --setopt=install_weak_deps=False rpm-build gcc make git-core pkgconf-pkg-config golang cargo rust glibc-devel libseccomp-devel systemd-devel libselinux-devel protobuf-compiler gettext')"
+check "and man-db, perl, gawk, sed and grep, which the docs and the Makefiles of netavark and aardvark-dns run" 1 "$(calls 'man-db perl-interpreter gawk sed grep')"
 check "and the headers of btrfs are asked for apart" 1 "$(calls 'btrfs-progs-devel')"
 check "and no extra repository is switched on" 0 "$(calls 'config-manager')"
 run el
@@ -62,6 +64,7 @@ run suse
 check "openSUSE: the build succeeds" 0 "$rc"
 check "and its repositories are refreshed, trusting the keys they offer once" 1 "$(calls 'zypper --non-interactive --gpg-auto-import-keys refresh')"
 check "and the packages are the ones of that family" 1 "$(calls 'zypper --non-interactive install --no-recommends rpm-build gcc make git-core pkgconf-pkg-config go cargo rust')"
+check "and man, perl, gawk, sed and grep, with the names openSUSE gives them" 1 "$(calls 'man perl gawk sed grep')"
 check "and the btrfs headers are libbtrfs-devel there" 1 "$(calls 'libbtrfs-devel')"
 
 FAKE_MISSING=golang run fedora

@@ -25,12 +25,17 @@ for f in common/pkg/config/containers.conf common/rpm/policy.json image/registri
 echo '{"syscalls":[{"names":["futex_waitv"]}]}' > "$WORK/mods/common/pkg/seccomp/seccomp.json"
 echo '[aliases]' > "$WORK/short.conf"
 export GLYNDOR_MODULES_DIR="$WORK/mods"
+# The list of programs the build needs is checked on the machine that runs this; here it is empty, and the
+# case that reads a list has its own.
+: > "$WORK/no-tools.txt"
+export GLYNDOR_TOOLS_FILE="$WORK/no-tools.txt"
 # A binary with a debug section, for the case where strip did nothing.
 objcopy --add-section .debug_probe=/etc/hostname /bin/true "$WORK/debug-true" 2> /dev/null
 cat > "$WORK/src/Makefile" <<MK
 all:
 	@echo "\$(EXTRA_BUILDTAGS)" > $WORK/tags; echo "\$\$CGO_CFLAGS" > $WORK/cflags; echo "\$\$CGO_LDFLAGS" > $WORK/ldflags; echo "\$\$GOFLAGS" > $WORK/goflags; echo "\$\$GOTOOLCHAIN" > $WORK/gotoolchain
 	rm -f bin/podman; [ -n "\$\$FAKE_NO_BIN" ] || install -D -m755 /bin/true bin/podman
+	[ -n "\$\$FAKE_NO_MD2MAN" ] || install -D -m755 /bin/true test/tools/build/go-md2man
 install:
 	install -D -m755 \$(if \$(FAKE_DEBUG),$WORK/debug-true,/bin/true) \$(DESTDIR)\$(PREFIX)/bin/podman
 	install -D -m755 /bin/true \$(DESTDIR)\$(PREFIX)/bin/podman-remote
@@ -49,7 +54,7 @@ install.docker-docs:
 MK
 for c in nv aa; do
 	touch "$WORK/$c/Cargo.lock"
-	printf 'all:\n\t@echo "$(CARGO)" > %s/cargo-%s\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/%s\n' "$WORK" "$c" "$([ "$c" = nv ] && echo netavark || echo aardvark-dns)" > "$WORK/$c/Makefile"
+	printf 'all:\n\t@echo "$(CARGO)" > %s/cargo-%s; echo "$(GOMD2MAN)" > %s/md2man-%s\ninstall:\n\tinstall -D -m755 /bin/true $(DESTDIR)$(PREFIX)/libexec/podman/%s\n' "$WORK" "$c" "$WORK" "$c" "$([ "$c" = nv ] && echo netavark || echo aardvark-dns)" > "$WORK/$c/Makefile"
 done
 printf '[package]\nname = "netavark"\nversion = "2.1.0"\n' > "$WORK/nv/Cargo.toml"
 printf '[package]\nname = "aardvark-dns"\nversion = "2.1.3"\n' > "$WORK/aa/Cargo.toml"
@@ -107,6 +112,14 @@ for flag in -trimpath=true -buildmode=pie; do
 	b fedora; check "a binary without $flag is refused" "1 1" "$rc $(says "the built podman lacks $flag")"
 done
 printf '%s\n' "$full_info" > "$WORK/info"
+check "the man pages of netavark are made with the go-md2man Podman built, not one the distribution has to ship" "$WORK/src/test/tools/build/go-md2man $WORK/src/test/tools/build/go-md2man" \
+	"$(cat "$WORK/md2man-nv") $(cat "$WORK/md2man-aa")"
+rm -rf "$WORK/src/test"; FAKE_NO_MD2MAN=1 b fedora; check "a Podman build that left no go-md2man for netavark is refused" "1 1" "$rc $(says 'left no')"
+printf 'make\nno-such-program-for-the-build\nanother-missing-one\n' > "$WORK/tools.txt"
+rm -f "$WORK/tags"; GLYNDOR_TOOLS_FILE="$WORK/tools.txt" b fedora
+check "a program of the list that is missing stops the build, and the first thing it says is which" "1 1 1" "$rc $(says 'no-such-program-for-the-build') $(says 'another-missing-one')"
+check "and nothing was compiled" 0 "$([ -e "$WORK/tags" ] && echo 1 || echo 0)"
+GLYNDOR_TOOLS_FILE="$WORK/tools.txt" b arch; check "the list is read for the pacman format too" "1 1" "$rc $(says 'no-such-program-for-the-build')"
 FAKE_NO_BIN=1 b fedora; check "a make that leaves no binary is refused" "1 1" "$rc $(says 'make left no bin/podman to check')"
 FAKE_GO_FAILS=1 b fedora; check "a build whose info cannot be read is refused" "1 1" "$rc $(says 'cannot read the build info of bin/podman')"
 # A PATH with the tools the script needs and no go, whatever else the machine has installed.
