@@ -140,7 +140,9 @@ mkdir "$WORK/keys-two"; cp "$WORK/good.asc" "$WORK/keys-dated/later.asc" "$WORK/
 signed_tag v2.2.0 "$gh_other" -u "$fpr_good" -u "$fpr_other"
 signed_tag v2.2.1 "$gh_other" -u "$fpr_good" -u later@x
 refused "signed by an allowed key and by one that is not" v2.2.0 "$WORK/keys-two" "rejected: ERRSIG"
-accepted "signed by two allowed keys" v2.2.1 "$WORK/keys-two"
+# git itself exits 1 for a tag with two signatures, whatever their keys, and its exit status is respected: a tag
+# signed twice is refused, and the reason says so. Upstream signs its tags once.
+refused "signed by two allowed keys" v2.2.1 "$WORK/keys-two" "rejected: git verify-tag exited 1"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
