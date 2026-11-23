@@ -193,6 +193,7 @@ case "\$1" in
 		echo "\$out"
 		case "\$out" in *"\$ip"*) ;; *) echo "the answer does not hold \$ip"; exit 1 ;; esac ;;
 	stop-cli) \$P stop -t 1 rl-a ;;
+	state) \$P ps -a --format '{{.Names}} {{.Status}}'; \$P network ls ;;
 	stop-api)
 		\$P run -d --name rl-b --network rlnet "$image" sleep 300 > /dev/null || exit 1
 		sock="/run/user/$uid/rl-api.sock"
@@ -205,7 +206,26 @@ case "\$1" in
 esac
 ROOTLESS
 rl() { runuser -u probe -- bash /tmp/rootless.sh "$1"; }
-pasta_left() { grep -l '^pasta' /proc/[0-9]*/comm 2> /dev/null | head -n 1; }
+pasta_pids() { grep -l '^pasta' /proc/[0-9]*/comm 2> /dev/null | sed 's#/proc/\([0-9]*\)/comm#\1#'; }
+# The pasta of a rootless bridge network goes when the last container of it does, but not in the same instant: the
+# container that was killed after its second has to be reaped first. So it is waited for, up to ten seconds in steps
+# of a fifth, and a pasta that is still there after that is not a race: it is shown, with where it came from.
+pasta_gone() {
+	local _ p left
+	for _ in $(seq 1 50); do
+		left="$(pasta_pids)"
+		[ -z "$left" ] && return 0
+		sleep 0.2
+	done
+	echo "pasta is still running ten seconds after the last container stopped:"
+	for p in $left; do
+		ps -o pid,ppid,etimes,user,args -p "$p" | tail -n +2
+		echo "  network namespace $(readlink "/proc/$p/ns/net") (this shell's is $(readlink /proc/self/ns/net))"
+	done
+	echo "containers and networks of the user:"
+	rl state
+	return 1
+}
 # What decides whether an unprivileged user can get a namespace here, written down for the run that fails.
 note "kernel.apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>&1) user.max_user_namespaces=$(cat /proc/sys/user/max_user_namespaces 2>&1) newuidmap=$(command -v newuidmap)"
 check "an unprivileged user can map ids and Podman can create its namespace" rl userns
@@ -232,7 +252,7 @@ if rl userns > /dev/null 2>&1; then
 	check "a rootless container resolves another by name on a bridge network" rl dns
 	check "the last containers of a rootless bridge network stop with the command" rl stop-cli
 	check "the last container of a rootless bridge network stops through the API" rl stop-api
-	check "no pasta is left running after the last container stopped" test -z "$(pasta_left)"
+	check "no pasta is left running after the last container stopped, waited for ten seconds at most" pasta_gone
 else
 	note "an unprivileged user cannot map ids here: the rootless checks cannot run, and that is a failure"
 	failed+=("rootless")
