@@ -41,9 +41,9 @@ check "the proof does not use su, which a minimal image lacks" 0 "$(grep -v '^\s
 # The image the containers run (Podman's own alpine) has nc and wget and no httpd: a listener that used httpd
 # never started, and pasta answered "connection refused" for it. The listener is waited for in /proc/net/tcp,
 # since connecting to it would take its one request.
-check "the host-side listener is not started with httpd, which the image lacks" 0 "$(grep -v '^\s*#' "$SCRIPT" | grep -c 'httpd')"
-check "and it is nc in a loop on port 18473, hex 4829" "1 1" "$(grep -c 'nc -l -p 18473' "$SCRIPT") $(grep -c '00000000:4829' "$SCRIPT")"
-check "and it is waited for until the kernel says it listens, with the reason shown when it does not" "1 1" "$(grep -c 'for _ in $(seq 1 100); do listener_up' "$SCRIPT") $(grep -c 'the listener is not up' "$SCRIPT")"
+check "the host-side listener is not started with httpd, which the image lacks" 0 "$(grep -v '^\s*#' "$HERE/scripts/package/verify/runtime-checks.sh" | grep -c 'httpd')"
+check "and it is nc in a loop on port 18473, hex 4829" "1 1" "$(grep -c 'nc -l -p 18473' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c '00000000:4829' "$HERE/scripts/package/verify/runtime-checks.sh")"
+check "and it is waited for until the kernel says it listens, with the reason shown when it does not" "1 1" "$(grep -c 'for _ in $(seq 1 100); do listener_up' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'the listener is not up' "$HERE/scripts/package/verify/runtime-checks.sh")"
 check "the checks that need a machine of the distribution name themselves in the log" 1 "$(grep -c 'echo "== \$name"' "$SCRIPT")"
 
 echo "$pass passed, $fail failed"
