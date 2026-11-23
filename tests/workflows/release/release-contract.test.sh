@@ -180,7 +180,7 @@ check "a guard on another branch is named" "job publish does not carry the main-
 check "build runs only when the plan says there is something to build" "needs.plan.outputs.build == 'true'" "$(gate release.yml build if)"
 check "build waits for the plan" "plan" "$(gate release.yml build needs)"
 check "sign waits for the plan and for the build of every architecture" "build,plan" "$(gate release.yml sign needs)"
-check "publish waits for the plan and for the signing" "plan,sign" "$(gate release.yml publish needs)"
+check "publish waits for the plan, for the signing and for the upgrade test of the published package" "config-upgrade,plan,sign" "$(gate release.yml publish needs)"
 
 # --- a rehearsal reads no secret and publishes nothing ---------------------------
 check "only sign reads a signing secret, and not in a rehearsal; the rehearsal can only read" "" "$(violations rehearsal)"
@@ -229,6 +229,7 @@ if step release.yml rehearsal "name=Show that no release was made" "$N"; then
 else
 	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the last step of the rehearsal"
 fi
+
 
 # --- the provenance attestation ---------------------------------------------------
 check "the packages are attested between the verification of their signatures and the release" "" "$(violations attest)"
@@ -463,8 +464,10 @@ fi
 # --- release.yml, sign and publish: what is downloaded is never run or merged --------
 check "no step merges artifacts, downloads one without a name, or runs Python unisolated beside a key" "" "$(violations isolation)"
 sabotage release.yml "          name: deb-amd64
+          path: \${{ runner.temp }}/built/deb-amd64
 " "          pattern: deb-*
           merge-multiple: true
+          path: \${{ runner.temp }}/built/deb-amd64
 " "$BAD" >/dev/null 2>&1
 check "a download that merges artifacts is named" "sign: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 merges artifacts into one directory
 sign: a download takes no artifact by name" "$(violations isolation "$BAD")"

@@ -8,7 +8,7 @@ body:
       value: |
         Before submitting, search existing issues to avoid duplicates.
         **Security issue? Do NOT file it here.** Use the Security tab, then "Report a vulnerability".
-        A bug that also happens with the upstream Podman binary belongs to containers/podman.
+        A bug that also happens with the upstream Podman binary belongs to podman-container-tools/podman.
   - type: dropdown
     id: area
     attributes:

@@ -249,16 +249,59 @@ Description: Podman with its network stack, built from the upstream releases
  distributions ship.
 CONTROL
 
+# /etc/containers belongs to the administrator and this package puts nothing in it. Releases
+# before config_free_since shipped /etc/containers/policy.json as a plain file of the package, the
+# policy that says which images may be pulled, so on an upgrade from one of those dpkg removes the
+# file, edited or not, because the new package no longer lists it. preinst sets an edited one
+# aside, which is any file whose sum is not one of the defaults those releases shipped, and
+# postinst puts it back. When there is no file in /etc at the end of a first install or of that
+# upgrade, postinst copies the default of /usr/share/containers there: buildah and skopeo of
+# Debian and Ubuntu read the policy only from /etc/containers, and Podman falls back to /usr/share.
+# Nothing is a conffile, so dpkg never asks; a file deleted by the administrator after that is not
+# put back by later upgrades. Sums: the empty file of releases 6.2.0 to 6.2.0+r6 and the default of
+# 6.2.0+r7 to 6.2.0+r11.
+config_free_since="6.2.0+r12"
+known_policy_sums="d41d8cd98f00b204e9800998ecf8427e ff61005e84c18498ed1b9d3f1b48db0a"
+cat > "$stage/DEBIAN/preinst" <<PREINST
+#!/bin/sh
+set -e
+if [ "\$1" = upgrade ] && dpkg --compare-versions "\$2" lt "$config_free_since"; then
+	f="\${DPKG_ROOT:-}/etc/containers/policy.json"
+	if [ -f "\$f" ] && [ ! -L "\$f" ]; then
+		sum="\$(md5sum < "\$f" | cut -d' ' -f1)"
+		case " $known_policy_sums " in
+			*" \$sum "*) ;;
+			*) cp -p "\$f" "\$f.glyndor-kept" ;;
+		esac
+	fi
+fi
+exit 0
+PREINST
+chmod 0755 "$stage/DEBIAN/preinst"
+
 # The AppArmor profiles of passt are loaded when the package is configured, as Debian's
 # package does; without it they would only apply after the next boot. A profile that does
 # not load does not fail the installation, as in Debian's own snippet, but it says so.
-cat > "$stage/DEBIAN/postinst" <<'POSTINST'
+cat > "$stage/DEBIAN/postinst" <<POSTINST
 #!/bin/sh
 set -e
-if [ "$1" = configure ] && command -v apparmor_parser >/dev/null 2>&1 && aa-enabled >/dev/null 2>&1; then
+if [ "\$1" = configure ]; then
+	f="\${DPKG_ROOT:-}/etc/containers/policy.json"
+	if [ -z "\$2" ] || dpkg --compare-versions "\$2" lt "$config_free_since"; then
+		if [ -e "\$f.glyndor-kept" ] && [ ! -e "\$f" ]; then
+			mv "\$f.glyndor-kept" "\$f"
+			echo "podman: kept your /etc/containers/policy.json, which this package no longer ships" >&2
+		elif [ ! -e "\$f" ] && [ ! -L "\$f" ]; then
+			mkdir -p "\${DPKG_ROOT:-}/etc/containers"
+			cp -p "\${DPKG_ROOT:-}/usr/share/containers/policy.json" "\$f"
+		fi
+		rm -f "\$f.glyndor-kept"
+	fi
+fi
+if [ "\$1" = configure ] && command -v apparmor_parser >/dev/null 2>&1 && aa-enabled >/dev/null 2>&1; then
 	for p in usr.bin.passt usr.bin.pasta usr.bin.passt-repair usr.bin.pesto; do
-		[ ! -f "/etc/apparmor.d/$p" ] || apparmor_parser -r -T -W "/etc/apparmor.d/$p" \
-			|| echo "podman: the AppArmor profile $p did not load" >&2
+		[ ! -f "/etc/apparmor.d/\$p" ] || apparmor_parser -r -T -W "/etc/apparmor.d/\$p" \\
+			|| echo "podman: the AppArmor profile \$p did not load" >&2
 	done
 fi
 exit 0

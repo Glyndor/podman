@@ -22,7 +22,7 @@ apt-get update && apt-get install -y ca-certificates curl
 
 It adds the Glyndor apt repository, installs its signing key after checking the fingerprint, and installs the package. From then on `apt` keeps it current: the Glyndor version is newer than the distribution's, so `apt` prefers it. The [apt repository README](https://github.com/Glyndor/apt#install) describes what the script does, step by step.
 
-If the distribution's Podman is already installed, the package replaces it, along with the distribution's `netavark`, `aardvark-dns`, `passt` and `golang-github-containers-common`: apt removes those packages. Debian 12 and Ubuntu 22.04 are refused, because their glibc is older than the package needs; the [apt repository README](https://github.com/Glyndor/apt#supported-releases) lists the releases that were measured.
+If the distribution's Podman is already installed, the package replaces it, along with the distribution's `netavark`, `aardvark-dns`, `passt`, `podman-remote` and `golang-github-containers-common`: apt removes those packages. Ubuntu 22.04 and Debian 12 are refused, because their glibc is older than the package needs, and every build proves it by trying to install the package on both; the [apt repository README](https://github.com/Glyndor/apt#supported-releases) lists the releases that were measured.
 
 Once it is installed, use `podman` as usual, or add [podup](https://github.com/Glyndor/podup) to run Compose projects on it.
 

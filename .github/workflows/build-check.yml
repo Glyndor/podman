@@ -111,8 +111,8 @@ jobs:
           # The newest tag of each component and the commit it points at right
           # now, fixed here so both architectures build the same sources.
           for c in podman netavark aardvark-dns; do
-            tag="$(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")"
-            sha="$(git ls-remote "https://github.com/containers/$c.git" "refs/tags/$tag^{}" | awk '{print $1}')"
+            tag="$(bash scripts/upstream/latest-stable.sh "https://github.com/$(bash scripts/upstream/repo.sh "$c").git")"
+            sha="$(git ls-remote "https://github.com/$(bash scripts/upstream/repo.sh "$c").git" "refs/tags/$tag^{}" | awk '{print $1}')"
             [ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }
             echo "${c%-dns}=$tag" >> "$GITHUB_OUTPUT"
             echo "${c%-dns}_sha=$sha" >> "$GITHUB_OUTPUT"

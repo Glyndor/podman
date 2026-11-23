@@ -55,9 +55,11 @@ case "$check" in
 		for helper in netavark aardvark-dns; do
 			[ -x "$root/usr/libexec/podman/$helper" ] || { echo "missing $helper in the package" >&2; exit 1; }
 		done
-		# skopeo and buildah read the policy from /etc/containers; a pull has the
-		# registries and the short names it needs.
-		for f in /etc/containers/policy.json /usr/share/containers/registries.conf /usr/share/containers/containers.conf \
+		# The configuration of the release is under /usr/share/containers and nothing is shipped in
+		# /etc; the policy buildah and skopeo read from /etc/containers is copied there by postinst
+		# (the smoke test's skopeo and buildah checks fail without it). A pull has the registries and
+		# the short names it needs.
+		for f in /usr/share/containers/policy.json /usr/share/containers/registries.conf /usr/share/containers/containers.conf \
 			/usr/share/containers/registries.conf.d/000-shortnames.conf; do
 			[ -s "$root$f" ] || { echo "the package does not ship $f" >&2; exit 1; }
 		done ;;

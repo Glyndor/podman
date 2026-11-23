@@ -52,6 +52,7 @@ SCRIPT_MOUNTS = {
     ("reusable-build.yml", "Build the package"): 1,
     ("reusable-build.yml", "Smoke-test the package on Debian 13 and Ubuntu 24.04 and 26.04"): 2,
     ("reusable-build.yml", "Check an older release refuses the package"): 1,
+    ("release.yml", "Upgrade from it without losing an edited policy.json"): 1,
 }
 CHAINS = {";", "&&", "||", "|", "&", "(", ")"}
 
@@ -154,7 +155,7 @@ PY
 BUILD='-v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \'
 SMOKE1='-v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \'
 SMOKE2='-v "$GITHUB_WORKSPACE/scripts:/scripts:ro" -v "$RUNNER_TEMP/out:/out:ro" "podman-deb-$target" \'
-REFUSE='-v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" podman-deb-ubuntu2204 \'
+REFUSE='-v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-refuse-$target" \'
 rw() { printf '%s' "${1//scripts:\/scripts:ro/scripts:\/scripts}"; }
 S1='reusable-build.yml: Build the package mounts $GITHUB_WORKSPACE/scripts from the workspace and it is writable'
 S2='reusable-build.yml: Smoke-test the package on Debian 13 and Ubuntu 24.04 and 26.04 mounts $GITHUB_WORKSPACE/scripts from the workspace and it is writable'
@@ -190,7 +191,7 @@ reusable-build.yml: Build the package mounts the scripts directory 2 time(s), no
 fixture reusable-build.yml "$SMOKE1" '-v "$RUNNER_TEMP/out:/out" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-deb-$target" \'
 check "the package under test mounted writable in the smoke test is named" \
 	'reusable-build.yml: Smoke-test the package on Debian 13 and Ubuntu 24.04 and 26.04 mounts $RUNNER_TEMP/out writable, which no entry of the list allows' "$(violations "$BAD")"
-fixture reusable-build.yml "$REFUSE" '-v /var/run/docker.sock:/var/run/docker.sock -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" podman-deb-ubuntu2204 \'
+fixture reusable-build.yml "$REFUSE" '-v /var/run/docker.sock:/var/run/docker.sock -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" "podman-refuse-$target" \'
 check "a mount of anything else, writable, is named" \
 	'reusable-build.yml: Check an older release refuses the package mounts /var/run/docker.sock writable, which no entry of the list allows' "$(violations "$BAD")"
 fixture reusable-build.yml '-v "$RUNNER_TEMP/netavark:/src/netavark"' '-v "$RUNNER_TEMP/netavark:/src/netavark:ro"'
@@ -198,13 +199,13 @@ check "an entry of the list that the step no longer asks for is named" \
 	'reusable-build.yml: Build the package is allowed to mount $RUNNER_TEMP/netavark writable and does not; remove the entry' "$(violations "$BAD")"
 
 # --- what is accepted, the same shapes just inside the rule ----------------------------
-fixture reusable-build.yml "$REFUSE" '--mount type=bind,src=$GITHUB_WORKSPACE/scripts,dst=/scripts,readonly --mount type=bind,src=$RUNNER_TEMP/out,dst=/out,readonly podman-deb-ubuntu2204 \'
+fixture reusable-build.yml "$REFUSE" '--mount type=bind,src=$GITHUB_WORKSPACE/scripts,dst=/scripts,readonly --mount type=bind,src=$RUNNER_TEMP/out,dst=/out,readonly "podman-refuse-$target" \'
 check "a --mount with readonly is as good as :ro" "" "$(violations "$BAD")"
-fixture reusable-build.yml "$REFUSE" '-v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro,z" podman-deb-ubuntu2204 \'
+fixture reusable-build.yml "$REFUSE" '-v "$RUNNER_TEMP/out:/out:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro,z" "podman-refuse-$target" \'
 check "and :ro with another option beside it, which is the same mount in other words" "" "$(violations "$BAD")"
 
 # --- a step that does not mount the scripts at all, and a workflow of another name -----
-fixture reusable-build.yml "$REFUSE" '-v "$RUNNER_TEMP/out:/out:ro" podman-deb-ubuntu2204 \'
+fixture reusable-build.yml "$REFUSE" '-v "$RUNNER_TEMP/out:/out:ro" "podman-refuse-$target" \'
 check "a step that stops mounting the scripts is named by the count" \
 	'reusable-build.yml: Check an older release refuses the package mounts the scripts directory 0 time(s), not 1' "$(violations "$BAD")"
 rm -f "$BAD"/*; cp "$HERE"/.github/workflows/*.y*ml "$BAD/"

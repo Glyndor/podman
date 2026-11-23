@@ -27,7 +27,7 @@ if step release.yml plan "name=Decide whether a new release is needed" "$P"; the
 	check "the plan step's run block has no expression in it" 0 "$(grep -c '\${{' "$P/run.sh")"
 	WS="$P/ws"
 	mkdir -p "$WS/scripts/upstream" "$WS/scripts/build" "$P/bin"
-	cp "$HERE/scripts/upstream/read-released.sh" "$HERE/scripts/upstream/plan-release.sh" "$WS/scripts/upstream/"
+	cp "$HERE/scripts/upstream/read-released.sh" "$HERE/scripts/upstream/plan-release.sh" "$HERE/scripts/upstream/repo.sh" "$WS/scripts/upstream/"
 	cat > "$WS/scripts/upstream/latest-stable.sh" <<'SH'
 #!/bin/sh
 case "$1" in
