@@ -137,7 +137,7 @@ case "\$1" in
 		ls -l "\$(command -v pasta)"; getcap "\$(command -v pasta)"; ldd "\$(command -v pasta)"
 		cat /proc/sys/kernel/yama/ptrace_scope /proc/sys/fs/suid_dumpable 2>&1
 		echo "-- credentials of the user's shell, and whether the kernel treats it as dumpable"
-		grep -E '^(Uid|Gid|Groups|Cap)' /proc/self/status; ls -ld /proc/self; ls -lL "\$(command -v pasta)"
+		grep -E '^(Uid|Gid|Groups|Cap)' /proc/self/status; ls -l /proc/self/status; ls -lL "\$(command -v pasta)"
 		echo "-- the same file, read by the user"
 		ls -ld /proc/sys/net/ipv4/ip_local_port_range; cat /proc/sys/net/ipv4/ip_local_port_range
 		echo "-- the system calls of pasta around the first refusal"
@@ -161,6 +161,14 @@ ROOTLESS
 chmod 0644 "$PROBE_OUT/rootless.sh"
 rl() { su probe -s /bin/bash -c "bash $PROBE_OUT/rootless.sh $1"; }
 export -f rl
+# pasta on its own as the unprivileged user, started by three other ways than su.
+{
+	echo "-- setpriv"; setpriv --reuid="$uid" --regid="$uid" --clear-groups -- pasta -- cat /proc/sys/net/ipv4/ip_local_port_range
+	echo "-- runuser"; runuser -u probe -- pasta -- cat /proc/sys/net/ipv4/ip_local_port_range
+	echo "-- setpriv with every capability set emptied"
+	setpriv --reuid="$uid" --regid="$uid" --clear-groups --inh-caps=-all --ambient-caps=-all --bounding-set=-all -- \
+		pasta -- cat /proc/sys/net/ipv4/ip_local_port_range
+} > "$PROBE_OUT/logs/boot-pasta-launchers.log" 2>&1
 check rootless-userns "an unprivileged user can create a user namespace and Podman can too" rl userns
 if [ "$(fact_get boot.rootless-userns)" = ok ]; then
 	check rootless-pull "pull the test image, rootless" rl pull
