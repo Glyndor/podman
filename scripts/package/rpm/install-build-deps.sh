@@ -20,13 +20,15 @@ case "$family" in
 		install=(dnf install -y --setopt=install_weak_deps=False)
 		required=(rpm-build gcc make git-core pkgconf-pkg-config golang cargo rust glibc-devel
 			libseccomp-devel systemd-devel libselinux-devel protobuf-compiler gettext python3
-			file binutils findutils which tar xz gzip shadow-utils)
+			file binutils findutils which tar xz gzip shadow-utils
+			man-db perl-interpreter gawk sed grep)
 		optional=(btrfs-progs-devel) ;;
 	suse)
 		install=(zypper --non-interactive install --no-recommends)
 		required=(rpm-build gcc make git-core pkgconf-pkg-config go cargo rust glibc-devel
 			libseccomp-devel systemd-devel libselinux-devel protobuf-devel gettext-runtime python3
-			file binutils findutils which tar xz gzip shadow)
+			file binutils findutils which tar xz gzip shadow
+			man perl gawk sed grep)
 		optional=(libbtrfs-devel) ;;
 	*) echo "no build dependencies are known for the family: $family" >&2; exit 2 ;;
 esac

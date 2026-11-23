@@ -31,8 +31,17 @@ out="$(GLYNDOR_TOOLS_FILE="$WORK/absent" "$SCRIPT" rpm 2>&1)"; check "a list tha
 "$SCRIPT" > /dev/null 2>&1; check "no format is refused" 1 "$?"
 
 # The list as committed.
-for tool in python3 envsubst go cargo protoc make gcc; do
+for tool in python3 envsubst go cargo protoc make gcc man perl awk sed grep install ln mktemp date cc pkg-config; do
 	check "the committed list names $tool" 1 "$(grep -c -x "$tool" "$HERE/scripts/package/build-tools.txt")"
+done
+check "go-md2man is not asked of the distribution: Podman builds the one that makes the man pages" 0 "$(grep -c -x 'go-md2man' "$HERE/scripts/package/build-tools.txt")"
+# Each program the Makefiles of Podman, netavark and aardvark-dns run has a package in the build dependencies
+# of every rpm family: man and perl for the check of the man pages of Podman, awk and sed for the others.
+for family in "fedora | el | amzn" suse; do
+	block="$(sed -n "/^\t$family)/,/optional=/p" "$HERE/scripts/package/rpm/install-build-deps.sh")"
+	for pkg in 'man' 'perl' 'gawk' 'sed' 'grep'; do
+		check "the build dependencies of $family name a package of $pkg" 1 "$(printf '%s\n' "$block" | grep -c -E "(^|[[:space:]])($pkg|$pkg-db|$pkg-interpreter)([[:space:]]|\))")"
+	done
 done
 check "and rpmbuild for rpm only, makepkg for pacman only" "rpmbuild rpm makepkg pacman" "$(grep -E '^(rpmbuild|makepkg)' "$HERE/scripts/package/build-tools.txt" | paste -sd' ')"
 

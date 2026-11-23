@@ -36,10 +36,13 @@ family="${5:?family}"
 shortnames="${6:?shortnames.conf}"
 
 case "$family" in
-	fedora | el | amzn | suse) selinux=1 ;;
-	arch) selinux=0 ;;
+	fedora | el | amzn | suse) selinux=1; format=rpm ;;
+	arch) selinux=0; format=pacman ;;
 	*) echo "unknown family: $family" >&2; exit 2 ;;
 esac
+# Every program the three Makefiles run, named before anything is compiled: a missing one found by
+# the docs of netavark, after the compilation of Podman, costs the whole compilation again.
+bash "$here/require-tools.sh" "$format" >&2
 machine="$(uname -m)"
 
 work="$(mktemp -d)"
@@ -101,10 +104,15 @@ common_version="$(bash "$here/../build/install-common-config.sh" "$podman_src" "
 
 # --locked makes cargo build exactly the dependency versions in the Cargo.lock of the signed
 # tag and fail if they would change. netavark's Makefile adds it only when CI is set.
+# The man pages of netavark are made with go-md2man, which the Makefile of Podman has just built from the
+# copy of its source that Podman vendors, so no distribution has to ship one and the one that runs is the
+# one of the signed tag.
+md2man="$podman_src/test/tools/build/go-md2man"
+[ -x "$md2man" ] || { echo "the build of Podman left no $md2man for the man pages of netavark" >&2; exit 1; }
 for src in "$netavark_src" "$aardvark_src"; do
 	[ -f "$src/Cargo.lock" ] || { echo "$src has no Cargo.lock to build against" >&2; exit 1; }
-	make -C "$src" CARGO="cargo --locked" >&2
-	make -C "$src" install PREFIX=/usr DESTDIR="$stage" >&2
+	make -C "$src" CARGO="cargo --locked" GOMD2MAN="$md2man" >&2
+	make -C "$src" install PREFIX=/usr DESTDIR="$stage" GOMD2MAN="$md2man" >&2
 done
 
 # Every ELF of the three trees, listed once: an executable bit does not make a file a binary.
