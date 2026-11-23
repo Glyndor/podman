@@ -177,7 +177,14 @@ case "\$1" in
 	userns) \$P unshare true ;;
 	pull) \$P pull "docker://$image" ;;
 	run) [ "\$(\$P run --rm --network pasta "$image" echo rootless-ok)" = rootless-ok ] ;;
-	host) [ "\$(\$P run --rm --network pasta "$image" wget -q -T 20 -O - http://host.containers.internal:18473/probe)" = pasta-ok ] ;;
+	host)
+		got="\$(\$P run --rm --network pasta "$image" wget -q -T 20 -O - http://host.containers.internal:18473/probe 2>&1)"
+		[ "\$got" = pasta-ok ] && exit 0
+		echo "the answer was: \$got"
+		# Where the container thought the host was, and what this machine listens on, for the log.
+		\$P run --rm --network pasta "$image" sh -c 'grep internal /etc/hosts; ip -4 route 2> /dev/null || true' 2>&1
+		grep -c ' 0A ' /proc/net/tcp | sed 's/^/listening sockets of this machine: /'
+		exit 1 ;;
 	dns)
 		\$P network create rlnet > /dev/null || exit 1
 		\$P run -d --name rl-a --network rlnet "$image" sleep 300 > /dev/null || exit 1
@@ -207,8 +214,18 @@ if rl userns > /dev/null 2>&1; then
 	check "a container runs on pasta, rootless" rl run
 	# A listener on this machine, fetched from inside a rootless container through the address
 	# Podman maps to the host: the option an older pasta does not have.
-	p run -d --name hostlisten --network host "$image" sh -c 'mkdir -p /www && echo pasta-ok > /www/probe && httpd -f -p 18473 -h /www' > /dev/null 2>&1 || true
-	sleep 1
+	# The listener of the host side: a server in a container on the network of this machine, one request per
+	# round of the loop, so it is waited for by what the kernel says it listens on and never by connecting to it
+	# (that would use up the request). The image has no httpd, only nc, which is why it is nc. It is waited for
+	# until it listens, and when it does not the check says so and shows why: a server that never started once
+	# read as "connection refused" from pasta.
+	listener_up() { grep -q -E '^ *[0-9]+: 00000000:4829 [0-9A-F:]+ 0A ' /proc/net/tcp; }
+	p run -d --name hostlisten --network host "$image" sh -c 'while true; do printf "HTTP/1.0 200 OK\r\nContent-Length: 9\r\n\r\npasta-ok\n" | nc -l -p 18473; done' > /tmp/hostlisten.log 2>&1
+	for _ in $(seq 1 100); do listener_up && break; sleep 0.2; done
+	if ! listener_up; then
+		note "the listener is not up: $(cat /tmp/hostlisten.log); $(p ps -a --format '{{.Names}} {{.Status}}' 2>&1 | paste -sd';'); $(p logs hostlisten 2>&1 | tail -n 5 | paste -sd';')"
+	fi
+	check "the listener of the host-side check listens on port 18473 of this machine" listener_up
 	check "a rootless container reaches the host through pasta" rl host
 	p rm -f hostlisten > /dev/null 2>&1 || true
 	check "a rootless container resolves another by name on a bridge network" rl dns
