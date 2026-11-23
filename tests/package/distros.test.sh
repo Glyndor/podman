@@ -35,6 +35,35 @@ for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do
 	check "$id's image has no other instruction than the one RUN that installs the programs of the proof" "1 1" \
 		"$(grep -v -e '^#' -e '^$' -e '^FROM ' "$file" | wc -l | tr -d ' ') $(grep -c '^RUN ' "$file")"
 done
+# An image is built and tested on every architecture its row names, from the one Dockerfile, so the digest it is
+# pinned to is the digest of an INDEX with an image for each: the digest of one architecture's manifest makes the
+# other runner try to execute the wrong binaries ("exec format error"). The index is read from the registry with
+# docker or podman; with neither the check says so and fails.
+platforms() { # <name:tag@digest>: the linux architectures of the index, or why it could not be read
+	local ref="$1" name digest raw
+	name="${ref%%:*}"; digest="${ref##*@}"
+	case "$name" in */*) ;; *) name="docker.io/library/$name" ;; esac
+	if command -v docker > /dev/null 2>&1 && raw="$(docker buildx imagetools inspect --raw "$name@$digest" 2> /dev/null)"; then :
+	elif command -v podman > /dev/null 2>&1 && raw="$(podman manifest inspect "docker://$name@$digest" 2> /dev/null)"; then :
+	else echo "cannot read the manifest of $ref with docker or podman"; return; fi
+	printf '%s' "$raw" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if "manifests" not in d:
+    print("not an index")
+else:
+    print(" ".join(sorted({m["platform"]["architecture"] for m in d["manifests"] if m.get("platform", {}).get("os") == "linux"} & {"amd64", "arm64"})))
+'
+}
+for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do
+	ref="$(sed -n 's/^FROM \([^ ]*@sha256:[0-9a-f]*\)$/\1/p' "$HERE/scripts/package/images/$id/Dockerfile")"
+	want="$(bash "$SCRIPT" field "$id" arches | tr ',' '\n' | sed 's/x86_64/amd64/; s/aarch64/arm64/' | sort | paste -sd' ')"
+	got="$(platforms "$ref")"
+	# The index may have more than the row builds for, never fewer.
+	ok=1
+	for a in $want; do case " $got " in *" $a "*) ;; *) ok=0 ;; esac; done
+	check "$id's image is pinned to an index with an image for each architecture it is built for ($want)" "1" "$ok"
+done
 for dir in "$HERE"/scripts/package/images/*/; do
 	name="$(basename "$dir")"
 	known=0
