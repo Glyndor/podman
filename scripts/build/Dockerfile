@@ -17,7 +17,7 @@ FROM ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb3896588064
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Debian 12, glibc 2.36, for the same proof.
-FROM debian:12@sha256:366a6da5efcceffbaa19c560a101b97b87a1a9664eeeac8bc3d24395ddbf14f3 AS debian12
+FROM debian:12@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8 AS debian12
 ENV DEBIAN_FRONTEND=noninteractive
 
 # No gpgme, assuan, subid or sqlite headers on purpose: those libraries change
