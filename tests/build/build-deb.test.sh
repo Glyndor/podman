@@ -315,5 +315,22 @@ for lib in libgpgme11t64 libassuan9 libsubid5 libsqlite3-0 libapparmor1 libbtrfs
 	check "and no package is written for $lib" 0 "$(find "$last_out" -name '*.deb' 2>/dev/null | wc -l)"
 done
 
+# What the build reads from passt and from ldd has to be there: each refusal is by name, and writes no package.
+cp -r "$WORK/passt" "$WORK/passt-bad"
+printf 'all:\n\t@true\ninstall:\n\t@true\n' > "$WORK/passt-bad/Makefile"
+GLYNDOR_PASST_SRC="$WORK/passt-bad" refused "$WORK/out-nopasstbin"
+check "a passt that installs no usr/bin/passt is refused, and says so, not just a failed link" "1 1 0" \
+	"$rc $(printf '%s' "$err" | grep -c 'passt did not install an executable usr/bin/passt\|ln: failed to access') $(find "$WORK/out-nopasstbin" -name '*.deb' 2>/dev/null | wc -l)"
+mkdir "$WORK/fakeparse"; printf '#!/bin/sh\nexit 0\n' > "$WORK/fakeparse/dpkg-parsechangelog"; chmod +x "$WORK/fakeparse/dpkg-parsechangelog"
+PATH="$WORK/fakeparse:$PATH" refused "$WORK/out-nopasstversion"
+check "a changelog that gives no version is refused with a message, and no Provides: passt (= ) is written" "1 1 0" \
+	"$rc $(printf '%s' "$err" | grep -c 'no version in .*debian/changelog') $(find "$WORK/out-nopasstversion" -name '*.deb' 2>/dev/null | wc -l)"
+links libgcc-s1 libseccomp2
+check "binaries that link no libc6 are refused, and say that the list has none" "1 1 0" \
+	"$rc $(printf '%s' "$err" | grep -c 'do not include libc6') $(find "$last_out" -name '*.deb' 2>/dev/null | wc -l)"
+printf '#!/bin/sh\n[ "$1" = -S ] && exit 1\nexec "%s" "$@"\n' "$real_dpkg" > "$WORK/fakeldd/dpkg"
+links libc6
+check "a library that no package owns stops the build with a message" "1 1" "$rc $(printf '%s' "$err" | grep -c 'could not work out which packages own the libraries')"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

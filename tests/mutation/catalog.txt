@@ -467,3 +467,7 @@ verify-tag-git-says-nothing	scripts/upstream/verify-tag.sh	gpg_has_status "$stat
 verify-tag-git-exit-status	scripts/upstream/verify-tag.sh	[ "$rc" -eq 0 ] || { echo "tag $tag rejected: git verify-tag exited $rc" >&2; exit 1; }	true	tests/upstream/verify-tag-formats.test.sh
 gpg-verdict-no-fingerprint-is-a-mistake	scripts/upstream/gpg-verdict.sh	if [ "$#" -eq 0 ]; then	if false; then	tests/upstream/gpg-verdict.test.sh
 gpg-verdict-not-a-fingerprint	scripts/upstream/gpg-verdict.sh	[[ "$fingerprint" =~ ^[0-9A-Fa-f]{40}([0-9A-Fa-f]{24})?$ ]] || {	[[ "$fingerprint" =~ ^[0-9A-Fa-f]{40}([0-9A-Fa-f]{24})?$ ]] || true || {	tests/upstream/gpg-verdict.test.sh
+build-deb-passt-version-empty	scripts/build/build-deb.sh	[ -n "$passt_version" ] ||	true ||	tests/build/build-deb.test.sh
+build-deb-passt-binary-missing	scripts/build/build-deb.sh	[ -x "$stage/usr/bin/passt" ] ||	true ||	tests/build/build-deb.test.sh
+build-deb-libs-pipeline-fails	scripts/build/build-deb.sh	|| { echo "could not work out which packages own the libraries the binaries link" >&2; exit 1; }	|| true	tests/build/build-deb.test.sh
+build-deb-libs-without-libc6	scripts/build/build-deb.sh	refusing a package that declares none" >&2; exit 1 ;;	refusing a package that declares none" >&2; exit 0 ;;	tests/build/build-deb.test.sh
