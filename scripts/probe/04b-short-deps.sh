@@ -47,7 +47,8 @@ build_passt() {
 build_crun() {
 	curl -fsSL --retry 3 -o "$work/crun.tar.gz" "https://github.com/containers/crun/releases/download/$1/crun-$1.tar.gz" \
 		&& tar -C "$work" -xzf "$work/crun.tar.gz" \
-		&& (cd "$work/crun-$1" && { ./configure --prefix=/usr || { grep -n -B2 -A12 'seccomp' config.log | tail -n 60; false; }; } \
+		&& (cd "$work/crun-$1" && { CPPFLAGS="$(pkg-config --cflags libseccomp)" LDFLAGS="$(pkg-config --libs-only-L libseccomp)" ./configure --prefix=/usr \
+			|| { pkg-config --cflags --libs libseccomp; find /usr -name seccomp.h; false; }; } \
 			&& make -j"$(nproc)" && make install)
 }
 

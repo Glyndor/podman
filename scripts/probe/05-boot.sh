@@ -88,8 +88,8 @@ helper_state() {
 state="$(helper_state)"
 if [ "$state" = none ]; then
 	case "$PM" in
-		dnf) rpm --setperms --setugids shadow-utils && rpm --setcaps shadow-utils ;;
-		zypper) rpm --setperms --setugids shadow && rpm --setcaps shadow ;;
+		dnf) rpm --setperms shadow-utils && rpm --setcaps shadow-utils ;;
+		zypper) rpm --setperms shadow && rpm --setcaps shadow ;;
 		pacman) pacman -S --noconfirm shadow ;;
 	esac
 	state="none in the image, $(helper_state) after restoring them from the package"
@@ -115,6 +115,13 @@ case "\$1" in
 	userns) unshare -Ur true && \$P unshare true ;;
 	pull) \$P pull "docker://$image" ;;
 	run) \$P run --rm --network pasta "$image" echo rootless-ok ;;
+	runas) \$P run --rm --network pasta:--runas,0 "$image" echo rootless-ok ;;
+	diag)
+		pasta --version | head -n 1
+		getent passwd nobody
+		ls -ld /run /run/user "/run/user/\$(id -u)" "/run/user/\$(id -u)/netns" 2>&1
+		\$P unshare cat /proc/self/uid_map
+		\$P unshare id ;;
 	net) \$P run --rm --network pasta "$image" wget -q -T 30 -O /dev/null http://example.com/ ;;
 	dns)
 		\$P network create probe-rl || exit 1
@@ -132,6 +139,11 @@ check rootless-userns "an unprivileged user can create a user namespace and Podm
 if [ "$(fact_get boot.rootless-userns)" = ok ]; then
 	check rootless-pull "pull the test image, rootless" rl pull
 	check rootless-run "a container runs on pasta, rootless" rl run
+	if [ "$(fact_get boot.rootless-run)" != ok ]; then
+		# What pasta runs as and where it looks, and whether keeping it as the user changes the answer.
+		rl diag > "$PROBE_OUT/logs/boot-rootless-diag.log" 2>&1
+		check rootless-run-runas0 "the same with pasta kept as root of the namespace" rl runas
+	fi
 	check rootless-net "a rootless container on pasta reaches the network" rl net
 	check rootless-dns "a rootless container resolves another by name (aardvark-dns)" rl dns
 else
