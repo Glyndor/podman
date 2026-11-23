@@ -98,7 +98,17 @@ GH
 	check "nothing to build: the plan succeeds even when the asset list cannot be read" "0 false" "$rc $(said build)"
 	check "and it does not ask for the list" "release list|release download" "$(paste -sd'|' "$P/gh.log")"
 	check "and hands on what it always did, and nothing about the signature" \
-		"sha build version podman netavark aardvark recipe podman_sha netavark_sha aardvark_sha" "$(sed 's/=.*//' "$P/out" | paste -sd' ')"
+		"sha build dry_run version podman netavark aardvark recipe podman_sha netavark_sha aardvark_sha" "$(sed 's/=.*//' "$P/out" | paste -sd' ')"
+	# A rehearsal builds whether or not something is new, under a version no release can have.
+	plan LATEST=v6.2.0 TAGS=v6.2.0 COMPONENTS="$same" ASSETS="$ed" DRY_RUN=true
+	check "a rehearsal with nothing new builds, under the revision no release has, and says it is one" \
+		"0 true v6.2.0+r999 true 6.2.0+r999" "$rc $(said build) $(said tag) $(said dry_run) $(said version)"
+	plan LATEST=v6.1.0 TAGS=v6.1.0 COMPONENTS="$old" ASSETS="$ed" DRY_RUN=true
+	check "a rehearsal when a release is due keeps the tag that release would have" "0 true v6.2.0 true" "$rc $(said build) $(said tag) $(said dry_run)"
+	plan LATEST=v6.2.0 TAGS=v6.2.0 COMPONENTS="$same" DRY_RUN=false
+	check "no rehearsal, nothing new: nothing is built, and it says it is not a rehearsal" "0 false false" "$rc $(said build) $(said dry_run)"
+	plan LATEST=v6.2.0 TAGS=v6.2.0 COMPONENTS="$same"
+	check "a run with no dry_run set says false" "false" "$(said dry_run)"
 	# One commit for the whole run: the one the checkout is at, which has to be the one the event
 	# named, so that no later job resolves a branch or a tag again.
 	plan
