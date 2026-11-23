@@ -97,6 +97,7 @@ done
 passt_src="${GLYNDOR_PASST_SRC:-/usr/share/glyndor-build/passt}"
 [ -f "$passt_src/Makefile" ] || { echo "no passt source at $passt_src" >&2; exit 1; }
 passt_version="$(dpkg-parsechangelog -l "$passt_src/debian/changelog" -S Version)"
+[ -n "$passt_version" ] || { echo "no version in $passt_src/debian/changelog: the package would declare Provides: passt (= )" >&2; exit 1; }
 case "$arch" in amd64) passt_target=x86_64 ;; arm64) passt_target=aarch64 ;; *) passt_target="$(uname -m)" ;; esac
 (
 	# eval runs what dpkg-buildflags prints, and its sh export escapes nothing: each
@@ -114,6 +115,7 @@ case "$arch" in amd64) passt_target=x86_64 ;; arm64) passt_target=aarch64 ;; *) 
 	make -C "$passt_src" prefix=/usr TARGET="$passt_target" >&2
 	make -C "$passt_src" install prefix=/usr TARGET="$passt_target" DESTDIR="$stage" >&2
 )
+[ -x "$stage/usr/bin/passt" ] || { echo "passt did not install an executable usr/bin/passt for pasta to be linked to" >&2; exit 1; }
 ln -f "$stage/usr/bin/passt" "$stage/usr/bin/pasta"
 [ ! -e "$stage/usr/bin/passt.avx2" ] || ln -f "$stage/usr/bin/passt.avx2" "$stage/usr/bin/pasta.avx2"
 if [ -d "$passt_src/contrib/apparmor" ]; then
@@ -205,7 +207,13 @@ libs="$(xargs -0 -r ldd < "$work/dynamic" \
 	| awk '$3 ~ /^\// {print $3}' | sort -u \
 	| xargs -r -n1 realpath | xargs -r dpkg -S 2>/dev/null \
 	| sed 's/:[a-z0-9]*:.*//; s/: .*//' | sort -u \
-	| sed "s/^libc6\$/libc6 (>= ${glibc_min})/" | paste -sd, | sed 's/,/, /g')"
+	| sed "s/^libc6\$/libc6 (>= ${glibc_min})/" | paste -sd, | sed 's/,/, /g')" \
+	|| { echo "could not work out which packages own the libraries the binaries link" >&2; exit 1; }
+# Every dynamic binary links libc: no libc6 means the pipeline lost its input, and the package would declare no libraries at all.
+case ",${libs// /}," in
+	*,libc6\(*) ;;
+	*) echo "the libraries the binaries link do not include libc6 (got: ${libs:-nothing}): refusing a package that declares none" >&2; exit 1 ;;
+esac
 
 # These libraries are renamed between Debian and Ubuntu releases; a binary linked
 # to one would not start elsewhere, so a build that picks one up is refused.
