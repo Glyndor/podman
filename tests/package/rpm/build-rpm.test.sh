@@ -51,6 +51,14 @@ check "the oldest passt is the table's" "0^20260716" "$(defined gl_passt_min)"
 check "the versions of the network stack are read from the payload" "2.1.0 2.1.3" "$(defined gl_netavark) $(defined gl_aardvark)"
 check "the payload is the directory given" "$WORK/payload" "$(defined gl_payload)"
 
+# On openSUSE the policy is a package of its own that owns /usr/share/containers/policy.json, and libsolv does not
+# remove it for an Obsoletes of a name that only it provides (the update stopped on the file conflict, measured on
+# Tumbleweed), so each package is named.
+SPEC="$HERE/scripts/package/rpm/podman.spec"
+for name in libcontainers-default-policy libcontainers-openSUSE-policy; do
+	check "the spec obsoletes $name, which owns policy.json on openSUSE" 1 "$(grep -c -x "Obsoletes:      $name" "$SPEC")"
+done
+
 # A distribution that numbers containers-common with Podman's own version gets it in the spec.
 cat > "$WORK/table" <<'T'
 el9|rpm|el|x86_64|6|3|5|podman|0^20260716||

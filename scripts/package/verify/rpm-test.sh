@@ -150,8 +150,9 @@ check "podman is the Glyndor package at $nevr" test "$(rpm -q --qf '%|EPOCH?{%{E
 check "its vendor is Glyndor" test "$(vendor_of podman)" = Glyndor
 check "the distribution's podman is not installed beside it" test "$(rpm -q podman | wc -l)" -eq 1
 cc=containers-common
-[ "$family" != suse ] || cc=libcontainers-common
-for pkg in netavark aardvark-dns "$cc"; do
+# On openSUSE the policy is a package of its own, which owns /usr/share/containers/policy.json.
+[ "$family" != suse ] || cc="libcontainers-common libcontainers-default-policy"
+for pkg in netavark aardvark-dns $cc; do
 	check "$pkg is provided by podman and is not a package of its own" test "$(rpm -q --whatprovides "$pkg" 2> /dev/null | sed 's/-[0-9].*//' | sort -u | tr '\n' ' ')" = "podman "
 done
 check "netavark and aardvark-dns of the package are the ones that run" bash -c '/usr/libexec/podman/netavark --version && /usr/libexec/podman/aardvark-dns --version'

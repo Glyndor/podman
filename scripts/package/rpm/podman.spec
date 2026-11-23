@@ -87,6 +87,13 @@ Provides:       libcontainers-storage = %{gl_cc_version}
 Obsoletes:      libcontainers-storage
 Provides:       libcontainers-policy = %{gl_cc_version}
 Obsoletes:      libcontainers-policy
+# The policy.json of /usr/share/containers is a package of its own on openSUSE, which libsolv does not remove
+# for the Obsoletes above (it matches package names): measured on Tumbleweed on 2026-11-23, the update stopped on
+# "File /usr/share/containers/policy.json conflicts with libcontainers-default-policy". Leap 16.1 has it too,
+# and a second one, libcontainers-openSUSE-policy.
+Provides:       libcontainers-default-policy = %{gl_cc_version}
+Obsoletes:      libcontainers-default-policy
+Obsoletes:      libcontainers-openSUSE-policy
 Provides:       registries-conf = %{gl_cc_version}
 Obsoletes:      registries-conf
 %else
