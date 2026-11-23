@@ -62,6 +62,19 @@ printf 'object %s\ntype commit\ntag v5s\ntagger t <t@x> 1795000000 +0000\n\nx509
 # An OpenPGP signature behind a line that starts another kind of signature: git decides from the first such line.
 pgp_tag v6 "$WORK/gh-pinned" "$subkey!" "$(printf 'look\n-----BEGIN SSH SIGNATURE-----\nnothing\n')"
 
+# A tag changed after it was signed (BADSIG), and a tag whose signature expired (EXPSIG): the second needs a key that
+# existed in 2019, a signature made in 2020 that was good for a day, and a gpg that is told so through its own options.
+mkdir -m 700 "$WORK/gh-dated"
+printf 'faked-system-time 20190101T000000\n' > "$WORK/gh-dated/gpg.conf"
+GNUPGHOME="$WORK/gh-dated" gpg --batch --quiet --passphrase '' --quick-generate-key "dated <dated@x>" ed25519 sign never 2> /dev/null
+dated="$(GNUPGHOME="$WORK/gh-dated" gpg --batch --with-colons --list-keys dated@x 2> /dev/null | awk -F: '/^fpr/ {print $10; exit}')"
+GNUPGHOME="$WORK/gh-dated" gpg --batch --armor --export dated@x > "$WORK/keys-dated.asc" 2> /dev/null
+printf 'faked-system-time 20200101T000000\ndefault-sig-expire 1d\n' > "$WORK/gh-dated/gpg.conf"
+pgp_tag v7 "$WORK/gh-dated" "$dated"
+# The signature of v1 on an object that says it is v8: the name is part of what was signed.
+tampered="$(git -C "$repo" cat-file tag v1 | sed '0,/^tag v1$/s//tag v8/' | git -C "$repo" hash-object -t tag -w --stdin)"
+git -C "$repo" update-ref refs/tags/v8 "$tampered"
+mkdir "$WORK/keys-dated"; cp "$WORK/keys-dated.asc" "$WORK/keys-dated/dated.asc"; cp "$WORK/keys/pinned.asc" "$WORK/keys-dated/"
 run() { "$SCRIPT" "$repo" "$1" "$WORK/keys" > "$WORK/out" 2> "$WORK/err"; rc=$?; out="$(cat "$WORK/out")"; }
 refused() { # <desc> <tag> <reason> [VAR=value]...
 	local desc="$1" tag="$2" reason="$3"; shift 3
@@ -83,6 +96,11 @@ fi
 refused "a tag whose signature is an X.509 one made by hand" v5s "is not signed with OpenPGP: it starts its signature with '-----BEGIN SIGNED MESSAGE-----'"
 refused "a tag whose message holds the line of another kind of signature before an OpenPGP one" v6 "is not signed with OpenPGP"
 
+refused "a tag changed after it was signed" v8 "rejected: BADSIG"
+dated_dir="$WORK/keys-dated"
+err="$("$SCRIPT" "$repo" v7 "$dated_dir" 2>&1 > /dev/null)"; rc=$?
+check "a tag whose signature expired is refused" 1 "$rc"
+check "a tag whose signature expired: the reason is 'rejected: EXPSIG'" 1 "$(printf '%s\n' "$err" | grep -c -F -- 'rejected: EXPSIG')"
 # The configuration of the user, the system or the repository names a program that says what it is asked to say.
 cat > "$WORK/liar" <<LIAR
 #!/bin/sh
