@@ -49,25 +49,11 @@ jobs:
           - name: fedora-45
             image: quay.io/fedora/fedora:45@sha256:6d8462b7b0474af891c3e84e680df7bdfb487cf37ccb6239b5e05444d1b92cbd
           - name: fedora-44
-            image: quay.io/fedora/fedora:44@sha256:aca68c361f2a89de8a64e8d91a47494f37fad05f88c2f503cdd8a284a74c70ac
-          - name: almalinux-9
-            image: quay.io/almalinuxorg/almalinux:9@sha256:b47d8370be0b2981b257c5ecbb02ead92be6c9a248502e84de149ee51c1eaf2f
-          - name: almalinux-10
-            image: quay.io/almalinuxorg/almalinux:10@sha256:498b0b31dab82c3be22ac50efb8bf865adce85576495da20de8cedc48b29eec6
-          - name: rockylinux-9
-            image: quay.io/rockylinux/rockylinux:9@sha256:bb5755f96bec05ff26165e779ec843d7167544be9e50770508f307019a6d05c4
-          - name: rockylinux-10
-            image: quay.io/rockylinux/rockylinux:10@sha256:d24beedc58f79b9e0e9289fedaa4fcbcbe692b1438883a86f177fd7c51053ca8
-          - name: rhel-ubi-9
-            image: registry.access.redhat.com/ubi9/ubi:latest@sha256:6636b79fba9e5044360366f189333c30b5ce528efd92c40c68b074592b971fcd
-          - name: rhel-ubi-10
-            image: registry.access.redhat.com/ubi10/ubi:latest@sha256:87ceab8634a53a36c75a8ba7282f09f11c46ab3e8906db6c6d2b3cd2a7dc4f4e
+            image: quay.io/fedora/fedora:44@sha256:0daf6a73fb6ad75dcd62d9a5270e58572f1aea95bb9331db7c2eedd6e47c9cb5
           - name: opensuse-tumbleweed
             image: registry.opensuse.org/opensuse/tumbleweed:latest@sha256:815edf2ba0730167a9e87199cfe36c07ef391915131b2e44d116a84290a07c87
           - name: opensuse-leap-16.1
             image: registry.opensuse.org/opensuse/leap:16.1@sha256:755746c7eec92fbdd3c4b02be194bfded4a8d4fde0abedf1835f945d403f43c8
-          - name: amazonlinux-2023
-            image: public.ecr.aws/amazonlinux/amazonlinux:2023@sha256:5c38fd85b00ce8c094315d9b71f671f880052314a22bd25f1a027821bf61d9d7
           - name: archlinux
             image: docker.io/library/archlinux:latest@sha256:d4594bb2300cba11f41c2f27923eb56f63d9988909c402f9c95517d1e362c899
     env:

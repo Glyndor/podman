@@ -125,7 +125,15 @@ case "\$1" in
 		getent passwd nobody
 		ls -ld /run /run/user "/run/user/\$(id -u)" "/run/user/\$(id -u)/netns" 2>&1
 		\$P unshare cat /proc/self/uid_map
-		\$P unshare id ;;
+		\$P unshare id
+		echo "-- a network namespace of its own, no pasta"
+		unshare -r -n cat /proc/sys/net/ipv4/ip_local_port_range
+		echo "-- pasta on its own, with a command"
+		timeout 30 pasta -- cat /proc/sys/net/ipv4/ip_local_port_range
+		echo "-- the user namespace of Podman, a new network namespace in it"
+		\$P unshare unshare -n cat /proc/sys/net/ipv4/ip_local_port_range
+		grep -E '^(CapEff|CapBnd|NoNewPrivs|Seccomp)' /proc/self/status
+		grep ' /proc' /proc/self/mountinfo ;;
 	net) \$P run --rm --network pasta "$image" wget -q -T 30 -O /dev/null http://example.com/ ;;
 	dns)
 		\$P network create probe-rl || exit 1
@@ -143,10 +151,11 @@ check rootless-userns "an unprivileged user can create a user namespace and Podm
 if [ "$(fact_get boot.rootless-userns)" = ok ]; then
 	check rootless-pull "pull the test image, rootless" rl pull
 	check rootless-run "a container runs on pasta, rootless" rl run
+	# Written for every distribution, so a failure can be read against one that passes.
+	rl diag > "$PROBE_OUT/logs/boot-rootless-diag.log" 2>&1
+	rl debug > "$PROBE_OUT/logs/boot-rootless-pasta-debug.log" 2>&1
 	if [ "$(fact_get boot.rootless-run)" != ok ]; then
-		# What pasta runs as and where it looks, and whether keeping it as the user changes the answer.
-		rl diag > "$PROBE_OUT/logs/boot-rootless-diag.log" 2>&1
-		rl debug > "$PROBE_OUT/logs/boot-rootless-pasta-debug.log" 2>&1
+		# Whether keeping the runtime directory open or pasta as the user changes the answer.
 		check rootless-run-open-rundir "the same with the runtime directory open to everyone" rl open
 		check rootless-run-runas0 "the same with pasta kept as root of the namespace" rl runas
 	fi
