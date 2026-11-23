@@ -59,6 +59,7 @@ jobs:
       netavark_sha: ${{ steps.p.outputs.netavark_sha }}
       aardvark_sha: ${{ steps.p.outputs.aardvark_sha }}
       previous_mldsa: ${{ steps.p.outputs.previous_mldsa }}
+      sha: ${{ steps.p.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,6 +71,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           w="$RUNNER_TEMP/plan"; mkdir -p "$w"
+          # The commit every later job of this run builds, signs and tags: the one this
+          # job checked out, which is the one the event named. Nothing later resolves a
+          # branch or a tag again, so a ref that moves during the run cannot change what
+          # is signed.
+          sha="$(git rev-parse HEAD)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "the checkout is at '$sha', which is not a full commit id" >&2; exit 1; }
+          [ "$sha" = "$GITHUB_SHA" ] || { echo "the checkout is at $sha, not at $GITHUB_SHA" >&2; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           for c in podman netavark aardvark-dns; do
             echo "$c $(bash scripts/upstream/latest-stable.sh "https://github.com/containers/$c.git")" >> "$w/fresh"
           done
@@ -134,6 +143,7 @@ jobs:
     with:
       arch: ${{ matrix.arch }}
       runner: ${{ matrix.runner }}
+      sha: ${{ needs.plan.outputs.sha }}
       version: ${{ needs.plan.outputs.version }}
       podman: ${{ needs.plan.outputs.podman }}
       netavark: ${{ needs.plan.outputs.netavark }}
@@ -143,41 +153,60 @@ jobs:
       aardvark_sha: ${{ needs.plan.outputs.aardvark_sha }}
       upload: true
 
-  publish:
-    name: Sign and publish
+  # The job that holds the signing keys. It signs what the build jobs made and nothing else,
+  # and it can do nothing but sign: no write permission on the repository, no token for
+  # attestations. What it signs is checked against the exact list of names the verified
+  # tag implies before the first key is read, and the tools it runs come from a checkout of
+  # the commit the plan fixed, with Python isolated (-I) and never started in a directory
+  # that holds a download.
+  sign:
+    name: Sign
     needs: [plan, build]
-    # The same guard as plan, on the job that holds the signing keys and creates the
-    # release: a skipped plan already skips this one, and a later edit that makes this
-    # job run whatever its needs did (an always() above it) would otherwise publish
-    # from a branch.
+    # The same guard as plan, on the job that holds the signing keys: a skipped plan already
+    # skips this one, and a later edit that makes this job run whatever its needs did (an
+    # always() above it) would otherwise sign on a branch.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    # Ceiling, not measured: a download of two packages, signing, the attestation and the
-    # release. Like the plan it holds the release group while it runs.
+      contents: read
+    # Ceiling, not measured: a download of two packages and their signing.
     timeout-minutes: 15
+    outputs:
+      require_mldsa: ${{ steps.sign.outputs.require_mldsa }}
     env:
       TAG: ${{ needs.plan.outputs.tag }}
-      PODMAN: ${{ needs.plan.outputs.podman }}
-      NETAVARK: ${{ needs.plan.outputs.netavark }}
-      AARDVARK: ${{ needs.plan.outputs.aardvark }}
-      RECIPE: ${{ needs.plan.outputs.recipe }}
       PREVIOUS_MLDSA: ${{ needs.plan.outputs.previous_mldsa }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
+      # One artifact at a time, by its name, into a directory that did not exist and is not
+      # under the checkout. merge-multiple put every file of every artifact in one place.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: deb-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/artifacts
+          name: deb-amd64
+          path: ${{ runner.temp }}/built/deb-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deb-arm64
+          path: ${{ runner.temp }}/built/deb-arm64
+      # No secret is in the environment of the next two steps. The first is the only reader of
+      # the download; what it lets through is copied to a directory of its own, as regular files
+      # whose names and control fields are the ones the tag implies. The second makes the
+      # virtual environment of the signing library, by hash and binary only, from an empty
+      # directory of its own, so nothing a package carried can be imported by it.
+      - name: Check what was built is exactly the packages of the tag
+        run: bash scripts/release/check-artifacts.sh built "$TAG" "$RUNNER_TEMP/built" "$RUNNER_TEMP/stage"
+      - name: Install the signing library
+        run: |
+          mkdir "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          python3 -I -m venv "$RUNNER_TEMP/signvenv"
+          "$RUNNER_TEMP/signvenv/bin/python" -I -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
       - name: Sign every package, then verify against the published key
         id: sign
-        working-directory: ${{ runner.temp }}/artifacts
+        working-directory: ${{ runner.temp }}/tools
         env:
           GLYNDOR_RELEASE_ED25519_KEY: ${{ secrets.GLYNDOR_RELEASE_ED25519_KEY }}
           # The second, post-quantum key. A secret that is not configured
@@ -190,10 +219,10 @@ jobs:
             echo "::error::GLYNDOR_RELEASE_ED25519_KEY is not configured; refusing to publish unsigned packages."
             exit 1
           fi
-          [ "$(find . -maxdepth 1 -name 'podman_*.deb' | wc -l)" -eq 2 ] || { echo "::error::expected one package per architecture"; exit 1; }
-          python3 -m venv "$RUNNER_TEMP/signvenv"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] || { echo "::error::the tag '$TAG' is not a version; refusing to sign."; exit 1; }
+          version="${TAG#v}"
+          stage="$RUNNER_TEMP/stage"
           py="$RUNNER_TEMP/signvenv/bin/python"
-          "$py" -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
           # Three things require the second signature, and any one of them is enough:
           # - keyring/second-signature-required holds the line "required". That is the
           #   switch. It is committed, so turning it on or off is a change of its own
@@ -270,47 +299,107 @@ jobs:
             required=true
             require=(--require-mldsa)
           fi
-          for deb in podman_*.deb; do
-            "$py" "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$deb"
-            "$py" "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64" \
+          for arch in amd64 arm64; do
+            deb="$stage/podman_${version}_${arch}.deb"
+            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$deb"
+            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64" \
               --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$anchor" "${require[@]}"
           done
           echo "require_mldsa=$required" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/stage/
+          retention-days: 1
+          if-no-files-found: error
+
+  # The job that attests and publishes. It holds the write permissions and no signing key: it
+  # takes the signed set, requires it to be exactly what the tag implies, verifies every
+  # signature against the committed anchors with the same isolated Python, and only then
+  # attests and creates the release, on the commit the plan fixed.
+  publish:
+    name: Attest and publish
+    needs: [plan, sign]
+    # The same guard as plan, on the job that creates the release: a skipped plan already
+    # skips this one, and a later edit that makes this job run whatever its needs did (an
+    # always() above it) would otherwise publish from a branch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    # Ceiling, not measured: a download of two packages, the attestation and the release. Like
+    # the plan it holds the release group while it runs.
+    timeout-minutes: 15
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      SHA: ${{ needs.plan.outputs.sha }}
+      PODMAN: ${{ needs.plan.outputs.podman }}
+      NETAVARK: ${{ needs.plan.outputs.netavark }}
+      AARDVARK: ${{ needs.plan.outputs.aardvark }}
+      RECIPE: ${{ needs.plan.outputs.recipe }}
+      REQUIRE_MLDSA: ${{ needs.sign.outputs.require_mldsa }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/signed
+      - name: Check the signed set is exactly the packages of the tag, with the signatures that were required
+        run: bash scripts/release/check-artifacts.sh signed "$TAG" "$RUNNER_TEMP/signed" "$REQUIRE_MLDSA"
+      - name: Verify every signature against the published keys
+        run: |
+          mkdir "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          python3 -I -m venv "$RUNNER_TEMP/verifyvenv"
+          py="$RUNNER_TEMP/verifyvenv/bin/python"
+          "$py" -I -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
+          version="${TAG#v}"
+          require=()
+          if [ "$REQUIRE_MLDSA" = true ]; then require=(--require-mldsa); fi
+          for arch in amd64 arm64; do
+            deb="$RUNNER_TEMP/signed/podman_${version}_${arch}.deb"
+            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64" \
+              --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64" "${require[@]}"
+          done
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: ${{ runner.temp }}/artifacts/podman_*.deb
+          subject-path: ${{ runner.temp }}/signed/podman_*.deb
       - name: Create the release
-        working-directory: ${{ runner.temp }}/artifacts
+        working-directory: ${{ runner.temp }}/signed
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          REQUIRE_MLDSA: ${{ steps.sign.outputs.require_mldsa }}
         run: |
-          printf 'podman %s\nnetavark %s\naardvark-dns %s\nrecipe %s\n' "$PODMAN" "$NETAVARK" "$AARDVARK" "$RECIPE" > components.txt
-          # The ML-DSA-65 signatures are published whenever they exist. When the signing
-          # step required them, one that is not here stops the run: a release is
-          # immutable, and one without its second signature cannot be completed later.
-          # Listed one by one so that, without them, the release carries exactly the
-          # assets it always has.
-          mldsa=()
-          for deb in podman_*.deb; do
-            if [ -e "$deb.mldsa65.sig" ]; then
-              mldsa+=("$deb.mldsa65.sig")
-            elif [ "$REQUIRE_MLDSA" = true ]; then
-              echo "::error::$deb.mldsa65.sig is missing and the second signature is required; refusing to publish."
-              exit 1
-            fi
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] || { echo "::error::the tag '$TAG' is not a version; refusing to publish."; exit 1; }
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::the commit '$SHA' is not a full commit id; refusing to publish."; exit 1; }
+          version="${TAG#v}"
+          printf 'podman %s\nnetavark %s\naardvark-dns %s\nrecipe %s\n' "$PODMAN" "$NETAVARK" "$AARDVARK" "$RECIPE" > "$RUNNER_TEMP/components.txt"
+          # The assets are named one by one from the tag. The ML-DSA-65 signatures are published
+          # whenever the signing step required them, and the check of the set already refused a
+          # release in which one was missing: a release is immutable, and one without its second
+          # signature cannot be completed later.
+          assets=()
+          for arch in amd64 arm64; do
+            assets+=("podman_${version}_${arch}.deb" "podman_${version}_${arch}.deb.sig")
+            if [ "$REQUIRE_MLDSA" = true ]; then assets+=("podman_${version}_${arch}.deb.mldsa65.sig"); fi
           done
-          gh release create "$TAG" --target "$GITHUB_SHA" --title "Podman ${TAG#v}" \
+          # --target is the commit the plan fixed, which this job checked out, and the tag the
+          # release creates points there. A run that finds the tag already taken stops.
+          gh release create "$TAG" --target "$SHA" --title "Podman ${TAG#v}" \
             --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \
-            podman_*.deb podman_*.deb.sig "${mldsa[@]}" components.txt
+            "${assets[@]}" "$RUNNER_TEMP/components.txt"
 
   # A failed release leaves no other trace until the watchdog notices a day
   # later, so this opens the issue at once. A manual dispatch is somebody
   # watching the run, so it does not open one.
   alert:
     name: alert
-    needs: [plan, build, publish]
+    needs: [plan, build, sign, publish]
     if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
     # Only calls gh or reads strings: nothing here depends on the image.
     runs-on: ubuntu-latest

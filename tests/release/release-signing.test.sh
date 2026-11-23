@@ -58,5 +58,23 @@ printf '%s\n' "$err" | grep -q "^no Ed25519 signature for $WORK/file: "; check "
 err="$(python3 "$VERIFY" "$WORK/absent" "$WORK/file.sig" "$WORK/pub" 2>&1)"; check "a file that is not there is refused" 1 "$?"
 printf '%s\n' "$err" | grep -q "^cannot read $WORK/absent: "; check "and it says which file it could not read" 0 "$?"
 
+# A link is not what was built. Signing or verifying the file a link points at would sign what
+# somebody put in a package's place, and a signature written through a link lands somewhere else.
+echo payload > "$WORK/real"
+ln -s real "$WORK/link"
+err="$(GLYNDOR_RELEASE_ED25519_KEY="$(cat "$WORK/seed")" python3 "$SIGN" "$WORK/link" 2>&1 >/dev/null)"; check "signing a link is refused" 1 "$?"
+printf '%s\n' "$err" | grep -q "^refusing to sign $WORK/link: "; check "and it says it will not sign it" 0 "$?"
+check "and no signature was written" 0 "$([ -e "$WORK/link.sig" ] && echo 1 || echo 0)"
+mkdir "$WORK/dir"
+GLYNDOR_RELEASE_ED25519_KEY="$(cat "$WORK/seed")" python3 "$SIGN" "$WORK/dir" >/dev/null 2>&1; check "signing a directory is refused" 1 "$?"
+echo elsewhere > "$WORK/target"
+ln -s target "$WORK/out.sig"
+err="$(GLYNDOR_RELEASE_ED25519_KEY="$(cat "$WORK/seed")" python3 "$SIGN" "$WORK/real" "$WORK/out.sig" 2>&1 >/dev/null)"; check "a signature is not written through a link" 1 "$?"
+printf '%s\n' "$err" | grep -q "^cannot write $WORK/out.sig: "; check "and it says which path" 0 "$?"
+check "and what the link pointed at is untouched" "elsewhere" "$(cat "$WORK/target")"
+GLYNDOR_RELEASE_ED25519_KEY="$(cat "$WORK/seed")" python3 "$SIGN" "$WORK/real" >/dev/null 2>&1
+err="$(python3 "$VERIFY" "$WORK/link" "$WORK/real.sig" "$WORK/pub" 2>&1)"; check "verifying a link is refused" 1 "$?"
+printf '%s\n' "$err" | grep -q "^cannot read $WORK/link: "; check "and it says it cannot read it" 0 "$?"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

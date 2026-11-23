@@ -42,6 +42,7 @@ problem with the trust anchor and not with the file being checked.
 import argparse
 import base64
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -63,6 +64,20 @@ MAX_MLDSA65_SIG_BYTES = 4096
 def fail(code: int, message: str) -> None:
 	print(message, file=sys.stderr)
 	sys.exit(code)
+
+
+def read_regular(path: str) -> bytes:
+	"""Read a regular file that is not reached through a link.
+
+	What is signed or verified is the file named, and nothing a link in that place
+	points at: a release job that finds a link where a package should be has been
+	handed something it did not build.
+	"""
+	fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+	with os.fdopen(fd, "rb") as f:
+		if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+			raise OSError(f"{path} is not a regular file")
+		return f.read()
 
 
 def read_keys(path: str, size: int, what: str, missing_is_empty: bool) -> list:
@@ -216,7 +231,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
 	args = parse_args()
 	try:
-		data = Path(args.file).read_bytes()
+		data = read_regular(args.file)
 	except OSError as exc:
 		fail(REFUSED, f"cannot read {args.file}: {exc}")
 	check_ed25519(data, args)
