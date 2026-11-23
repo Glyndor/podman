@@ -35,3 +35,15 @@ when one asks for an exact version or an epoch above this package's and is neith
 A row in `scripts/package/distros.txt` and an image in `scripts/package/images/<id>/Dockerfile`, pinned by
 digest. The epochs and the way containers-common is numbered are read from the distribution's own
 repositories, not guessed. The suites check that every row has its image and every image its row.
+
+## Configuration
+
+`/etc/containers` is the administrator's, and no package puts a file under it. Podman 6.2.0 reads `containers.conf`,
+`registries.conf` and `policy.json` from `/etc/containers` and, when it has none, from `/usr/share/containers`
+(measured with `strace`), so the defaults of the release live there, and `seccomp.json` is read only from there. The
+packages the rpm replaces own some files of `/etc/containers`, and removing a package takes its files with it: Fedora
+and Enterprise Linux 10 delete an edited `containers.conf` and `storage.conf` with no copy, and Enterprise Linux 9 and
+Amazon Linux 2023 save an edited `%config` file as `.rpmsave`. When the package is the first Glyndor Podman on the host,
+a `%pretrans` copies each such file that is `%ghost` or reported changed by `rpm -V` aside, and a `%posttrans` puts it
+back where nothing is. The proof writes all four files before the update and requires them to be the active ones after it.
+

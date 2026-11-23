@@ -87,6 +87,13 @@ Provides:       libcontainers-storage = %{gl_cc_version}
 Obsoletes:      libcontainers-storage
 Provides:       libcontainers-policy = %{gl_cc_version}
 Obsoletes:      libcontainers-policy
+# The policy.json of /usr/share/containers is a package of its own on openSUSE, which libsolv does not remove
+# for the Obsoletes above (it matches package names): measured on Tumbleweed on 2026-11-23, the update stopped on
+# "File /usr/share/containers/policy.json conflicts with libcontainers-default-policy". Leap 16.1 has it too,
+# and a second one, libcontainers-openSUSE-policy.
+Provides:       libcontainers-default-policy = %{gl_cc_version}
+Obsoletes:      libcontainers-default-policy
+Obsoletes:      libcontainers-openSUSE-policy
 Provides:       registries-conf = %{gl_cc_version}
 Obsoletes:      registries-conf
 %else
@@ -102,6 +109,39 @@ Obsoletes:      skopeo-containers
 Daemonless container engine, packaged from the signed upstream tags of Podman, netavark and
 aardvark-dns, with the containers-common configuration it asks for. The network components
 and that configuration replace the older copies the distributions ship.
+
+# What the administrator wrote in /etc/containers belongs to the administrator, and this package puts no file
+# there. The packages it replaces own some of them, and removing a package takes its files with it. Measured on
+# 2026-11-23: on Fedora 45 and EL 10 the package owns containers.conf and storage.conf as %ghost files, and
+# erasing it removes whatever is there, which includes what an administrator wrote; EL 9 and Amazon Linux 2023
+# save an edited %config file as .rpmsave, and delete a plain one. Podman then falls back to
+# /usr/share/containers, the default and not the policy the administrator chose. So, when this is the first
+# Glyndor podman on the machine, each file of /etc/containers that a package owns and that is either marked
+# %ghost or reported changed by rpm -V (the digest flag) is copied aside before the transaction starts and put
+# back after it, only where nothing is.
+%pretrans -p /bin/sh
+if ! rpm -q --qf '%%{VENDOR}\n' podman 2> /dev/null | grep -qx Glyndor; then
+	for f in $(find /etc/containers -type f 2> /dev/null); do
+		rpm -qf "$f" > /dev/null 2>&1 || continue
+		if rpm -Vf "$f" 2> /dev/null | grep -Eq "^.{2}5.* $f\$" \
+			|| rpm -qf --qf '[%%{FILENAMES} %%{FILEFLAGS:fflags}\n]' "$f" 2> /dev/null | grep -Eq "^$f [a-zA-Z]*g"; then
+			cp -p "$f" "$f.glyndor-saved"
+		fi
+	done
+fi
+exit 0
+
+%posttrans -p /bin/sh
+for s in $(find /etc/containers -name '*.glyndor-saved' 2> /dev/null); do
+	f="${s%%.glyndor-saved}"
+	if [ -e "$f" ]; then
+		rm -f "$s"
+	else
+		mv "$s" "$f"
+		echo "podman: kept your $f, which a package that podman replaces had" >&2
+	fi
+done
+exit 0
 
 %package docker
 Summary:        Emulate the Docker CLI using Podman
