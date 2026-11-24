@@ -557,15 +557,21 @@ rpm-extras-build-the-revision-is-a-number	scripts/package/rpm/build-extras.sh	[[
 rpm-extras-build-name-is-not-in-table	scripts/package/rpm/build-extras.sh	[ -n "$row" ] || { echo "$name is not in $table" >&2; exit 1; }	[ -n "$row" ] || true	tests/package/rpm/build-extras.test.sh
 rpm-extras-build-cannot-unpack-the-source-of	scripts/package/rpm/build-extras.sh	tar -C "$build" --strip-components=1 -xf "$src/$name"/src.tar.* || { echo "cannot unpack the source of $name" >&2; exit 1; }	tar -C "$build" --strip-components=1 -xf "$src/$name"/src.tar.* || true	tests/package/rpm/build-extras.test.sh
 rpm-extras-fetch-name-is-not-in-table	scripts/package/rpm/fetch-extras.sh	[ -n "$row" ] || { echo "$name is not in $table" >&2; exit 1; }	[ -n "$row" ] || true	tests/package/rpm/fetch-extras.test.sh
-rpm-extras-fetch-cannot-fetch-source	scripts/package/rpm/fetch-extras.sh	curl -fsSL --retry 3 -o "$out/src.$ext" "$source" || { echo "cannot fetch $source" >&2; exit 1; }	curl -fsSL --retry 3 -o "$out/src.$ext" "$source" || true	tests/package/rpm/fetch-extras.test.sh
-rpm-extras-fetch-cannot-fetch-the-signature-of	scripts/package/rpm/fetch-extras.sh	curl -fsSL --retry 3 -o "$out/src.$ext.asc" "$source.asc" || { echo "cannot fetch the signature of $source" >&2; exit 1; }	curl -fsSL --retry 3 -o "$out/src.$ext.asc" "$source.asc" || true	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-name-the-tarball-is-not	scripts/package/rpm/fetch-extras.sh	|| { echo "$name: the tarball is not the one pinned in extras.txt" >&2; exit 1; }	|| true	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-cannot-import-keyfile	scripts/package/rpm/fetch-extras.sh	gpg --batch --quiet --import "$keys/$keyfile" || { echo "cannot import $keyfile" >&2; exit 1; }	gpg --batch --quiet --import "$keys/$keyfile" || true	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-name-the-tag-tag-is	scripts/package/rpm/fetch-extras.sh	|| { echo "$name: the tag $tag is not at the commit pinned in extras.txt" >&2; exit 1; }	|| true	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-not-a-tarball	scripts/package/rpm/fetch-extras.sh	*) echo "$name: $source is not a tarball" >&2; exit 1 ;; esac	*) ext=tar.gz ;; esac	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-unknown-kind	scripts/package/rpm/fetch-extras.sh	*) echo "$name: unknown kind $kind" >&2; exit 1 ;;	*) true ;;	tests/package/rpm/fetch-extras.test.sh
-rpm-extras-fetch-cannot-clone	scripts/package/rpm/fetch-extras.sh	git clone --quiet --no-checkout "$source" "$out/tree" || { echo "cannot clone $source at $tag" >&2; exit 1; }	git clone --quiet --no-checkout "$source" "$out/tree" || true	tests/package/rpm/fetch-extras.test.sh
-rpm-extras-fetch-branch-named-like-the-tag	scripts/package/rpm/fetch-extras.sh	if git -C "$out/tree" rev-parse --verify --quiet "refs/remotes/origin/$tag" > /dev/null; then	if false; then	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-gpg-could-not-run	scripts/package/rpm/fetch-extras.sh	if ! gpg_has_status "$status"; then	if false; then	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-the-signature-is-rejected	scripts/package/rpm/fetch-extras.sh	[ "$vrc" -eq 0 ] \	true \	tests/package/rpm/fetch-extras.test.sh
 rpm-extras-fetch-gpg-exit-status	scripts/package/rpm/fetch-extras.sh	[ "$rc" -eq 0 ] || { echo "$name: gpg found the signature good and exited $rc, which is refused" >&2; exit 1; }	true	tests/package/rpm/fetch-extras.test.sh
+
+rpm-extras-fetch-over-the-cap	scripts/package/rpm/fetch-extras.sh	if [ "$size" -gt "$3" ] || { [ "$rc" -ne 0 ] && [ "$size" -ge "$3" ]; }; then	if false; then	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-fetch-cannot-fetch	scripts/package/rpm/fetch-extras.sh	[ "$rc" -eq 0 ] && [ "$size" -gt 0 ] ||	true ||	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-fetch-git-fetch-fails	scripts/package/rpm/fetch-extras.sh	if [ "$fetch_rc" -ne 0 ]; then	if false; then	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-fetch-git-tree-not-checked-out	scripts/package/rpm/fetch-extras.sh	git -C "$out/tree" checkout --quiet --detach "$commit"	true	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-fetch-git-takes-the-whole-history	scripts/package/rpm/fetch-extras.sh	fetch --quiet --depth 1 --no-tags origin	fetch --quiet --no-tags origin	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-fetch-git-too-large-on-disk	scripts/package/rpm/fetch-extras.sh	[ "$(du -sb "$out/tree/.git" | cut -f1)" -le "$max_git" ] \	true \	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-fetch-git-unpacks-loose-objects	scripts/package/rpm/fetch-extras.sh	 -c fetch.unpackLimit=1 -c transfer.unpackLimit=1	 -c fetch.unpackLimit=100 -c transfer.unpackLimit=100	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-fetch-no-timeout-around-curl	scripts/package/rpm/fetch-extras.sh	timeout "$max_seconds" curl -fsSL	curl -fsSL	tests/package/rpm/fetch-extras.test.sh
+rpm-extras-fetch-time-limit-not-said	scripts/package/rpm/fetch-extras.sh	if [ "$rc" -eq 124 ] || [ "$rc" -eq 28 ]; then	if false; then	tests/package/rpm/fetch-extras.test.sh
