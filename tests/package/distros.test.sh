@@ -25,26 +25,56 @@ check "a column it does not have is refused" "unknown column: colour" "$(bash "$
 check "a row with no images to test on has an empty value, not an error" "0 " "$(bash "$SCRIPT" field fc45 tests > "$WORK/v" 2>&1; echo "$? $(cat "$WORK/v")")"
 check "every id is a format of the contract" "" "$(for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do bash "$SCRIPT" field "$id" format | grep -v -x -e rpm -e pacman; done)"
 
-# Every id has the image it is built in, every image is pinned to a digest, and every runner the
-# matrix hands out is a label the workflows name.
-for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do
+# Every id has the image it is built in, every image is pinned to a digest except the three whose registry drops the
+# digests (below), and every runner the matrix hands out is a label the workflows name.
+#
+# The exception to "base images are pinned by digest", and why it is a list that is checked here: quay.io re-points
+# fedora:44 and fedora:45 to a new index every day, between 05:56 and 07:03 UTC, and deletes the previous one in that
+# instant (measured on 2026-11-24: the digests of the last 14 days of fedora:44 had all expired), and the registry of
+# openSUSE stops serving the digests of Tumbleweed after a few days; a pin by digest fails the build the next day, and
+# Dependabot cannot keep up, since the digest it would propose lives about two hours after its run. AlmaLinux, Rocky
+# and Red Hat's UBI keep the digests they replace, so they stay pinned: the list below is the whole exception, an image
+# that is on it must not carry a digest and one that is not must.
+MOVING="fc44 fc45 tumbleweed"
+# Every image a row uses: the one it is built in (its id) and the ones it is also proved on (its tests column), each with
+# the row it belongs to, which says the architectures it has to have.
+images() { # -> "<image> <row>" per line
+	local id t
+	for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do
+		echo "$id $id"
+		for t in $(bash "$SCRIPT" field "$id" tests | tr ',' ' '); do echo "$t $id"; done
+	done
+}
+moving() { case " $MOVING " in *" $1 "*) return 0 ;; esac; return 1; }
+while read -r id row; do
 	file="$HERE/scripts/package/images/$id/Dockerfile"
 	check "$id has its image" 1 "$([ -f "$file" ] && echo 1 || echo 0)"
-	check "$id's image is one FROM, a release tag and a sha256 digest" 1 \
-		"$(grep -c -E '^FROM [a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$' "$file")"
+	if moving "$id"; then
+		case "$id" in fc*) want_tag="${id#fc}" ;; *) want_tag=latest ;; esac
+		check "$id's image is one FROM with the tag $want_tag and no digest, as the exception says" 1 \
+			"$(grep -c -E "^FROM [a-z0-9./-]+:$want_tag\$" "$file")"
+		check "$id's Dockerfile says that it is an exception, why and when it was measured" 1 \
+			"$(grep -c -e 'NOT by digest, on purpose' -e 'measured on 2026-11-24' "$file" | sed 's/^2$/1/')"
+	else
+		check "$id's image is one FROM, a release tag and a sha256 digest, because its registry keeps the digests it replaces" 1 \
+			"$(grep -c -E '^FROM [a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$' "$file")"
+	fi
 	check "$id's image has no other instruction than the one RUN that installs the programs of the proof" "1 1" \
 		"$(grep -v -e '^#' -e '^$' -e '^FROM ' "$file" | wc -l | tr -d ' ') $(grep -c '^RUN ' "$file")"
-done
+done < <(images)
 # An image is built and tested on every architecture its row names, from the one Dockerfile, so the digest it is
 # pinned to is the digest of an INDEX with an image for each: the digest of one architecture's manifest makes the
 # other runner try to execute the wrong binaries ("exec format error"). The index is read from the registry with
 # docker or podman; with neither the check says so and fails.
-platforms() { # <name:tag@digest>: the linux architectures of the index, or why it could not be read
-	local ref="$1" name digest raw
-	name="${ref%%:*}"; digest="${ref##*@}"
-	case "$name" in */*) ;; *) name="docker.io/library/$name" ;; esac
-	if command -v docker > /dev/null 2>&1 && raw="$(docker buildx imagetools inspect --raw "$name@$digest" 2> /dev/null)"; then :
-	elif command -v podman > /dev/null 2>&1 && raw="$(podman manifest inspect "docker://$name@$digest" 2> /dev/null)"; then :
+platforms() { # <name:tag@digest, or name:tag when it moves>: the linux architectures of the index, "gone" when the registry no longer has the digest, or why it could not be read
+	local ref="$1" name target raw err
+	name="${ref%%:*}"; target="$name@${ref##*@}"
+	case "$ref" in *@*) ;; *) target="$ref" ;; esac
+	case "$name" in */*) ;; *) name="docker.io/library/$name"; target="docker.io/library/$target" ;; esac
+	err="$WORK/manifest.err"; : > "$err"
+	if command -v docker > /dev/null 2>&1 && raw="$(docker buildx imagetools inspect --raw "$target" 2>> "$err")"; then :
+	elif command -v podman > /dev/null 2>&1 && raw="$(podman manifest inspect "docker://$target" 2>> "$err")"; then :
+	elif grep -q -i -e 'not found' -e 'manifest unknown' -e '404' "$err" 2> /dev/null; then echo gone; return
 	else echo "cannot read the manifest of $ref with docker or podman"; return; fi
 	printf '%s' "$raw" | python3 -c '
 import json, sys
@@ -55,15 +85,49 @@ else:
     print(" ".join(sorted({m["platform"]["architecture"] for m in d["manifests"] if m.get("platform", {}).get("os") == "linux"} & {"amd64", "arm64"})))
 '
 }
-for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do
-	ref="$(sed -n 's/^FROM \([^ ]*@sha256:[0-9a-f]*\)$/\1/p' "$HERE/scripts/package/images/$id/Dockerfile")"
-	want="$(bash "$SCRIPT" field "$id" arches | tr ',' '\n' | sed 's/x86_64/amd64/; s/aarch64/arm64/' | sort | paste -sd' ')"
+# What a failure of the pin says when the registry has dropped the digest.
+gone_message() { echo "the digest pinned for $1 is no longer in the registry. Dependabot moves it (group package-images); until it does, this suite fails here"; }
+check "the message of a digest the registry dropped says what moves it and what fails until then" \
+	"the digest pinned for tumbleweed's image is no longer in the registry. Dependabot moves it (group package-images); until it does, this suite fails here" \
+	"$(gone_message "tumbleweed's image")"
+# The two ways the registry answers when it cannot give the manifest, with a docker and a podman that say so.
+mkdir -p "$WORK/fakeregistry"
+printf '#!/bin/sh\necho "$FAKE_ERROR" >&2\nexit 1\n' > "$WORK/fakeregistry/docker"
+printf '#!/bin/sh\necho "${FAKE_ERROR_PODMAN:-$FAKE_ERROR}" >&2\nexit 1\n' > "$WORK/fakeregistry/podman"
+chmod +x "$WORK/fakeregistry/docker" "$WORK/fakeregistry/podman"
+check "a digest the registry no longer has is told as gone, not as an unreadable manifest" gone \
+	"$(FAKE_ERROR='ERROR: registry.example/x@sha256:00: not found' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
+check "docker saying not found is enough, whatever podman says of the reference it is given" gone \
+	"$(FAKE_ERROR='ERROR: registry.example/x@sha256:00: not found' FAKE_ERROR_PODMAN='Error: unsupported transport "docker" for looking up local images' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
+check "so is the answer of a registry that says manifest unknown" gone \
+	"$(FAKE_ERROR='Error: manifest unknown' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
+# An image that moves is asked for by its tag, and a docker that answers with an index is read the same way.
+printf '#!/bin/sh\nprintf "%%s" "{\\"manifests\\":[{\\"platform\\":{\\"os\\":\\"linux\\",\\"architecture\\":\\"arm64\\"}},{\\"platform\\":{\\"os\\":\\"linux\\",\\"architecture\\":\\"amd64\\"}}]}"\necho "$*" >> "%s/asked"\n' "$WORK" > "$WORK/fakeregistry/docker"
+check "an image asked for by its tag gives the architectures of its index" "amd64 arm64" "$(PATH="$WORK/fakeregistry:$PATH" platforms quay.io/fedora/fedora:45)"
+check "and it is asked for by that tag, not by a digest" "buildx imagetools inspect --raw quay.io/fedora/fedora:45" "$(tail -n 1 "$WORK/asked")"
+check "an image pinned by digest is asked for by the digest" "buildx imagetools inspect --raw quay.io/x/y@sha256:00" "$(PATH="$WORK/fakeregistry:$PATH" platforms quay.io/x/y:10@sha256:00 > /dev/null; tail -n 1 "$WORK/asked")"
+printf '#!/bin/sh\necho "$FAKE_ERROR" >&2\nexit 1\n' > "$WORK/fakeregistry/docker"
+check "a registry that cannot be reached is not told as gone" "cannot read the manifest of registry.example/x:latest@sha256:00 with docker or podman" \
+	"$(FAKE_ERROR='dial tcp: connection refused' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
+while read -r id row; do
+	ref="$(sed -n 's/^FROM \([^ ]*\)$/\1/p' "$HERE/scripts/package/images/$id/Dockerfile")"
+	want="$(bash "$SCRIPT" field "$row" arches | tr ',' '\n' | sed 's/x86_64/amd64/; s/aarch64/arm64/' | sort | paste -sd' ')"
 	got="$(platforms "$ref")"
+	if [ "$got" = gone ]; then
+		# The digest of an image that is kept in its registry is gone: the pin has to be moved by hand or by Dependabot
+		# (group package-images of .github/dependabot.yml), and until that is merged this is what fails.
+		check "$(gone_message "$id's image")" present gone
+		continue
+	fi
 	# The index may have more than the row builds for, never fewer.
 	ok=1
 	for a in $want; do case " $got " in *" $a "*) ;; *) ok=0 ;; esac; done
-	check "$id's image is pinned to an index with an image for each architecture it is built for ($want)" "1" "$ok"
-done
+	if moving "$id"; then
+		check "$id's image, read by its tag today, is an index with an image for each architecture it is built for ($want); the tag moves, so this is the answer of the day the suite ran" "1" "$ok"
+	else
+		check "$id's image is pinned to an index with an image for each architecture it is built for ($want)" "1" "$ok"
+	fi
+done < <(images)
 for dir in "$HERE"/scripts/package/images/*/; do
 	name="$(basename "$dir")"
 	known=0

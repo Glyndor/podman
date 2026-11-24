@@ -27,8 +27,19 @@ case "$2" in
 esac
 DNF
 printf '#!/bin/sh\n[ -z "$FAKE_GREP_FAILS" ] || [ "$1" != -E ] || exit 2\nexec %s "$@"\n' "$(command -v grep)" > "$WORK/bin/grep"
-chmod +x "$WORK/bin/dnf" "$WORK/bin/grep"
-printf 'fc45|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|\nel9|rpm|el|x86_64|6|3|5|podman|0^20260716|\namzn2023|rpm|amzn|x86_64|0|2|5|upstream|0^20260716|\n' > "$WORK/table"
+# zypper: search --requires prints a table, info --requires lists what a package requires.
+cat > "$WORK/bin/zypper" <<'ZY'
+#!/bin/sh
+case " $* " in
+	*" search "*) [ -z "$FAIL_WHATREQUIRES" ] || exit 1
+		printf '\nS  | Name | Type | Version | Arch | Repository\n---+------+------+---------+------+-----------\n'
+		for p in $REQUIRERS; do printf '   | %s | package | 1-1 | x86_64 | repo\n' "$p"; done ;;
+	*" info "*) [ -z "$FAIL_REQUIRES" ] || exit 1
+		printf 'Name : x\nRequires       : [2]\n'; sed 's/^/    /' "$REQ_DIR/req-$5" 2> /dev/null; printf 'Recommends     : ---\n' ;;
+esac
+ZY
+chmod +x "$WORK/bin/dnf" "$WORK/bin/grep" "$WORK/bin/zypper"
+printf 'fc45|rpm|fedora|x86_64|5|2|5|upstream|0^20260716|\nel9|rpm|el|x86_64|6|3|5|podman|0^20260716|\namzn2023|rpm|amzn|x86_64|0|2|5|upstream|0^20260716|\nleap161|rpm|suse|x86_64|0|0|0|upstream|20260716|\n' > "$WORK/table"
 export REQ_DIR="$WORK" GLYNDOR_DISTROS_FILE="$WORK/table"
 PATH="$WORK/bin:$PATH"
 run() { out="$("$SCRIPT" "$@" 2>&1)"; rc=$?; }
@@ -64,6 +75,15 @@ FAIL_REQUIRES=1 REQUIRERS="podman-docker someone" run fc45
 check "a dnf that cannot say what a package requires stops the build" "1 1" "$rc $(says 'cannot ask the repositories what someone requires')"
 FAKE_GREP_FAILS=1 REQUIRERS="podman-docker someone" run fc45
 check "a grep that fails on what a package requires is not read as no requirement" "1 1" "$rc $(says 'cannot read what someone requires')"
+printf 'podman = 6.2.0\n' > "$WORK/req-suse-exact"
+REQUIRERS="podman-docker suse-exact" run leap161
+check "openSUSE: another package that requires an exact version stops the build" "1 1" "$rc $(says 'suse-exact requires podman exactly (6.2.0)')"
+REQUIRERS="podman-docker podmansh" run leap161
+check "openSUSE: the packages that are ours are not asked about" 0 "$rc"
+REQUIRERS="" run leap161
+check "openSUSE: an empty answer is refused" "1 1" "$rc $(says 'do not list podman-docker')"
+FAIL_WHATREQUIRES=1 REQUIRERS="podman-docker" run leap161
+check "openSUSE: a zypper that cannot answer stops the build" "1 1" "$rc $(says 'cannot ask zypper what requires podman')"
 "$SCRIPT" > /dev/null 2>&1; check "no id is refused" 1 "$?"
 
 echo "$pass passed, $fail failed"

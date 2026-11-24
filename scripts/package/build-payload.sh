@@ -101,6 +101,12 @@ fi
 # The containers-common configuration of this release, which upstream's spec asks for at
 # 0.68 or newer: the distribution's package is replaced, whatever it holds.
 common_version="$(bash "$here/../build/install-common-config.sh" "$podman_src" "$stage" "$shortnames")"
+# /etc/containers is the administrator's and no package puts a file in it: Podman reads policy.json from
+# /usr/share/containers when /etc has none (measured with strace on 6.2.0), and so do the buildah and skopeo
+# of Fedora, EL, Amazon Linux and openSUSE. Older copies of install-common-config.sh put it in /etc.
+if [ -e "$stage/etc/containers/policy.json" ]; then
+	mv "$stage/etc/containers/policy.json" "$stage/usr/share/containers/policy.json"
+fi
 
 # --locked makes cargo build exactly the dependency versions in the Cargo.lock of the signed
 # tag and fail if they would change. netavark's Makefile adds it only when CI is set.

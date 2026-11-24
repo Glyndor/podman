@@ -23,11 +23,12 @@ out="${3:?output dir}"
 src="${GLYNDOR_SRC:-/src}"
 scripts="${GLYNDOR_SCRIPTS:-/scripts}"
 
+# distros.sh reads the table with awk, which the minimal image of openSUSE does not have.
+command -v awk > /dev/null || { zypper --non-interactive install gawk || dnf install -y gawk; } > /dev/null 2>&1 || true
 family="$(bash "$scripts/package/distros.sh" field "$id" family)"
 bash "$scripts/package/rpm/install-build-deps.sh" "$family"
 # What the distribution has that requires podman has to be satisfied or replaced by this package.
-# dnf answers it; openSUSE is held to it by the test that installs the distribution's packages first.
-case "$family" in suse) ;; *) bash "$scripts/package/rpm/check-replacement.sh" "$id" ;; esac
+bash "$scripts/package/rpm/check-replacement.sh" "$id"
 
 case "$family" in
 	suse) common_package=libcontainers-common; install=(zypper --non-interactive install --no-recommends) ;;

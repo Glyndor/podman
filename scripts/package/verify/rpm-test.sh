@@ -30,10 +30,13 @@ id="${2:?distribution id}"
 version="${3:?version X.Y.Z+rR}"
 podman_version="${4:?podman version}"
 mode="${5:?clean or upgrade}"
+# shellcheck disable=SC2034 # read by runtime-checks.sh, which this script sources
 image="${6:?image to run, by digest}"
 case "$mode" in clean | upgrade) ;; *) echo "mode is clean or upgrade, not $mode" >&2; exit 2 ;; esac
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+r([0-9]+)$ ]] || { echo "bad version, expected X.Y.Z+rR: $version" >&2; exit 2; }
 revision="${BASH_REMATCH[1]}"
+# distros.sh reads the table with awk, which the minimal image of openSUSE does not have.
+command -v awk > /dev/null || { zypper --non-interactive install gawk || dnf install -y gawk; } > /dev/null 2>&1 || true
 epoch="$(bash "$scripts/package/distros.sh" field "$id" epoch)"
 family="$(bash "$scripts/package/distros.sh" field "$id" family)"
 nevr="$epoch:$version-$revision.glyndor.$id"
@@ -42,29 +45,42 @@ nevr="$epoch:$version-$revision.glyndor.$id"
 # missing otherwise shows up minutes in, as the failure of the one check that needed it.
 bash "$scripts/package/require-tools.sh" rpm "$here/test-tools.txt" || exit 1
 
+# The metadata of the repository is made before this runs, in the build container of the distribution (make-repo.sh), and
+# is found next to the packages: an image that has no createrepo_c in its repositories, Red Hat's UBI, reads the same
+# repository. Without it, the tool of the image makes it.
+pm_make_metadata() { # <repository directory with the rpm files, and repodata when it was made before>
+	[ -f "$1/repodata/repomd.xml" ] && return 0
+	case "$family" in
+		suse) zypper --non-interactive install --no-recommends createrepo_c ;;
+		*) dnf install -y createrepo_c ;;
+	esac && createrepo_c "$1"
+}
+
 # --- what the distribution's package manager is called here ------------------------------------
 case "$family" in
 	suse)
 		pm_install() { zypper --non-interactive install --no-recommends "$@"; }
 		pm_remove() { zypper --non-interactive remove "$@"; }
-		pm_upgrade() { zypper --non-interactive update; }
+		pm_upgrade() { zypper --non-interactive update --allow-vendor-change; }
+		pm_reinstall() { zypper --non-interactive install --force "$@"; }
 		pm_add_repo() {
-			zypper --non-interactive install --no-recommends createrepo_c \
-				&& createrepo_c "$1" \
-				&& zypper --non-interactive --no-gpg-checks addrepo --priority 90 "file://$1" glyndor-test \
-				&& zypper --non-interactive --no-gpg-checks refresh glyndor-test
+			pm_make_metadata "$1" \
+				&& zypper --non-interactive addrepo --no-gpgcheck "file://$1" glyndor-test \
+				&& zypper --non-interactive refresh glyndor-test
 		} ;;
 	*)
 		pm_install() { dnf install -y "$@"; }
 		pm_remove() { dnf remove -y "$@"; }
 		pm_upgrade() { dnf upgrade -y; }
+		pm_reinstall() { dnf reinstall -y "$@"; }
 		pm_add_repo() {
-			dnf install -y createrepo_c \
-				&& createrepo_c "$1" \
-				&& printf '[glyndor-test]\nname=Glyndor test repository\nbaseurl=file://%s\nenabled=1\ngpgcheck=0\nrepo_gpgcheck=0\npriority=1\n' "$1" > /etc/yum.repos.d/glyndor-test.repo
+			pm_make_metadata "$1" \
+				&& printf '[glyndor-test]\nname=Glyndor test repository\nbaseurl=file://%s\nenabled=1\ngpgcheck=0\nrepo_gpgcheck=0\n' "$1" > /etc/yum.repos.d/glyndor-test.repo
 		} ;;
 esac
 
+# shellcheck source=engine-files.sh
+. "$here/engine-files.sh"
 failed=()
 check() { # <name> <command...>: run it, say how it went, and go on
 	local name="$1"
@@ -110,8 +126,28 @@ if [ "$mode" = upgrade ]; then
 fi
 
 # --- the update, or the install ---------------------------------------------------------------------
+# What the administrator changed in the configuration of the distribution's packages: policy.json says which
+# images may be pulled, containers.conf and storage.conf how containers run. The update has to leave each of
+# them active in /etc/containers, as written (the replaced package takes its files with it).
+edited=()
+if [ "$mode" = upgrade ] && [ -n "$before" ]; then
+	# The administrator's files, which exist or not depending on the distribution: on some the package
+	# owns them as %ghost, so removing the package removes what the administrator wrote there.
+	mkdir -p /etc/containers
+	for n in containers.conf storage.conf registries.conf policy.json; do
+		f="/etc/containers/$n"
+		case "$n" in
+			policy.json) printf '%s\n' '{"default":[{"type":"insecureAcceptAnything"}],"transports":{}}' > "$f" ;;
+			*) echo '# edited by the administrator before the update' >> "$f" ;;
+		esac
+		edited+=("$f")
+	done
+	note "files written or changed before the update: ${edited[*]}"
+fi
+
 repo="$(mktemp -d)"
 cp "$rpms"/*.rpm "$repo/"
+[ ! -d "$rpms/repodata" ] || cp -r "$rpms/repodata" "$repo/"
 check "the packages are put in a repository the package manager reads" pm_add_repo "$repo"
 if [ "$mode" = upgrade ] && [ -n "$before" ]; then
 	check "the update replaces the distribution's packages" pm_upgrade
@@ -120,17 +156,27 @@ else
 fi
 
 # --- what the package says ----------------------------------------------------------------------------
-check "podman is the Glyndor package at $nevr" test "$(rpm -q --qf '%{EPOCH}:%{VERSION}-%{RELEASE}\n' podman)" = "$nevr"
+check "podman is the Glyndor package at $nevr" test "$(rpm -q --qf '%|EPOCH?{%{EPOCH}}:{0}|:%{VERSION}-%{RELEASE}\n' podman)" = "$nevr"
 check "its vendor is Glyndor" test "$(vendor_of podman)" = Glyndor
 check "the distribution's podman is not installed beside it" test "$(rpm -q podman | wc -l)" -eq 1
-for pkg in netavark aardvark-dns containers-common; do
+cc=containers-common
+# On openSUSE the policy is a package of its own, which owns /usr/share/containers/policy.json.
+[ "$family" != suse ] || cc="libcontainers-common libcontainers-default-policy"
+for pkg in netavark aardvark-dns $cc; do
 	check "$pkg is provided by podman and is not a package of its own" test "$(rpm -q --whatprovides "$pkg" 2> /dev/null | sed 's/-[0-9].*//' | sort -u | tr '\n' ' ')" = "podman "
 done
 check "netavark and aardvark-dns of the package are the ones that run" bash -c '/usr/libexec/podman/netavark --version && /usr/libexec/podman/aardvark-dns --version'
 check "every file of the package is as the package says, configuration aside" test -z "$(rpm -V podman podman-docker podmansh 2>&1 | grep -v -e ' c /' -e 'is not installed' || true)"
-check "the files a customer expects are on disk" bash "$scripts/verify/package-state.sh" ships
+check "the engine a customer expects is on disk" ships_engine
+check "and the configuration of the release, under /usr/share/containers" ships_config
 check "the seccomp profile is the one of this release" bash "$scripts/verify/package-state.sh" seccomp
 check "podman says the version that was built" bash "$scripts/verify/package-state.sh" version "$podman_version"
+for f in "${edited[@]}"; do
+	case "$f" in
+		*policy.json) check "the policy.json the administrator wrote is the active one after the update" grep -q '"transports":{}' "$f" ;;
+		*) check "the $f the administrator changed is still the active one after the update" grep -q 'edited by the administrator before the update' "$f" ;;
+	esac
+done
 if [ "$mode" = upgrade ]; then
 	for pkg in $before; do
 		case "$pkg" in
@@ -143,120 +189,12 @@ if [ "$mode" = upgrade ]; then
 	check "buildah and skopeo find their policy and registries" bash -c 'command -v skopeo > /dev/null && skopeo --version > /dev/null && command -v buildah > /dev/null && buildah --version > /dev/null'
 fi
 
-# --- containers as root --------------------------------------------------------------------------------
-# vfs, because the storage of a container is itself an overlay filesystem, on which the overlay
-# driver cannot be stacked.
-p() { podman --storage-driver vfs "$@"; }
-check "podman info answers" p info
-check "the image is pulled by digest" p pull "docker://$image"
-check "a container runs as root" bash -c "[ \"\$(podman --storage-driver vfs run --rm --network none '$image' echo root-ok)\" = root-ok ]"
-dns_in() { # <podman prefix> <network>: a container finds another one by name on a bridge network
-	local prefix="$1" net="$2" ip out
-	$prefix network create "$net" > /dev/null || return 1
-	$prefix run -d --name "$net-a" --network "$net" "$image" sleep 300 > /dev/null || return 1
-	ip="$($prefix inspect "$net-a" --format "{{(index .NetworkSettings.Networks \"$net\").IPAddress}}")"
-	out="$($prefix run --rm --network "$net" "$image" nslookup "$net-a" 2>&1)" || { echo "$out"; return 1; }
-	echo "$out"
-	grep -q -F "$ip" <<< "$out" || { echo "the answer does not hold $ip"; return 1; }
-}
-check "a container resolves another by name on a bridge network (netavark and aardvark-dns), root" dns_in "podman --storage-driver vfs" rootnet
-p rm -f rootnet-a > /dev/null 2>&1 || true
+# /etc/containers is the administrator's: no file of it is the package's.
+check "no file under /etc/containers belongs to podman" test "$(rpm -ql podman | grep -c '^/etc/containers/.*\.\(conf\|json\)$')" -eq 0
 
-# --- containers without root ----------------------------------------------------------------------------
-id probe > /dev/null 2>&1 || useradd -m probe
-grep -q '^probe:' /etc/subuid || echo 'probe:100000:65536' >> /etc/subuid
-grep -q '^probe:' /etc/subgid || echo 'probe:100000:65536' >> /etc/subgid
-uid="$(id -u probe)"
-install -d -m 0755 /run/user
-install -d -m 0700 -o probe "/run/user/$uid"
-cat > /tmp/rootless.sh <<ROOTLESS
-set -u
-export HOME=/home/probe XDG_RUNTIME_DIR=/run/user/$uid
-P="podman --storage-driver vfs"
-case "\$1" in
-	userns) \$P unshare true ;;
-	pull) \$P pull "docker://$image" ;;
-	run) [ "\$(\$P run --rm --network pasta "$image" echo rootless-ok)" = rootless-ok ] ;;
-	host)
-		got="\$(\$P run --rm --network pasta "$image" wget -q -T 20 -O - http://host.containers.internal:18473/probe 2>&1)"
-		[ "\$got" = pasta-ok ] && exit 0
-		echo "the answer was: \$got"
-		# Where the container thought the host was, and what this machine listens on, for the log.
-		\$P run --rm --network pasta "$image" sh -c 'grep internal /etc/hosts; ip -4 route 2> /dev/null || true' 2>&1
-		grep -c ' 0A ' /proc/net/tcp | sed 's/^/listening sockets of this machine: /'
-		exit 1 ;;
-	dns)
-		\$P network create rlnet > /dev/null || exit 1
-		\$P run -d --name rl-a --network rlnet "$image" sleep 300 > /dev/null || exit 1
-		ip="\$(\$P inspect rl-a --format '{{(index .NetworkSettings.Networks "rlnet").IPAddress}}')"
-		out="\$(\$P run --rm --network rlnet "$image" nslookup rl-a 2>&1)" || { echo "\$out"; exit 1; }
-		echo "\$out"
-		case "\$out" in *"\$ip"*) ;; *) echo "the answer does not hold \$ip"; exit 1 ;; esac ;;
-	stop-cli) \$P stop -t 1 rl-a ;;
-	state) \$P ps -a --format '{{.Names}} {{.Status}}'; \$P network ls ;;
-	stop-api)
-		\$P run -d --name rl-b --network rlnet "$image" sleep 300 > /dev/null || exit 1
-		sock="/run/user/$uid/rl-api.sock"
-		\$P system service --time 0 "unix://\$sock" > /tmp/rl-service.log 2>&1 &
-		for _ in \$(seq 1 50); do [ -S "\$sock" ] && break; sleep 0.2; done
-		code="\$(curl -sS -o /tmp/rl-stop.body -w '%{http_code}' --unix-socket "\$sock" -X POST "http://d/v5.0.0/libpod/containers/rl-b/stop?t=1")"
-		kill %1 2> /dev/null
-		echo "the API answered \$code: \$(cat /tmp/rl-stop.body)"
-		[ "\$code" = 204 ] ;;
-esac
-ROOTLESS
-rl() { runuser -u probe -- bash /tmp/rootless.sh "$1"; }
-pasta_pids() { grep -l '^pasta' /proc/[0-9]*/comm 2> /dev/null | sed 's#/proc/\([0-9]*\)/comm#\1#'; }
-# The pasta of a rootless bridge network goes when the last container of it does, but not in the same instant: the
-# container that was killed after its second has to be reaped first. So it is waited for, up to ten seconds in steps
-# of a fifth, and a pasta that is still there after that is not a race: it is shown, with where it came from.
-pasta_gone() {
-	local _ p left
-	for _ in $(seq 1 50); do
-		left="$(pasta_pids)"
-		[ -z "$left" ] && return 0
-		sleep 0.2
-	done
-	echo "pasta is still running ten seconds after the last container stopped:"
-	for p in $left; do
-		ps -o pid,ppid,etimes,user,args -p "$p" | tail -n +2
-		echo "  network namespace $(readlink "/proc/$p/ns/net") (this shell's is $(readlink /proc/self/ns/net))"
-	done
-	echo "containers and networks of the user:"
-	rl state
-	return 1
-}
-# What decides whether an unprivileged user can get a namespace here, written down for the run that fails.
-note "kernel.apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>&1) user.max_user_namespaces=$(cat /proc/sys/user/max_user_namespaces 2>&1) newuidmap=$(command -v newuidmap)"
-check "an unprivileged user can map ids and Podman can create its namespace" rl userns
-if rl userns > /dev/null 2>&1; then
-	check "the image is pulled, rootless" rl pull
-	check "a container runs on pasta, rootless" rl run
-	# A listener on this machine, fetched from inside a rootless container through the address
-	# Podman maps to the host: the option an older pasta does not have.
-	# The listener of the host side: a server in a container on the network of this machine. The image has no
-	# httpd, only nc, which is why it is nc; `-ll` keeps it listening for any number of connections, so asking
-	# whether it is up does not use it up, and it listens on :: for both address families, which is why it is not
-	# looked for in /proc/net/tcp alone. It is waited for by connecting to it, from this network, and when it does
-	# not answer the check shows why: a server that never started once read as "connection refused" from pasta.
-	listener_up() { (exec 3<> /dev/tcp/127.0.0.1/18473) 2> /dev/null; }
-	p run -d --name hostlisten --network host "$image" sh -c 'nc -ll -p 18473 -e sh -c "printf \"HTTP/1.0 200 OK\r\nContent-Length: 9\r\n\r\npasta-ok\n\""' > /tmp/hostlisten.log 2>&1
-	for _ in $(seq 1 30); do listener_up && break; sleep 0.5; done
-	if ! listener_up; then
-		note "the listener is not up: $(cat /tmp/hostlisten.log); $(p ps -a --format '{{.Names}} {{.Status}}' 2>&1 | paste -sd';'); $(p logs hostlisten 2>&1 | tail -n 5 | paste -sd';')"
-		note "sockets of tcp: $(cat /proc/net/tcp | paste -sd'|'); sockets of tcp6: $(cat /proc/net/tcp6 2> /dev/null | paste -sd'|')"
-	fi
-	check "the listener of the host-side check answers on port 18473 of this machine" listener_up
-	check "a rootless container reaches the host through pasta" rl host
-	p rm -f hostlisten > /dev/null 2>&1 || true
-	check "a rootless container resolves another by name on a bridge network" rl dns
-	check "the last containers of a rootless bridge network stop with the command" rl stop-cli
-	check "the last container of a rootless bridge network stops through the API" rl stop-api
-	check "no pasta is left running after the last container stopped, waited for ten seconds at most" pasta_gone
-else
-	note "an unprivileged user cannot map ids here: the rootless checks cannot run, and that is a failure"
-	failed+=("rootless")
-fi
+# --- containers as root and without root ------------------------------------------------------
+# shellcheck source=runtime-checks.sh
+. "$here/runtime-checks.sh"
 
 # --- uninstall ---------------------------------------------------------------------------------------------
 p rm -af > /dev/null 2>&1 || true

@@ -41,18 +41,40 @@ check "the proof does not use su, which a minimal image lacks" 0 "$(grep -v '^\s
 # The image the containers run (Podman's own alpine) has nc and wget and no httpd: a listener that used httpd
 # never started, and pasta answered "connection refused" for it. The listener is waited for in /proc/net/tcp,
 # since connecting to it would take its one request.
-check "the host-side listener is not started with httpd, which the image lacks" 0 "$(grep -v '^\s*#' "$SCRIPT" | grep -c 'httpd')"
-check "and it is nc kept listening with -ll on port 18473, which it serves on :: as well" "1" "$(grep -c 'nc -ll -p 18473' "$SCRIPT")"
-check "and it is waited for by connecting to it, with a bounded number of tries, and not by reading /proc/net/tcp" "1 0" "$(grep -c 'for _ in $(seq 1 30); do listener_up' "$SCRIPT") $(grep -c '00000000:4829' "$SCRIPT")"
-check "and when it does not answer the check shows why, with the sockets of tcp and tcp6" "1 1 1" "$(grep -c 'the listener is not up' "$SCRIPT") $(grep -c 'sockets of tcp:' "$SCRIPT") $(grep -c '/proc/net/tcp6' "$SCRIPT")"
+check "the host-side listener is not started with httpd, which the image lacks" 0 "$(grep -v '^\s*#' "$HERE/scripts/package/verify/runtime-checks.sh" | grep -c 'httpd')"
+check "and it is nc kept listening with -ll on port 18473, which it serves on :: as well" "1" "$(grep -c 'nc -ll -p 18473' "$HERE/scripts/package/verify/runtime-checks.sh")"
+check "and it is waited for by reading the listening sockets of tcp and tcp6, with a bounded number of tries, and never by connecting to it" "1 1 0" "$(grep -c 'for _ in $(seq 1 30); do listener_up' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c "listener_up() { awk '\$4 == \"0A\" && \$2 ~ /:4829\$/" "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c '/dev/tcp/127.0.0.1/18473' "$HERE/scripts/package/verify/runtime-checks.sh")"
+check "and when it does not answer the check shows why, with the sockets of tcp and tcp6" "1 1 1" "$(grep -c 'the listener is not up' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'sockets of tcp:' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'cat /proc/net/tcp6' "$HERE/scripts/package/verify/runtime-checks.sh")"
 # After the last stop the pasta of the network goes a moment later (the container killed after its second has to be
 # reaped first, which took longer on x86_64 than on aarch64 in the CI): it is waited for, at most ten seconds, and a
 # pasta that stays is shown with its parent, age, network and the containers of the user, never read as "sometimes".
-check "the last pasta is waited for in steps of a fifth, ten seconds at most" "1 1" "$(grep -c '^	for _ in $(seq 1 50); do$' "$SCRIPT") $(grep -c '^		sleep 0.2$' "$SCRIPT")"
+check "the last pasta is waited for in steps of a fifth, ten seconds at most" "1 1" "$(grep -c '^	for _ in $(seq 0 50); do$' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c '^		sleep 0.2$' "$HERE/scripts/package/verify/runtime-checks.sh")"
 check "one that stays is shown with ps, its network and the containers of the user, and fails" "1 1 1" \
-	"$(grep -c 'ps -o pid,ppid,etimes,user,args' "$SCRIPT") $(grep -c 'rl state' "$SCRIPT") $(grep -c 'is still running ten seconds after' "$SCRIPT")"
-check "and the check no longer asks only for the first one at the instant" 0 "$(grep -c 'test -z "$(pasta_left)"' "$SCRIPT")"
+	"$(grep -c 'ps -o pid,ppid,etimes,user,args' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'rl state' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'is still running after waiting' "$HERE/scripts/package/verify/runtime-checks.sh")"
+check "and the check no longer asks only for the first one at the instant" 0 "$(grep -c 'test -z "$(pasta_left)"' "$HERE/scripts/package/verify/runtime-checks.sh")"
 check "the checks that need a machine of the distribution name themselves in the log" 1 "$(grep -c 'echo "== \$name"' "$SCRIPT")"
+
+# --- the repository: its metadata is made before, in the build container, and read by every image ---
+WORKM="$(mktemp -d)"
+trap 'rm -rf "$WORKM"' EXIT
+sed -n '/^pm_make_metadata() {/,/^}/p' "$SCRIPT" > "$WORKM/pm_make_metadata.sh"
+check "the function that makes the metadata when there is none is found" 1 "$(grep -c '^pm_make_metadata() {' "$WORKM/pm_make_metadata.sh")"
+mkdir -p "$WORKM/bin" "$WORKM/withmeta/repodata" "$WORKM/without"
+: > "$WORKM/withmeta/repodata/repomd.xml"
+for tool in dnf zypper createrepo_c; do
+	printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\n' "$tool" "$WORKM" > "$WORKM/bin/$tool"
+	chmod +x "$WORKM/bin/$tool"
+done
+meta() { # <family> <dir> -> exit status and the calls of the tools
+	: > "$WORKM/calls"
+	( PATH="$WORKM/bin:$PATH"; export family="$1"; . "$WORKM/pm_make_metadata.sh"; pm_make_metadata "$2" ) > /dev/null 2>&1
+	echo "$? $(paste -sd'|' "$WORKM/calls")"
+}
+check "with the metadata made before, no tool is asked for anything, on every family" "0 |0 |0 " "$(meta el "$WORKM/withmeta")|$(meta suse "$WORKM/withmeta")|$(meta fedora "$WORKM/withmeta")"
+check "without it on an EL image, dnf installs the tool and it makes the metadata" "0 dnf install -y createrepo_c|createrepo_c $WORKM/without" "$(meta el "$WORKM/without")"
+check "and on openSUSE, zypper does" "0 zypper --non-interactive install --no-recommends createrepo_c|createrepo_c $WORKM/without" "$(meta suse "$WORKM/without")"
+check "the repository of the proof is the packages and the metadata made before, copied together" 1 "$(grep -c 'cp -r "$rpms/repodata" "$repo/"' "$SCRIPT")"
+check "and the repositories are no longer made by installing the tool in the two package managers' branches" 0 "$(sed -n '/^pm_add_repo() {/,/^}/p; /pm_add_repo() {/,/} ;;/p' "$SCRIPT" | grep -c 'createrepo_c')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

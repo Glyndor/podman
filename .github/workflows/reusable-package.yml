@@ -122,11 +122,20 @@ jobs:
             -v "$RUNNER_TEMP/out:/out" "package-$ID" \
             bash /scripts/package/rpm/run-build.sh "$ID" "$pv" /out
           ls -l "$RUNNER_TEMP/out"
+      # The metadata of the repository the proof installs from is made here, in the container the package was built in,
+      # because the images the proof also runs on do not all have createrepo_c: Red Hat's UBI has neither it nor EPEL.
+      # The container reads the packages and writes only the metadata, and nothing built by the compiler runs in it.
+      - name: Make the repository the package manager will read, with the tool of the distribution
+        run: |
+          mkdir "$RUNNER_TEMP/rpms" "$RUNNER_TEMP/repo"
+          cp "$RUNNER_TEMP"/out/*."$ARCH".rpm "$RUNNER_TEMP"/out/*.noarch.rpm "$RUNNER_TEMP/rpms/"
+          docker run --rm \
+            -v "$RUNNER_TEMP/rpms:/rpms:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" -v "$RUNNER_TEMP/repo:/repo" "package-$ID" \
+            bash /scripts/package/rpm/make-repo.sh /rpms /repo
+          cp -r "$RUNNER_TEMP/repo/repodata" "$RUNNER_TEMP/rpms/"
       - name: Install it with the package manager on a clean image and over the distribution's Podman, and run containers
         run: |
           pv="$(bash scripts/package/package-version.sh "$VERSION")"
-          mkdir "$RUNNER_TEMP/rpms"
-          cp "$RUNNER_TEMP"/out/*."$ARCH".rpm "$RUNNER_TEMP"/out/*.noarch.rpm "$RUNNER_TEMP/rpms/"
           images="$ID $(bash scripts/package/distros.sh field "$ID" tests | tr ',' ' ')"
           for image in $images; do
             docker build --quiet --tag "package-test-$image" "scripts/package/images/$image"
