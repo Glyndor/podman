@@ -43,14 +43,14 @@ check "the proof does not use su, which a minimal image lacks" 0 "$(grep -v '^\s
 # since connecting to it would take its one request.
 check "the host-side listener is not started with httpd, which the image lacks" 0 "$(grep -v '^\s*#' "$HERE/scripts/package/verify/runtime-checks.sh" | grep -c 'httpd')"
 check "and it is nc kept listening with -ll on port 18473, which it serves on :: as well" "1" "$(grep -c 'nc -ll -p 18473' "$HERE/scripts/package/verify/runtime-checks.sh")"
-check "and it is waited for by connecting to it, with a bounded number of tries, and not by reading /proc/net/tcp" "1 0" "$(grep -c 'for _ in $(seq 1 30); do listener_up' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c '00000000:4829' "$HERE/scripts/package/verify/runtime-checks.sh")"
-check "and when it does not answer the check shows why, with the sockets of tcp and tcp6" "1 1 1" "$(grep -c 'the listener is not up' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'sockets of tcp:' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c '/proc/net/tcp6' "$HERE/scripts/package/verify/runtime-checks.sh")"
+check "and it is waited for by reading the listening sockets of tcp and tcp6, with a bounded number of tries, and never by connecting to it" "1 1 0" "$(grep -c 'for _ in $(seq 1 30); do listener_up' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c "listener_up() { awk '\$4 == \"0A\" && \$2 ~ /:4829\$/" "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c '/dev/tcp/127.0.0.1/18473' "$HERE/scripts/package/verify/runtime-checks.sh")"
+check "and when it does not answer the check shows why, with the sockets of tcp and tcp6" "1 1 1" "$(grep -c 'the listener is not up' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'sockets of tcp:' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'cat /proc/net/tcp6' "$HERE/scripts/package/verify/runtime-checks.sh")"
 # After the last stop the pasta of the network goes a moment later (the container killed after its second has to be
 # reaped first, which took longer on x86_64 than on aarch64 in the CI): it is waited for, at most ten seconds, and a
 # pasta that stays is shown with its parent, age, network and the containers of the user, never read as "sometimes".
-check "the last pasta is waited for in steps of a fifth, ten seconds at most" "1 1" "$(grep -c '^	for _ in $(seq 1 50); do$' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c '^		sleep 0.2$' "$HERE/scripts/package/verify/runtime-checks.sh")"
+check "the last pasta is waited for in steps of a fifth, ten seconds at most" "1 1" "$(grep -c '^	for _ in $(seq 0 50); do$' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c '^		sleep 0.2$' "$HERE/scripts/package/verify/runtime-checks.sh")"
 check "one that stays is shown with ps, its network and the containers of the user, and fails" "1 1 1" \
-	"$(grep -c 'ps -o pid,ppid,etimes,user,args' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'rl state' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'is still running ten seconds after' "$HERE/scripts/package/verify/runtime-checks.sh")"
+	"$(grep -c 'ps -o pid,ppid,etimes,user,args' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'rl state' "$HERE/scripts/package/verify/runtime-checks.sh") $(grep -c 'is still running after waiting' "$HERE/scripts/package/verify/runtime-checks.sh")"
 check "and the check no longer asks only for the first one at the instant" 0 "$(grep -c 'test -z "$(pasta_left)"' "$HERE/scripts/package/verify/runtime-checks.sh")"
 check "the checks that need a machine of the distribution name themselves in the log" 1 "$(grep -c 'echo "== \$name"' "$SCRIPT")"
 

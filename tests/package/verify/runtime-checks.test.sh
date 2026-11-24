@@ -67,5 +67,56 @@ check "and it shows the command line of the process" 1 "$(printf '%s\n' "$out" |
 check "and its parent" 1 "$(printf '%s\n' "$out" | grep -c '^  parent: ')"
 check "and its network namespace and the containers of the user" "1 1" "$(printf '%s\n' "$out" | grep -c '^  network namespace ') $(printf '%s\n' "$out" | grep -c '^state of the user: state')"
 
+# --- the wait for the listener of the host-side check: read from the sockets, never by a connection ---
+grep -m1 '^	listener_up() {' "$LIB" | sed 's/^[[:space:]]*//' > "$WORK/listener_up.sh"
+check "the function that asks whether the listener is up is found in the lib" 1 "$(grep -c '^listener_up() {' "$WORK/listener_up.sh")"
+# A real server on port 18473, on :: (both families) or on IPv4 only, that counts the connections it is given.
+serve() { # <family: v6|v4> <seconds>: listens, counts connections in $WORK/accepted
+	python3 - "$1" "$2" "$WORK/accepted" <<'PY' &
+import socket, sys, time
+fam, secs, out = sys.argv[1], float(sys.argv[2]), sys.argv[3]
+s = socket.socket(socket.AF_INET6 if fam == "v6" else socket.AF_INET)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+if fam == "v6":
+    s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+    s.bind(("::", 18473))
+else:
+    s.bind(("0.0.0.0", 18473))
+s.listen(5)
+s.settimeout(0.1)
+n, end = 0, time.time() + secs
+while time.time() < end:
+    try:
+        c, _ = s.accept()
+        c.close()
+        n += 1
+        open(out, "w").write(str(n))
+    except socket.timeout:
+        pass
+PY
+	serve_pid=$!
+	for _ in $(seq 1 50); do
+		awk '$4 == "0A" && $2 ~ /:4829$/ { f = 1 } END { exit !f }' /proc/net/tcp /proc/net/tcp6 2> /dev/null && return
+		sleep 0.1
+	done
+}
+# shellcheck disable=SC1091
+. "$WORK/listener_up.sh"
+if awk '$4 == "0A" && $2 ~ /:4829$/ { f = 1 } END { exit !f }' /proc/net/tcp /proc/net/tcp6 2> /dev/null; then
+	echo "FAIL  port 18473 is already in use on this machine, so the listener cannot be tried"; fail=$((fail + 1))
+else
+	check "with nothing listening on 18473 it says no" 1 "$(listener_up; echo $?)"
+	rm -f "$WORK/accepted"
+	serve v6 4
+	check "with a server on :: it says yes" 0 "$(listener_up; echo $?)"
+	check "and asking again changes nothing" 0 "$(listener_up; echo $?)"
+	check "and no connection was made to the server" "" "$(cat "$WORK/accepted" 2> /dev/null)"
+	kill "$serve_pid" 2> /dev/null; wait "$serve_pid" 2> /dev/null
+	serve v4 4
+	check "with a server on IPv4 only it says yes" 0 "$(listener_up; echo $?)"
+	kill "$serve_pid" 2> /dev/null; wait "$serve_pid" 2> /dev/null
+	check "when the server is gone it says no" 1 "$(listener_up; echo $?)"
+fi
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -110,10 +110,12 @@ if rl userns > /dev/null 2>&1; then
 	# Podman maps to the host: the option an older pasta does not have.
 	# The listener of the host side: a server in a container on the network of this machine. The image has no
 	# httpd, only nc, which is why it is nc; `-ll` keeps it listening for any number of connections, so asking
-	# whether it is up does not use it up, and it listens on :: for both address families, which is why it is not
-	# looked for in /proc/net/tcp alone. It is waited for by connecting to it, from this network, and when it does
-	# not answer the check shows why: a server that never started once read as "connection refused" from pasta.
-	listener_up() { (exec 3<> /dev/tcp/127.0.0.1/18473) 2> /dev/null; }
+	# whether it is up does not use it up, and it listens on :: for both address families, which is why tcp6 is
+	# read as well as tcp. It is waited for by reading the sockets of this network for one in the listening state on
+	# port 18473 (0x4829), and never by connecting to it: a connection that closes at once made the server of an
+	# aarch64 runner end before the container that was the point of the check could reach it. When it is not up the
+	# check shows why: a server that never started once read as "connection refused" from pasta.
+	listener_up() { awk '$4 == "0A" && $2 ~ /:4829$/ { found = 1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6 2> /dev/null; }
 	p run -d --name hostlisten --network host "$image" sh -c 'nc -ll -p 18473 -e sh -c "printf \"HTTP/1.0 200 OK\r\nContent-Length: 9\r\n\r\npasta-ok\n\""' > /tmp/hostlisten.log 2>&1
 	for _ in $(seq 1 30); do listener_up && break; sleep 0.5; done
 	if ! listener_up; then
