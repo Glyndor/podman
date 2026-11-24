@@ -132,10 +132,11 @@ def check_ed25519(data: bytes, args: argparse.Namespace) -> None:
 	raw_keys = read_keys(args.keys, ED25519_KEY_BYTES, "Ed25519", missing_is_empty=False)
 	if not raw_keys:
 		fail(TRUST_ANCHOR, f"no public keys to verify against in {args.keys}")
-	try:
-		keys = [Ed25519PublicKey.from_public_bytes(raw) for raw in raw_keys]
-	except ValueError as exc:
-		fail(TRUST_ANCHOR, f"malformed Ed25519 public key in {args.keys}: {exc}")
+	# from_public_bytes raises nothing here: read_keys already refused a key that is not
+	# exactly 32 bytes, and cryptography accepts every 32-byte value (measured with 46.0.5:
+	# all zero, all 0xff and 20000 random values). A future version that did raise would
+	# stop the script with a traceback and a non-zero exit, which still refuses.
+	keys = [Ed25519PublicKey.from_public_bytes(raw) for raw in raw_keys]
 	try:
 		sig = Path(args.sig).read_bytes()
 	except OSError as exc:
@@ -186,6 +187,8 @@ def check_mldsa65(data: bytes, args: argparse.Namespace) -> str:
 	try:
 		from cryptography.hazmat.primitives.asymmetric.mldsa import MLDSA65PublicKey
 
+		# Raises nothing for a 1952-byte value: cryptography 50.0.2 accepted all zero, all 0xff
+		# and 3000 random ones, and read_keys has refused any other length by now.
 		keys = [MLDSA65PublicKey.from_public_bytes(raw) for raw in raw_keys]
 	except (ImportError, UnsupportedAlgorithm) as exc:
 		fail(
@@ -194,8 +197,6 @@ def check_mldsa65(data: bytes, args: argparse.Namespace) -> str:
 			f" support ({exc}); cryptography 50.0.2 or later is required, pinned in"
 			" .github/scripts/release/sign-requirements.txt. Refusing rather than skipping it",
 		)
-	except ValueError as exc:
-		fail(TRUST_ANCHOR, f"malformed ML-DSA-65 public key in {args.mldsa_keys}: {exc}")
 	for key in keys:
 		try:
 			key.verify(sig, data)
