@@ -40,7 +40,9 @@ out="$(report "$HERE/.github/dependabot.yml" "$HERE/scripts/package/images")"
 check "every directory of scripts/package/images is read by Dependabot" "" "$(printf '%s\n' "$out" | grep -e '^not read' -e 'rule failed' -e 'docker entries')"
 check "their updates come in one group that takes every image" "group package-images: *" "$(printf '%s\n' "$out" | grep '^group')"
 check "openSUSE Tumbleweed has an image directory among them" 1 "$([ -f "$HERE/scripts/package/images/tumbleweed/Dockerfile" ] && echo 1 || echo 0)"
-check "and its image is the rolling tag with no digest, which no pin could follow, and the rows that keep their digests are the ones Dependabot moves" "1 3" \
+# Every image carries a digest for Dependabot to move except the three whose registries drop the digests (fedora 44 and 45, Tumbleweed).
+images_total="$(find "$HERE/scripts/package/images" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+check "and its image is the rolling tag with no digest, which no pin could follow, and every other image keeps its digest for Dependabot to move" "1 $((images_total - 3))" \
 	"$(grep -c -E '^FROM registry.opensuse.org/opensuse/tumbleweed:latest$' "$HERE/scripts/package/images/tumbleweed/Dockerfile") $(grep -l -E '^FROM [a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$' "$HERE"/scripts/package/images/*/Dockerfile | wc -l | tr -d ' ')"
 
 # The same rule on a copy that breaks it: an image no entry reads, and a configuration with no group.

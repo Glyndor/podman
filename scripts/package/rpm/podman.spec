@@ -121,7 +121,12 @@ and that configuration replace the older copies the distributions ship.
 # back after it, only where nothing is.
 %pretrans -p /bin/sh
 if ! rpm -q --qf '%%{VENDOR}\n' podman 2> /dev/null | grep -qx Glyndor; then
-	for f in $(find /etc/containers -type f 2> /dev/null); do
+	# A glob and not find: the minimal images of Amazon Linux, Leap and Tumbleweed have no findutils, a scriptlet that
+	# used it saved nothing there without a word (measured on 2026-11-24 on Leap 16.1: registries.conf and policy.json
+	# were left as .rpmsave and the update lost what the administrator wrote). Three levels cover what
+	# /etc/containers holds (registries.conf.d, certs.d/<host>, oci/hooks.d).
+	for f in /etc/containers/* /etc/containers/*/* /etc/containers/*/*/*; do
+		[ -f "$f" ] || continue
 		rpm -qf "$f" > /dev/null 2>&1 || continue
 		if rpm -Vf "$f" 2> /dev/null | grep -Eq "^.{2}5.* $f\$" \
 			|| rpm -qf --qf '[%%{FILENAMES} %%{FILEFLAGS:fflags}\n]' "$f" 2> /dev/null | grep -Eq "^$f [a-zA-Z]*g"; then
@@ -132,7 +137,8 @@ fi
 exit 0
 
 %posttrans -p /bin/sh
-for s in $(find /etc/containers -name '*.glyndor-saved' 2> /dev/null); do
+for s in /etc/containers/*.glyndor-saved /etc/containers/*/*.glyndor-saved /etc/containers/*/*/*.glyndor-saved; do
+	[ -f "$s" ] || continue
 	f="${s%%.glyndor-saved}"
 	if [ -e "$f" ]; then
 		rm -f "$s"

@@ -45,7 +45,14 @@ for name in ${wanted//,/ }; do
 	build="$work/$name-build"
 	mkdir -p "$tree" "$build"
 	if [ "$kind" = tarball ]; then
-		tar -C "$build" --strip-components=1 -xf "$src/$name"/src.tar.* || { echo "cannot unpack the source of $name" >&2; exit 1; }
+		# fetch-extras.sh leaves the signature beside the tarball (src.tar.gz and src.tar.gz.asc): the glob matches both, and
+		# only the tarball is unpacked.
+		tarball=()
+		for f in "$src/$name"/src.tar.*; do
+			case "$f" in *.asc) ;; *) [ -f "$f" ] && tarball+=("$f") ;; esac
+		done
+		[ "${#tarball[@]}" -eq 1 ] || { echo "cannot unpack the source of $name: ${#tarball[@]} tarballs in $src/$name" >&2; exit 1; }
+		tar -C "$build" --strip-components=1 -xf "${tarball[0]}" || { echo "cannot unpack the source of $name" >&2; exit 1; }
 	else
 		cp -a "$src/$name/tree/." "$build/"
 	fi
@@ -53,7 +60,9 @@ for name in ${wanted//,/ }; do
 		cd "$build"
 		case "$name" in
 			crun)
-				./configure --prefix=/usr
+				# openSUSE puts seccomp.h in /usr/include/libseccomp, where the configure of crun does not look
+				# unless it is told: the flags of pkg-config say where, and are empty where the header is in /usr/include.
+				CPPFLAGS="${CPPFLAGS:-} $(pkg-config --cflags libseccomp)" ./configure --prefix=/usr
 				make -j"$jobs"
 				make DESTDIR="$tree" install ;;
 			catatonit)
@@ -67,7 +76,9 @@ for name in ${wanted//,/ }; do
 				ln -s ../catatonit/catatonit "$tree/usr/libexec/podman/catatonit" ;;
 			conmon)
 				make PREFIX=/usr
-				make PREFIX=/usr DESTDIR="$tree" install ;;
+				# install.bin and not install: install also builds the man page, with go-md2man, which the
+				# distributions that need conmon from here do not all have.
+				make PREFIX=/usr DESTDIR="$tree" install.bin ;;
 			passt)
 				make prefix=/usr
 				make prefix=/usr DESTDIR="$tree" install
@@ -75,6 +86,12 @@ for name in ${wanted//,/ }; do
 			*) echo "no recipe for $name" >&2; exit 1 ;;
 		esac
 	) >&2
+	# libtool falls back to a dynamic link without a word when the static libc is missing, and a catatonit that needs this
+	# machine's libc does not start in the container that has another one.
+	if [ "$name" = catatonit ]; then
+		file -b "$tree/usr/libexec/catatonit/catatonit" | grep -q 'statically linked' \
+			|| { echo "catatonit was not linked statically: $(file -b "$tree/usr/libexec/catatonit/catatonit")" >&2; exit 1; }
+	fi
 	find "$tree" \( -name '*.la' -o -name '*.a' \) -delete
 	find "$tree" -type f -print0 | while IFS= read -r -d '' f; do
 		if file -b "$f" | grep -q '^ELF'; then strip --strip-unneeded "$f"; fi

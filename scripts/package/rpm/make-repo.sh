@@ -15,7 +15,9 @@ in="${1:?directory with the rpm files}"
 out="${2:?directory for repodata}"
 [ -d "$in" ] || { echo "$in is not a directory" >&2; exit 1; }
 [ -d "$out" ] || { echo "$out is not a directory" >&2; exit 1; }
-compgen -G "$in/*.rpm" > /dev/null || { echo "no .rpm file in $in" >&2; exit 1; }
+# A glob and not find: the build image of Amazon Linux 2023 has no findutils.
+rpms=("$in"/*.rpm)
+[ -f "${rpms[0]}" ] || { echo "no .rpm file in $in" >&2; exit 1; }
 
 if command -v zypper > /dev/null 2>&1; then
 	zypper --non-interactive install --no-recommends createrepo_c
@@ -24,4 +26,4 @@ else
 fi
 createrepo_c --outputdir "$out" "$in"
 [ -f "$out/repodata/repomd.xml" ] || { echo "createrepo_c wrote no repodata/repomd.xml in $out" >&2; exit 1; }
-echo "repository metadata of $(find "$in" -maxdepth 1 -name '*.rpm' | wc -l) packages written to $out/repodata"
+echo "repository metadata of ${#rpms[@]} packages written to $out/repodata"

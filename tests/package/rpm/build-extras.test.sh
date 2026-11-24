@@ -21,7 +21,8 @@ mkdir "$WORK/bin" "$WORK/src"
 # Package managers and the compiler tools answer yes; rpmbuild records its defines and makes a file.
 for t in dnf zypper autoreconf; do printf '#!/bin/sh\necho "%s $*" >> "$CALLS"\n' "$t" > "$WORK/bin/$t"; done
 printf '#!/bin/sh\necho 2\n' > "$WORK/bin/nproc"
-printf '#!/bin/sh\necho "ELF 64-bit"\n' > "$WORK/bin/file"
+printf '#!/bin/sh\necho "ELF 64-bit LSB executable, statically linked"\n' > "$WORK/bin/file"
+printf '#!/bin/sh\necho "-I/usr/include/libseccomp"\n' > "$WORK/bin/pkg-config"
 printf '#!/bin/sh\necho "strip $*" >> "$CALLS"\n' > "$WORK/bin/strip"
 cat > "$WORK/bin/rpmbuild" <<'RB'
 #!/bin/sh
@@ -43,11 +44,13 @@ MK
 chmod +x "$WORK"/bin/*
 # sources: tarballs for crun and catatonit, trees for conmon and passt, as fetch-extras.sh leaves them
 mkdir -p "$WORK/t/crun-1.31" "$WORK/t/catatonit-0.2.1"
-printf '#!/bin/sh\necho "configure $*" >> "$CALLS"\n' > "$WORK/t/crun-1.31/configure"; cp "$WORK/t/crun-1.31/configure" "$WORK/t/catatonit-0.2.1/configure"
+printf '#!/bin/sh\necho "configure $* CPPFLAGS=[$CPPFLAGS]" >> "$CALLS"\n' > "$WORK/t/crun-1.31/configure"; cp "$WORK/t/crun-1.31/configure" "$WORK/t/catatonit-0.2.1/configure"
 chmod +x "$WORK/t"/*/configure
 mkdir -p "$WORK/src/crun" "$WORK/src/catatonit" "$WORK/src/conmon/tree" "$WORK/src/passt/tree"
 tar -C "$WORK/t" -czf "$WORK/src/crun/src.tar.gz" crun-1.31
 tar -C "$WORK/t" -cJf "$WORK/src/catatonit/src.tar.xz" catatonit-0.2.1
+# and with the signature beside each, which is how fetch-extras.sh leaves them: a glob over src.tar.* matches it too
+printf 'sig\n' > "$WORK/src/crun/src.tar.gz.asc"; printf 'sig\n' > "$WORK/src/catatonit/src.tar.xz.asc"
 echo m > "$WORK/src/conmon/tree/Makefile"; echo m > "$WORK/src/passt/tree/Makefile"
 mkdir "$WORK/trees"; export CALLS="$WORK/calls" TREES="$WORK/trees"
 PATH="$WORK/bin:$PATH"
@@ -71,12 +74,14 @@ check "the version and the epoch are the ones of extras.txt: crun 1.31 epoch 0, 
 	"$(defined crun gl_version) $(defined crun gl_epoch) $(defined conmon gl_version) $(defined conmon gl_epoch)"
 check "the release counter is the revision and the id is the distribution's" "12 am" "$(defined crun gl_release) $(defined crun gl_id)"
 check "the tarballs are configured for /usr and installed into a tree each (crun and catatonit)" "2 2" "$(calls 'configure --prefix=/usr') $(calls 'make DESTDIR=')"
+check "crun is told where seccomp.h is, by the flags of pkg-config: openSUSE keeps it in /usr/include/libseccomp" 1 "$(calls 'configure --prefix=/usr CPPFLAGS=[ -I/usr/include/libseccomp]')"
 check "catatonit is regenerated before it is configured: its tarball has no configure of its own" 1 "$(calls 'autoreconf -fi')"
 check "catatonit moves to where the distributions put it and is linked where Podman looks for it" "./usr/libexec/catatonit/catatonit ./usr/libexec/podman/catatonit" \
 	"$(grep -e libexec/catatonit/catatonit -e libexec/podman/catatonit "$TREES/catatonit.txt" | paste -sd' ')"
 check "and it is no longer in /usr/bin" 0 "$(grep -c '^./usr/bin/catatonit$' "$TREES/catatonit.txt")"
 check "libraries nobody links against are not shipped" 0 "$(grep -c '\.la$' "$TREES/crun.txt")"
 check "conmon is built with the prefix make asks for" 1 "$(calls 'make PREFIX=/usr DESTDIR=')"
+check "and installed with install.bin: install also builds the man page with go-md2man, which Amazon Linux does not have" "1 0" "$(grep -c -E 'make PREFIX=/usr DESTDIR=[^ ]* install.bin$' "$CALLS") $(grep -c -E 'make PREFIX=/usr DESTDIR=[^ ]* install$' "$CALLS")"
 check "binaries are stripped" 1 "$([ "$(calls 'strip --strip-unneeded')" -gt 0 ] && echo 1 || echo 0)"
 run lp 3 "$WORK/src" "$WORK/out"
 check "passt is built with its lower-case prefix" "0 1" "$rc $(calls 'make prefix=/usr DESTDIR=')"
@@ -85,14 +90,26 @@ run nn 3 "$WORK/src" "$WORK/out"
 check "a distribution that takes none builds nothing and succeeds" "0 0" "$rc $(calls rpmbuild)"
 check "and says so" 1 "$(says 'takes no extras')"
 
+# libtool links a dynamic catatonit without a word when the static libc is missing, and such a binary does not start in the
+# container that has another libc: the build refuses it.
+printf '#!/bin/sh\necho "ELF 64-bit LSB pie executable, dynamically linked"\n' > "$WORK/bin/file"
+run am 12 "$WORK/src" "$WORK/out"
+check "a catatonit that is not linked statically is refused, and the build stops" "1 1" "$rc $(says 'catatonit was not linked statically')"
+printf '#!/bin/sh\necho "ELF 64-bit LSB executable, statically linked"\n' > "$WORK/bin/file"
 rm -rf "$WORK/src/crun"; mkdir "$WORK/src/crun"; run am 12 "$WORK/src" "$WORK/out"
 check "a source that was not fetched is refused" "1 1" "$rc $(says 'cannot unpack the source of crun')"
 tar -C "$WORK/t" -czf "$WORK/src/crun/src.tar.gz" crun-1.31
+printf 'sig\n' > "$WORK/src/crun/src.tar.gz.asc"
 printf 'zz|rpm|fedora|x86_64|5|2|5|upstream|0^20260716||crun\n' > "$WORK/table"
 printf 'crun|1|0|tarball|u|p|k|f\n' > "$WORK/pins"
 mv "$WORK/src/crun/src.tar.gz" "$WORK/src/crun/src.off"
 GLYNDOR_EXTRAS_FILE="$WORK/pins" run zz 1 "$WORK/src" "$WORK/out"
 check "a tarball source that is not there is refused" "1 1" "$rc $(says 'cannot unpack the source of crun')"
+check "and a signature with no tarball beside it is not taken for one" 1 "$(says '0 tarballs in')"
+printf 'not a tarball\n' > "$WORK/src/crun/src.tar.gz"
+GLYNDOR_EXTRAS_FILE="$WORK/pins" run zz 1 "$WORK/src" "$WORK/out"
+check "a tarball that cannot be unpacked is refused as that, not as a count" "1 1 0" "$rc $(says 'cannot unpack the source of crun') $(says 'tarballs in')"
+rm "$WORK/src/crun/src.tar.gz"
 mv "$WORK/src/crun/src.off" "$WORK/src/crun/src.tar.gz"
 printf 'crun|1|0|svn|u|p|k|f\n' > "$WORK/pins"
 GLYNDOR_EXTRAS_FILE="$WORK/pins" run zz 1 "$WORK/src" "$WORK/out"
