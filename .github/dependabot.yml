@@ -48,3 +48,23 @@ updates:
       - "type:ci"
       - "area:build"
     open-pull-requests-limit: 5
+  # The images the native packages are built and proved in. Each distribution is pinned to its
+  # own release on purpose (Fedora 45 and 44, AlmaLinux 9 and 10, and so on): a package for
+  # one release is not meant to move to the next, so only the digest and patch updates of the
+  # pinned release come through.
+  - package-ecosystem: "docker"
+    directories:
+      - "/scripts/package/images/*"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    schedule:
+      interval: "daily"
+    labels:
+      - "type:deps"
+      - "type:ci"
+      - "area:build"
+    open-pull-requests-limit: 5
+    groups:
+      package-images:
+        patterns: ["*"]

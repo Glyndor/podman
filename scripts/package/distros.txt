@@ -1,0 +1,17 @@
+# The distributions the native packages are built for, one per line, ten fields separated by |.
+# The contract that gives each field its meaning is docs/packages.md.
+#
+#   id          the <id> of every rpm file name, and the folder of its build image under images/
+#   format      rpm or pacman
+#   family      what the spec and the build treat alike: fedora, el, amzn, suse, arch
+#   arches      the architectures built, as the package format names them
+#   epoch       Epoch of podman: the epoch the distribution's own podman has, measured; 0 where it has none
+#   nv_epoch    epoch the distribution uses for netavark and aardvark-dns
+#   cc_epoch    epoch the distribution uses for containers-common
+#   cc_scheme   upstream: containers-common is numbered like upstream (0.70.0); podman: like Podman (6.1)
+#   passt_min   the oldest passt Podman 6.2.0 works with, in the version scheme of the distribution
+#   tests       images, under images/, the same package is also installed and run on; empty for none
+#
+# Which dependencies are packaged beside podman is decided where they are built.
+fc45|rpm|fedora|x86_64,aarch64|5|2|5|upstream|0^20260716|
+fc44|rpm|fedora|x86_64,aarch64|5|2|5|upstream|0^20260716|
