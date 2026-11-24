@@ -117,9 +117,9 @@ jobs:
     permissions:
       contents: read
     strategy:
-      # Every row finishes: a failure of one distribution cancelled the others while they were proving theirs, and
-      # the result of a row is what is wanted from a run even when another row fails.
-      fail-fast: false
+      # The matrix stops at the first row that fails: the runners are few, and a row that passes says it enters while the
+      # failure that cuts the run says which does not.
+      fail-fast: true
       matrix:
         include: ${{ fromJSON(needs.decide.outputs.matrix) }}
     uses: ./.github/workflows/reusable-package.yml

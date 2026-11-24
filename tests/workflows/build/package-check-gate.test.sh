@@ -48,7 +48,6 @@ check "the gate runs always, needs decide, plan and package, and reads their res
 BAD="$WORK/bad"
 mkdir -p "$BAD"
 sed 's/^    if: always()$/    if: success()/' "$HERE/.github/workflows/package-check.yml" > "$BAD/package-check.yml"
-check "no row of the matrix is cancelled because another failed" "false" "$(python3 -c 'import sys, yaml; print(str(yaml.safe_load(open(sys.argv[1]))["jobs"]["package"]["strategy"]["fail-fast"]).lower())' "$HERE/.github/workflows/package-check.yml")"
 check "a gate that is skipped when a need fails is named" "the gate does not run whatever its needs ended as" "$(wiring "$BAD")"
 sed 's/^      PACKAGE: \${{ needs.package.result }}$/      PACKAGE: success/' "$HERE/.github/workflows/package-check.yml" > "$BAD/package-check.yml"
 check "a result that is not read from its job is named" "PACKAGE is 'success', not \${{ needs.package.result }}" "$(wiring "$BAD")"
