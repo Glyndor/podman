@@ -24,7 +24,7 @@ check() { # <desc> <want> <got>
 # the branch is main, verifies what it downloaded against the release key before a container starts, installs
 # nothing privileged, and only publish waits for it.
 check "the upgrade test runs when there is something to build, and only from main" "github.ref == 'refs/heads/main' && needs.plan.outputs.build == 'true'" "$(gate release.yml config-upgrade if)"
-check "it waits for the plan and the build, and holds nothing but read" "build,plan" "$(gate release.yml config-upgrade needs)"
+check "it waits for the plan and the build, and holds nothing but read" "build-amd64,build-arm64,plan" "$(gate release.yml config-upgrade needs)"
 cu="$WORK/config-upgrade.yml"
 python3 - "$HERE/.github/workflows/release.yml" > "$cu" <<'PY'
 import sys, yaml

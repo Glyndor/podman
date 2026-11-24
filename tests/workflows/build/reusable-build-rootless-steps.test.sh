@@ -26,7 +26,7 @@ facts() {
 import sys, yaml
 
 with open(sys.argv[1]) as fh:
-    steps = yaml.safe_load(fh)["jobs"]["build"]["steps"]
+    steps = yaml.safe_load(fh)["jobs"]["test"]["steps"]
 
 def find(script):
     return [i for i, s in enumerate(steps) if script in str(s.get("run", ""))]
@@ -92,7 +92,8 @@ import sys
 lines = open(sys.argv[1]).read().split("\n")
 first = next(i for i, l in enumerate(lines) if l.startswith("      - name: Run a rootless container on pasta"))
 second = next(i for i, l in enumerate(lines) if l.startswith("      # The package is installed by the step above."))
-end = next(i for i, l in enumerate(lines) if l.startswith("      - if: ${{ inputs.upload }}"))
+# The test job is the last of the file: its steps end where the file does.
+end = len(lines)
 lines[first:end] = lines[second:end] + lines[first:second]
 open(sys.argv[2], "w").write("\n".join(lines))
 PY

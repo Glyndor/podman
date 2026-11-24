@@ -23,6 +23,12 @@ concurrency:
   group: keyring-watch
   cancel-in-progress: false
 
+# Every run step goes through `bash -e -o pipefail`, which is what `shell: bash` means to Actions. Without it
+# the shell is `bash -e` alone, and a pipeline hides the failure of all but its last command.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   compare:
     name: compare with upstream

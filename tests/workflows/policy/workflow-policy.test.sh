@@ -109,6 +109,10 @@ for path in sorted(glob.glob(f"{root}/*.yml") + glob.glob(f"{root}/*.yaml")):
             for entry in ((cfg.get("strategy") or {}).get("matrix") or {}).get("include") or []:
                 if entry.get("runner") not in pinned:
                     print(f"{name}: {job} builds {entry.get('arch')} on {entry.get('runner')}")
+            # One call for each architecture, with no matrix: the runner is an input of the call.
+            handed = (cfg.get("with") or {}).get("runner")
+            if handed is not None and handed not in pinned and not str(handed).startswith("${{"):
+                print(f"{name}: {job} builds {(cfg.get('with') or {}).get('arch')} on {handed}")
 PY
 }
 
@@ -126,8 +130,8 @@ cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i 's/^    runs-on: ubuntu-26.04$/    runs-on: ubuntu-latest/' "$BAD/tests.yml"
 check "a pinned job moved back to ubuntu-latest is named" "tests.yml: test runs on ubuntu-latest" "$(violations runners "$BAD")"
 cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
-sed -i 's/runner: ubuntu-26.04 }/runner: ubuntu-latest }/' "$BAD/release.yml"
-check "a build matrix on ubuntu-latest is named" "release.yml: build builds amd64 on ubuntu-latest" "$(violations runners "$BAD")"
+sed -i '0,/^      runner: ubuntu-26.04$/s//      runner: ubuntu-latest/' "$BAD/release.yml"
+check "a build on ubuntu-latest is named" "release.yml: build-amd64 builds amd64 on ubuntu-latest" "$(violations runners "$BAD")"
 
 # --- repository scripts are run through an interpreter ---------------------------
 check "no workflow runs a repository script by its execute bit" "" "$(violations interpreter)"

@@ -45,6 +45,7 @@ SH
 if [ "$1 $2" = "rev-parse HEAD" ]; then echo "${FAKE_HEAD:-$GITHUB_SHA}"; exit 0; fi
 [ "$1" = ls-remote ] || exit 1
 if [ "$2" = --tags ]; then
+	[ -z "${TAGS_FAIL:-}" ] || { echo "fatal: unable to access the repository" >&2; exit 128; }
 	for t in ${TAGS:-}; do printf '0123abcd\trefs/tags/%s\n' "$t"; done
 	exit 0
 fi
@@ -109,6 +110,12 @@ GH
 	check "no rehearsal, nothing new: nothing is built, and it says it is not a rehearsal" "0 false false" "$rc $(said build) $(said dry_run)"
 	plan LATEST=v6.2.0 TAGS=v6.2.0 COMPONENTS="$same"
 	check "a run with no dry_run set says false" "false" "$(said dry_run)"
+	# The list of tags is read through a pipeline, and a query that fails must not read as a repository with
+	# no tags: that would let the plan pick a name that is taken. The shell is the one the workflow gives the
+	# step, which stops a failing pipeline only because the workflow says `shell: bash`.
+	plan TAGS_FAIL=1
+	check "a list of tags that cannot be read stops the plan, and nothing is handed on" "stopped " "$([ "$rc" -ne 0 ] && echo stopped) $(said build)"
+	check "and the shell of the step is the one with pipefail" "--noprofile --norc -eo pipefail" "$(cat "$P/shell.flags")"
 	# One commit for the whole run: the one the checkout is at, which has to be the one the event
 	# named, so that no later job resolves a branch or a tag again.
 	plan
