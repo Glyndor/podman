@@ -75,17 +75,25 @@ rl() { runuser -u probe -- bash /tmp/rootless.sh "$1"; }
 pasta_pids() { grep -l '^pasta' /proc/[0-9]*/comm 2> /dev/null | sed 's#/proc/\([0-9]*\)/comm#\1#'; }
 # The pasta of a rootless bridge network goes when the last container of it does, but not in the same instant: the
 # container that was killed after its second has to be reaped first. So it is waited for, up to ten seconds in steps
-# of a fifth, and a pasta that is still there after that is not a race: it is shown, with where it came from.
+# of a fifth, and the log says how long it really took (0.000 s when none was left), so that a race, which gives a
+# short wait, can be told from a leak, which gives the whole ten seconds. A pasta that is still there after that is
+# shown with its command line, its parent, the namespace it lives in and the containers of the user.
 pasta_gone() {
-	local _ p left
-	for _ in $(seq 1 50); do
+	local _ p left start elapsed
+	start="$(date +%s%N)"
+	for _ in $(seq 0 50); do
 		left="$(pasta_pids)"
-		[ -z "$left" ] && return 0
+		elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+		if [ -z "$left" ]; then
+			printf 'no pasta was left after waiting %d.%03d s\n' $((elapsed / 1000)) $((elapsed % 1000))
+			return 0
+		fi
 		sleep 0.2
 	done
-	echo "pasta is still running ten seconds after the last container stopped:"
+	printf 'pasta is still running after waiting %d.%03d s, the whole ten seconds, after the last container stopped:\n' $((elapsed / 1000)) $((elapsed % 1000))
 	for p in $left; do
 		ps -o pid,ppid,etimes,user,args -p "$p" | tail -n +2
+		echo "  parent: $(ps -o pid=,args= -p "$(ps -o ppid= -p "$p" | tr -d ' ')" 2>&1)"
 		echo "  network namespace $(readlink "/proc/$p/ns/net") (this shell's is $(readlink /proc/self/ns/net))"
 	done
 	echo "containers and networks of the user:"

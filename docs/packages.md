@@ -36,6 +36,18 @@ A row in `scripts/package/distros.txt` and an image in `scripts/package/images/<
 digest. The epochs and the way containers-common is numbered are read from the distribution's own
 repositories, not guessed. The suites check that every row has its image and every image its row.
 
+## The images the packages are built in
+
+Each distribution is built and proved in an image pinned by digest, in `scripts/package/images/<id>/Dockerfile`. Dependabot
+moves those pins by itself, in one group of pull requests (`package-images` in `.github/dependabot.yml`) that reads every
+directory of `scripts/package/images`. The pin of openSUSE Tumbleweed has to be moved that way: Tumbleweed is rolling, its
+tag is `latest`, and the registry deletes the digests it no longer serves after a few days, so a pin that is not bumped
+stops resolving and every build of that row fails when it pulls the image. The check that fails first is
+`tests/package/distros.test.sh`, with "the digest pinned for tumbleweed's image is no longer in the registry. Dependabot moves
+it (group package-images); until it does, this suite fails here". The fix is to merge the pull request of the group, or to take the digest of the index from
+`docker buildx imagetools inspect registry.opensuse.org/opensuse/tumbleweed:latest` by hand. The other rows are pinned to
+a release that does not roll, so their digests stay in the registry much longer.
+
 ## Configuration
 
 `/etc/containers` is the administrator's, and no package puts a file under it. Podman 6.2.0 reads `containers.conf`,

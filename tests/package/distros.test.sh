@@ -39,14 +39,16 @@ done
 # pinned to is the digest of an INDEX with an image for each: the digest of one architecture's manifest makes the
 # other runner try to execute the wrong binaries ("exec format error"). The index is read from the registry with
 # docker or podman; with neither the check says so and fails.
-platforms() { # <name:tag@digest>: the linux architectures of the index, or why it could not be read
-	local ref="$1" name digest raw
+platforms() { # <name:tag@digest>: the linux architectures of the index, "gone" when the registry no longer has the digest, or why it could not be read
+	local ref="$1" name digest raw err
 	name="${ref%%:*}"; digest="${ref##*@}"
 	case "$name" in */*) ;; *) name="docker.io/library/$name" ;; esac
-	if command -v docker > /dev/null 2>&1 && raw="$(docker buildx imagetools inspect --raw "$name@$digest" 2> /dev/null)"; then :
-	elif command -v podman > /dev/null 2>&1 && raw="$(podman manifest inspect "docker://$name@$digest" 2> /dev/null)"; then :
+	err="$WORK/manifest.err"
+	if command -v docker > /dev/null 2>&1 && raw="$(docker buildx imagetools inspect --raw "$name@$digest" 2> "$err")"; then :
+	elif command -v podman > /dev/null 2>&1 && raw="$(podman manifest inspect "docker://$name@$digest" 2> "$err")"; then :
+	elif grep -q -i -e 'not found' -e 'manifest unknown' -e '404' "$err" 2> /dev/null; then echo gone; return
 	else echo "cannot read the manifest of $ref with docker or podman"; return; fi
-	printf '%s' "$raw" | python3 -c '
+printf '%s' "$raw" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 if "manifests" not in d:
@@ -55,10 +57,33 @@ else:
     print(" ".join(sorted({m["platform"]["architecture"] for m in d["manifests"] if m.get("platform", {}).get("os") == "linux"} & {"amd64", "arm64"})))
 '
 }
+# What a failure of the pin says when the registry has dropped the digest.
+gone_message() { echo "the digest pinned for $1 is no longer in the registry. Dependabot moves it (group package-images); until it does, this suite fails here"; }
+check "the message of a digest the registry dropped says what moves it and what fails until then" \
+	"the digest pinned for tumbleweed's image is no longer in the registry. Dependabot moves it (group package-images); until it does, this suite fails here" \
+	"$(gone_message "tumbleweed's image")"
+# The two ways the registry answers when it cannot give the manifest, with a docker and a podman that say so.
+mkdir -p "$WORK/fakeregistry"
+for tool in docker podman; do
+	printf '#!/bin/sh\necho "$FAKE_ERROR" >&2\nexit 1\n' > "$WORK/fakeregistry/$tool"
+	chmod +x "$WORK/fakeregistry/$tool"
+done
+check "a digest the registry no longer has is told as gone, not as an unreadable manifest" gone \
+	"$(FAKE_ERROR='ERROR: registry.example/x@sha256:00: not found' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
+check "so is the answer of a registry that says manifest unknown" gone \
+	"$(FAKE_ERROR='Error: manifest unknown' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
+check "a registry that cannot be reached is not told as gone" "cannot read the manifest of registry.example/x:latest@sha256:00 with docker or podman" \
+	"$(FAKE_ERROR='dial tcp: connection refused' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
 for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do
 	ref="$(sed -n 's/^FROM \([^ ]*@sha256:[0-9a-f]*\)$/\1/p' "$HERE/scripts/package/images/$id/Dockerfile")"
 	want="$(bash "$SCRIPT" field "$id" arches | tr ',' '\n' | sed 's/x86_64/amd64/; s/aarch64/arm64/' | sort | paste -sd' ')"
 	got="$(platforms "$ref")"
+	if [ "$got" = gone ]; then
+		# A rolling image (Tumbleweed) loses its old digests in the registry. Dependabot moves the pin, in the group
+		# package-images of .github/dependabot.yml, and until its pull request is merged this is what fails.
+		check "$(gone_message "$id's image")" present gone
+		continue
+	fi
 	# The index may have more than the row builds for, never fewer.
 	ok=1
 	for a in $want; do case " $got " in *" $a "*) ;; *) ok=0 ;; esac; done
