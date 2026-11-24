@@ -40,13 +40,15 @@ repositories, not guessed. The suites check that every row has its image and eve
 
 Each distribution is built and proved in an image pinned by digest, in `scripts/package/images/<id>/Dockerfile`. Dependabot
 moves those pins by itself, in one group of pull requests (`package-images` in `.github/dependabot.yml`) that reads every
-directory of `scripts/package/images`. The pin of openSUSE Tumbleweed has to be moved that way: Tumbleweed is rolling, its
-tag is `latest`, and the registry deletes the digests it no longer serves after a few days, so a pin that is not bumped
-stops resolving and every build of that row fails when it pulls the image. The check that fails first is
-`tests/package/distros.test.sh`, with "the digest pinned for tumbleweed's image is no longer in the registry. Dependabot moves
-it (group package-images); until it does, this suite fails here". The fix is to merge the pull request of the group, or to take the digest of the index from
-`docker buildx imagetools inspect registry.opensuse.org/opensuse/tumbleweed:latest` by hand. The other rows are pinned to
-a release that does not roll, so their digests stay in the registry much longer.
+directory of `scripts/package/images`. A pin has to be moved because the registries stop serving the digests they replace:
+Tumbleweed is rolling, its tag is `latest` and its digest changes every day or two, and `fedora:44` and `fedora:45` are
+rebuilt and re-tagged often (the digests of both were gone from quay.io on the day they were measured, a few hours after
+a build had pulled them). An image whose digest is gone cannot be pulled, so every build of that row fails at its first
+step. The check that fails first is `tests/package/distros.test.sh`, with "the digest pinned for <image> is no longer in
+the registry. Dependabot moves it (group package-images); until it does, this suite fails here". The fix is to merge the
+pull request of the group, or to take the digest of the index from
+`docker buildx imagetools inspect <image>:<tag>` by hand. The images of Enterprise Linux (AlmaLinux, Rocky, UBI) change less
+often, and their digests stay in the registry longer.
 
 ## Configuration
 

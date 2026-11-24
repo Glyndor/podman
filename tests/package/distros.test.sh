@@ -43,12 +43,12 @@ platforms() { # <name:tag@digest>: the linux architectures of the index, "gone" 
 	local ref="$1" name digest raw err
 	name="${ref%%:*}"; digest="${ref##*@}"
 	case "$name" in */*) ;; *) name="docker.io/library/$name" ;; esac
-	err="$WORK/manifest.err"
-	if command -v docker > /dev/null 2>&1 && raw="$(docker buildx imagetools inspect --raw "$name@$digest" 2> "$err")"; then :
-	elif command -v podman > /dev/null 2>&1 && raw="$(podman manifest inspect "docker://$name@$digest" 2> "$err")"; then :
+	err="$WORK/manifest.err"; : > "$err"
+	if command -v docker > /dev/null 2>&1 && raw="$(docker buildx imagetools inspect --raw "$name@$digest" 2>> "$err")"; then :
+	elif command -v podman > /dev/null 2>&1 && raw="$(podman manifest inspect "docker://$name@$digest" 2>> "$err")"; then :
 	elif grep -q -i -e 'not found' -e 'manifest unknown' -e '404' "$err" 2> /dev/null; then echo gone; return
 	else echo "cannot read the manifest of $ref with docker or podman"; return; fi
-printf '%s' "$raw" | python3 -c '
+	printf '%s' "$raw" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 if "manifests" not in d:
@@ -64,12 +64,13 @@ check "the message of a digest the registry dropped says what moves it and what 
 	"$(gone_message "tumbleweed's image")"
 # The two ways the registry answers when it cannot give the manifest, with a docker and a podman that say so.
 mkdir -p "$WORK/fakeregistry"
-for tool in docker podman; do
-	printf '#!/bin/sh\necho "$FAKE_ERROR" >&2\nexit 1\n' > "$WORK/fakeregistry/$tool"
-	chmod +x "$WORK/fakeregistry/$tool"
-done
+printf '#!/bin/sh\necho "$FAKE_ERROR" >&2\nexit 1\n' > "$WORK/fakeregistry/docker"
+printf '#!/bin/sh\necho "${FAKE_ERROR_PODMAN:-$FAKE_ERROR}" >&2\nexit 1\n' > "$WORK/fakeregistry/podman"
+chmod +x "$WORK/fakeregistry/docker" "$WORK/fakeregistry/podman"
 check "a digest the registry no longer has is told as gone, not as an unreadable manifest" gone \
 	"$(FAKE_ERROR='ERROR: registry.example/x@sha256:00: not found' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
+check "docker saying not found is enough, whatever podman says of the reference it is given" gone \
+	"$(FAKE_ERROR='ERROR: registry.example/x@sha256:00: not found' FAKE_ERROR_PODMAN='Error: unsupported transport "docker" for looking up local images' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
 check "so is the answer of a registry that says manifest unknown" gone \
 	"$(FAKE_ERROR='Error: manifest unknown' PATH="$WORK/fakeregistry:$PATH" platforms registry.example/x:latest@sha256:00)"
 check "a registry that cannot be reached is not told as gone" "cannot read the manifest of registry.example/x:latest@sha256:00 with docker or podman" \
