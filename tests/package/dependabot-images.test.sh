@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# The images the native packages are built and proved in are pinned by digest, and a rolling one (openSUSE Tumbleweed)
-# loses its old digests in the registry, so the pin has to move by itself: every directory of scripts/package/images
-# has to be read by the docker ecosystem of .github/dependabot.yml, and every pull request it opens has to land in the
+# The images the native packages are built and proved in are pinned by digest when their registry keeps the digests it
+# replaces (AlmaLinux, Rocky, UBI), and Dependabot moves those pins: every directory of scripts/package/images has to be
+# read by the docker ecosystem of .github/dependabot.yml, and every pull request it opens has to land in the
 # one group of image bumps, which is what keeps the five or six digests that change on a day from becoming five or six
 # pull requests that each have to be rebased behind the other.
 set -u
@@ -40,7 +40,8 @@ out="$(report "$HERE/.github/dependabot.yml" "$HERE/scripts/package/images")"
 check "every directory of scripts/package/images is read by Dependabot" "" "$(printf '%s\n' "$out" | grep -e '^not read' -e 'rule failed' -e 'docker entries')"
 check "their updates come in one group that takes every image" "group package-images: *" "$(printf '%s\n' "$out" | grep '^group')"
 check "openSUSE Tumbleweed has an image directory among them" 1 "$([ -f "$HERE/scripts/package/images/tumbleweed/Dockerfile" ] && echo 1 || echo 0)"
-check "and the pin of it is a digest, which is what Dependabot moves" 1 "$(grep -c -E '^FROM registry.opensuse.org/opensuse/tumbleweed:latest@sha256:[0-9a-f]{64}$' "$HERE/scripts/package/images/tumbleweed/Dockerfile")"
+check "and its image is the rolling tag with no digest, which no pin could follow, and the rows that keep their digests are the ones Dependabot moves" "1 3" \
+	"$(grep -c -E '^FROM registry.opensuse.org/opensuse/tumbleweed:latest$' "$HERE/scripts/package/images/tumbleweed/Dockerfile") $(grep -l -E '^FROM [a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$' "$HERE"/scripts/package/images/*/Dockerfile | wc -l | tr -d ' ')"
 
 # The same rule on a copy that breaks it: an image no entry reads, and a configuration with no group.
 WORK="$(mktemp -d)"

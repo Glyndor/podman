@@ -536,7 +536,6 @@ package-require-tools-unknown-format	scripts/package/require-tools.sh	case "$for
 package-require-tools-no-list	scripts/package/require-tools.sh	[ -f "$list" ] || { echo "no list of build tools at $list" >&2; exit 1; }	[ -f "$list" ] || true	tests/package/require-tools.test.sh
 package-require-tools-a-program-is-missing	scripts/package/require-tools.sh	[ -z "$missing" ] || { echo "this container lacks:$missing; install them in the image of scripts/package/images/ or the build dependencies of scripts/package/ before going on" >&2; exit 1; }	[ -z "$missing" ] || true	tests/package/require-tools.test.sh
 package-payload-no-go-md2man-for-netavark	scripts/package/build-payload.sh	[ -x "$md2man" ] || { echo "the build of Podman left no $md2man for the man pages of netavark" >&2; exit 1; }	[ -x "$md2man" ] || true	tests/package/build-payload.test.sh
-package-image-fc45-is-the-digest-of-one-architecture	scripts/package/images/fc45/Dockerfile	FROM quay.io/fedora/fedora:45@sha256:	FROM quay.io/fedora/fedora:45@sha256:9b77664149790fa97c891a6b69cabff2fcd14c0b90a8212531a7347c9f67d027 #	tests/package/distros.test.sh
 package-engine-files-the-package-does-not-ship	scripts/package/verify/engine-files.sh	[ -e "${GLYNDOR_ROOT:-}$f" ] || { echo "the package does not ship $f" >&2; return 1; }	[ -e "${GLYNDOR_ROOT:-}$f" ] || true	tests/package/verify/engine-files.test.sh
 package-engine-files-the-configuration-is-empty	scripts/package/verify/engine-files.sh	[ -s "${GLYNDOR_ROOT:-}$f" ] || { echo "the package does not ship $f" >&2; return 1; }	[ -s "${GLYNDOR_ROOT:-}$f" ] || true	tests/package/verify/engine-files.test.sh
 
@@ -546,3 +545,10 @@ make-repo-input-is-not-a-directory	scripts/package/rpm/make-repo.sh	[ -d "$in" ]
 make-repo-output-is-not-a-directory	scripts/package/rpm/make-repo.sh	[ -d "$out" ] ||	true ||	tests/package/rpm/make-repo.test.sh
 make-repo-no-rpm-to-make-a-repository-of	scripts/package/rpm/make-repo.sh	compgen -G "$in/*.rpm" > /dev/null ||	true ||	tests/package/rpm/make-repo.test.sh
 make-repo-writes-no-repomd	scripts/package/rpm/make-repo.sh	[ -f "$out/repodata/repomd.xml" ] ||	true ||	tests/package/rpm/make-repo.test.sh
+package-image-fc45-carries-a-digest	scripts/package/images/fc45/Dockerfile	FROM quay.io/fedora/fedora:45	FROM quay.io/fedora/fedora:45@sha256:0000000000000000000000000000000000000000000000000000000000000000	tests/package/distros.test.sh
+package-image-fc45-tag-is-latest	scripts/package/images/fc45/Dockerfile	FROM quay.io/fedora/fedora:45	FROM quay.io/fedora/fedora:latest	tests/package/distros.test.sh
+package-image-fc44-carries-a-digest	scripts/package/images/fc44/Dockerfile	FROM quay.io/fedora/fedora:44	FROM quay.io/fedora/fedora:44@sha256:0000000000000000000000000000000000000000000000000000000000000000	tests/package/distros.test.sh
+package-image-tumbleweed-carries-a-digest	scripts/package/images/tumbleweed/Dockerfile	FROM registry.opensuse.org/opensuse/tumbleweed:latest	FROM registry.opensuse.org/opensuse/tumbleweed:latest@sha256:0000000000000000000000000000000000000000000000000000000000000000	tests/package/distros.test.sh
+package-image-el10-loses-its-digest	scripts/package/images/el10/Dockerfile	FROM quay.io/almalinuxorg/almalinux:10@sha256:	FROM quay.io/almalinuxorg/almalinux:10 #	tests/package/distros.test.sh
+package-image-rocky10-loses-its-digest	scripts/package/images/rocky10/Dockerfile	FROM quay.io/rockylinux/rockylinux:10@sha256:	FROM quay.io/rockylinux/rockylinux:10 #	tests/package/distros.test.sh
+package-image-ubi10-loses-its-digest	scripts/package/images/ubi10/Dockerfile	FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:	FROM registry.access.redhat.com/ubi10/ubi:latest #	tests/package/distros.test.sh

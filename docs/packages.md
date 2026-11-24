@@ -38,17 +38,36 @@ repositories, not guessed. The suites check that every row has its image and eve
 
 ## The images the packages are built in
 
-Each distribution is built and proved in an image pinned by digest, in `scripts/package/images/<id>/Dockerfile`. Dependabot
-moves those pins by itself, in one group of pull requests (`package-images` in `.github/dependabot.yml`) that reads every
-directory of `scripts/package/images`. A pin has to be moved because the registries stop serving the digests they replace:
-Tumbleweed is rolling, its tag is `latest` and its digest changes every day or two, and `fedora:44` and `fedora:45` are
-rebuilt and re-tagged often (the digests of both were gone from quay.io on the day they were measured, a few hours after
-a build had pulled them). An image whose digest is gone cannot be pulled, so every build of that row fails at its first
-step. The check that fails first is `tests/package/distros.test.sh`, with "the digest pinned for <image> is no longer in
-the registry. Dependabot moves it (group package-images); until it does, this suite fails here". The fix is to merge the
-pull request of the group, or to take the digest of the index from
-`docker buildx imagetools inspect <image>:<tag>` by hand. The images of Enterprise Linux (AlmaLinux, Rocky, UBI) change less
-often, and their digests stay in the registry longer.
+Each distribution is built and proved in an image, in `scripts/package/images/<id>/Dockerfile`. They are pinned by digest,
+the digest of the index so that the arm64 runner pulls its own, and Dependabot moves the pins (one group of pull requests,
+`package-images` in `.github/dependabot.yml`, reads every directory of `scripts/package/images`). AlmaLinux, Rocky and
+Red Hat's UBI keep the digests they replace, so a pin there stays valid until Dependabot moves it.
+
+Three images are not pinned by digest, and that is an exception to the rule that base images are:
+
+- `fedora:44` and `fedora:45` on quay.io. Measured on 2026-11-24 with the tag history of the registry
+  (`/api/v1/repository/fedora/fedora/tag/?specificTag=44&onlyActiveTags=false`): quay re-points `fedora:44` to a new index
+  every day, between 05:56 and 07:03 UTC, and deletes the previous one in that instant. The digests of the last 14 days of
+  the tag had all expired, and the manifest of the one that `main` pinned answered 404 a few hours after a build had pulled
+  it. A pin by digest makes the build fail the next day, and Dependabot cannot keep up: it runs once a day, at about
+  04:11 UTC, and the digest it would propose lives until about 06:00 UTC. The tag is the version (`44`, `45`), never
+  `latest`, so the image is always that release.
+- `opensuse/tumbleweed:latest`. Tumbleweed is rolling, so there is no release tag, and its registry stops serving the
+  digests it replaces after a few days (measured on 2026-11-24: a digest taken a few days earlier was gone). The tag is
+  `latest`, which is the only name a rolling distribution has.
+
+What these images install comes from the signed repositories of the distribution, which move as well, so a digest would
+fix the base layer and nothing else. The consequence is that the build of these rows is not reproducible from the
+repository alone, and that a proof of one of them is a proof against the image of the day. A registry that kept the
+digests of the tag would change this, and then the digest goes back. `tests/package/distros.test.sh` holds the
+exception: the three ids are listed, each must carry no digest, a Fedora tag must be the version, and every other image
+must carry a digest, so that nobody removes a pin where it works. It also reads the index of each tag today and fails when
+it lacks amd64 or arm64; that result is the one of the day it ran.
+
+If the pin of one of the images that do carry a digest stops resolving, `distros.test.sh` fails with "the digest pinned for
+<image> is no longer in the registry. Dependabot moves it (group package-images); until it does, this suite fails here".
+The fix is to merge the pull request of the group, or to take the digest of the index from
+`docker buildx imagetools inspect <image>:<tag>` by hand.
 
 ## Configuration
 
