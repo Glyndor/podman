@@ -67,6 +67,28 @@ check "and it shows the command line of the process" 1 "$(printf '%s\n' "$out" |
 check "and its parent" 1 "$(printf '%s\n' "$out" | grep -c '^  parent: ')"
 check "and its network namespace and the containers of the user" "1 1" "$(printf '%s\n' "$out" | grep -c '^  network namespace ') $(printf '%s\n' "$out" | grep -c '^state of the user: state')"
 
+# --- what the listener of the host-side check does with a connection: it reads the request before it answers ---
+# A server that answers and closes with the request unread gets the kernel's reset, which the container sometimes sees
+# before the answer ("Connection reset by peer", measured through pasta). What runs for each connection is the string
+# `serve` of the lib, run here with a request on its stdin and what follows the request left behind.
+serve="$(sed -n "s/^[[:space:]]*serve='\(.*\)'$/\1/p" "$LIB" | head -n 1)"
+check "the program of the listener is found in the lib" 1 "$([ -n "$serve" ] && echo 1 || echo 0)"
+request="$(printf 'GET /probe HTTP/1.1\r\nHost: host.containers.internal:18473\r\nUser-Agent: Wget\r\nConnection: close\r\n\r\n')"
+answer="$(printf 'HTTP/1.0 200 OK\r\nContent-Length: 9\r\n\r\npasta-ok\n')"
+check "it answers a request with the status line, the length and the body" "$answer" "$(printf '%s\r\n' "$request" | timeout 5 sh -c "$serve")"
+left="$( { printf 'GET /p HTTP/1.1\r\nHost: x\r\n\r\nREST\n'; } | { timeout 5 sh -c "$serve" > /dev/null; cat; } )"
+check "it has read the whole request, up to its empty line, and not a byte more" "REST" "$left"
+check "it answers a request that ends without an empty line, and does not wait for ever" "$answer" "$(printf 'GET /p HTTP/1.1\r\nHost: x\r\n' | timeout 5 sh -c "$serve")"
+check "it is run for every connection with nc -ll -e, listening on port 18473" 1 "$(grep -c 'nc -ll -p 18473 -e sh -c "$serve"' "$LIB")"
+
+# The script the lib writes for the unprivileged user is made by a here-document, so its quoting is only seen when it runs
+# as that user, on the machine of the distribution: it is made here and parsed, and its failure diagnostics are in it.
+{ echo 'uid=1000; image=img'; sed -n '/^cat > \/tmp\/rootless.sh <<ROOTLESS/,/^ROOTLESS$/p' "$LIB" | sed "s#/tmp/rootless.sh#$WORK/rootless-made.sh#"; } > "$WORK/make-rootless.sh"
+bash "$WORK/make-rootless.sh"
+check "the script written for the unprivileged user parses" 0 "$(bash -n "$WORK/rootless-made.sh" 2> /dev/null; echo $?)"
+check "and when the fetch from the host fails it prints the pasta version, the addresses and routes of the container and the sockets of tcp and tcp6" "1 1 1" \
+	"$(grep -c 'pasta --version' "$WORK/rootless-made.sh") $(grep -c 'ip -6 addr; ip -6 route' "$WORK/rootless-made.sh") $(grep -c '/proc/net/tcp /proc/net/tcp6' "$WORK/rootless-made.sh")"
+
 # --- the wait for the listener of the host-side check: read from the sockets, never by a connection ---
 grep -m1 '^	listener_up() {' "$LIB" | sed 's/^[[:space:]]*//' > "$WORK/listener_up.sh"
 check "the function that asks whether the listener is up is found in the lib" 1 "$(grep -c '^listener_up() {' "$WORK/listener_up.sh")"

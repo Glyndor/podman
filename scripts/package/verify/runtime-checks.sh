@@ -49,7 +49,10 @@ case "\$1" in
 		echo "the answer was: \$got"
 		# Where the container thought the host was, and what this machine listens on, for the log.
 		\$P run --rm --network pasta "$image" sh -c 'grep internal /etc/hosts; ip -4 route 2> /dev/null || true' 2>&1
-		grep -c ' 0A ' /proc/net/tcp | sed 's/^/listening sockets of this machine: /'
+		echo "pasta: \$(pasta --version 2>&1 | head -n 1); passt package: \$(rpm -q passt 2> /dev/null || pacman -Q passt 2> /dev/null || echo unknown)"
+		\$P run --rm --network pasta "$image" sh -c 'ip -4 addr; ip -6 addr; ip -6 route' 2>&1
+		awk '\$4 == "0A" { n++ } END { print "listening sockets of this machine, tcp and tcp6: " n + 0 }' /proc/net/tcp /proc/net/tcp6 2> /dev/null
+		(ss -ltn 2> /dev/null || netstat -ltn 2> /dev/null) | grep -e ':18473' -e State || true
 		exit 1 ;;
 	dns)
 		\$P network create rlnet > /dev/null || exit 1
@@ -109,14 +112,18 @@ if rl userns > /dev/null 2>&1; then
 	# A listener on this machine, fetched from inside a rootless container through the address
 	# Podman maps to the host: the option an older pasta does not have.
 	# The listener of the host side: a server in a container on the network of this machine. The image has no
-	# httpd, only nc, which is why it is nc; `-ll` keeps it listening for any number of connections, so asking
-	# whether it is up does not use it up, and it listens on :: for both address families, which is why tcp6 is
-	# read as well as tcp. It is waited for by reading the sockets of this network for one in the listening state on
-	# port 18473 (0x4829), and never by connecting to it: a connection that closes at once made the server of an
-	# aarch64 runner end before the container that was the point of the check could reach it. When it is not up the
-	# check shows why: a server that never started once read as "connection refused" from pasta.
+	# httpd, only nc, which is why it is nc; `-ll` keeps it listening for any number of connections, and it listens
+	# on :: for both address families, which is why tcp6 is read as well as tcp. The program it runs for each
+	# connection reads the request up to its empty line BEFORE it answers: one that answered at once and closed
+	# left the request unread, the kernel answered that close with a reset, and the container sometimes saw the reset
+	# before the answer, as "Connection reset by peer" (measured through pasta on x86_64: 2 of 120 fetches with the
+	# old program while the machine was loaded, none of 240 with this one; a server that answers and closes at once
+	# gave 8 of 80, one that reads the request first 0 of 80). It is waited for by reading the sockets of this network for one in the listening state on
+	# port 18473 (0x4829), without connecting to it. When it is not up the check shows why: a server that never
+	# started once read as "connection refused" from pasta.
+	serve='while read -r l; do [ -n "${l%?}" ] || break; done; printf "HTTP/1.0 200 OK\r\nContent-Length: 9\r\n\r\npasta-ok\n"'
 	listener_up() { awk '$4 == "0A" && $2 ~ /:4829$/ { found = 1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6 2> /dev/null; }
-	p run -d --name hostlisten --network host "$image" sh -c 'nc -ll -p 18473 -e sh -c "printf \"HTTP/1.0 200 OK\r\nContent-Length: 9\r\n\r\npasta-ok\n\""' > /tmp/hostlisten.log 2>&1
+	p run -d --name hostlisten --network host "$image" nc -ll -p 18473 -e sh -c "$serve" > /tmp/hostlisten.log 2>&1
 	for _ in $(seq 1 30); do listener_up && break; sleep 0.5; done
 	if ! listener_up; then
 		note "the listener is not up: $(cat /tmp/hostlisten.log); $(p ps -a --format '{{.Names}} {{.Status}}' 2>&1 | paste -sd';'); $(p logs hostlisten 2>&1 | tail -n 5 | paste -sd';')"
