@@ -9,7 +9,7 @@
 # (or its equivalent), which the package manager checked against the distribution's key:
 # upstream's spec fetches the head of a branch that carries no signature.
 #
-# Layout it expects: the sources at /src/{podman,netavark,aardvark}, this repository's
+# Layout it expects: the sources at /src/{podman,netavark,aardvark,extras}, this repository's
 # scripts/ at /scripts (read only), and /out for the packages. GLYNDOR_SRC and GLYNDOR_SCRIPTS
 # move them, for tests.
 #
@@ -45,3 +45,5 @@ trap 'rm -rf "$work"' EXIT
 git config --global --add safe.directory '*'
 bash "$scripts/package/build-payload.sh" "$src/podman" "$src/netavark" "$src/aardvark" "$work/payload" "$family" "$shortnames" >&2
 bash "$scripts/package/rpm/build-rpm.sh" "$work/payload" "$id" "$version" "$out"
+# The dependencies this distribution takes beside podman, from the sources the runner verified.
+bash "$scripts/package/rpm/build-extras.sh" "$id" "${version##*+r}" "$src/extras" "$out" >&2

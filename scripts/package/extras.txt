@@ -1,0 +1,18 @@
+# The dependencies that are packaged beside podman where a distribution lacks them or has them
+# too old (the ids that take each are the `extras` column of distros.txt), one per line, eight
+# fields separated by |:
+#
+#   name | version | epoch | kind | source | pin | key file under keyring/extras | key fingerprint
+#
+# kind tarball: <source> is the URL of a release tarball, <pin> is sha256:<hash> of it, and the
+#   tarball is fetched with <source>.asc, or <source minus .tar.xz>.tar.xz.asc, next to it, whose
+#   signature has to verify against the key file and be made by that fingerprint.
+# kind git: <source> is a repository, <pin> is <tag>=<commit>: the tag has to resolve to that
+#   commit. The project signs neither, so what is trusted is the commit a reviewer read, and a
+#   newer one is a pull request that changes this line.
+#
+# Version of the package = <version>; epoch = what the distributions use for that name.
+crun|1.31|0|tarball|https://github.com/containers/crun/releases/download/1.31/crun-1.31.tar.gz|sha256:17d04ba159fada1f1300a36b8afe869afb38bf1bbda28da052e83bb4bee20108|kolyshkin-C2428CD75720FACDCF76B6EA17DE5ECB75A1100E.asc|C2428CD75720FACDCF76B6EA17DE5ECB75A1100E
+catatonit|0.2.1|0|tarball|https://github.com/openSUSE/catatonit/releases/download/v0.2.1/catatonit.tar.xz|sha256:9950425501af862e12f618bdc930ea755c46db6a16072a1462b4fc93b2bd59bc|cyphar-5F36C6C61B5460124A75F5A69E18AA267DDB8DB4.asc|5F36C6C61B5460124A75F5A69E18AA267DDB8DB4
+conmon|2.2.1|2|git|https://github.com/containers/conmon.git|v2.2.1=c8cc2c4db27531bd4e084ce7857f73cd21ee639d|-|-
+passt|20261002|0|git|https://passt.top/passt|2026_10_02.cba3570=cba357068dc586e7540971eb40bb56c5e62c4de1|-|-

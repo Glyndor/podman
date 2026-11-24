@@ -108,6 +108,8 @@ jobs:
           fetch podman podman "$PODMAN" "$PODMAN_SHA"
           fetch netavark netavark "$NETAVARK" "$NETAVARK_SHA"
           fetch aardvark aardvark-dns "$AARDVARK" "$AARDVARK_SHA"
+      - name: Fetch the dependencies this distribution takes beside Podman, and verify them
+        run: bash scripts/package/rpm/fetch-extras.sh "$ID" "$RUNNER_TEMP/extras"
       - name: Let an unprivileged user create a user namespace in a container
         run: bash scripts/package/verify/prepare-runner.sh
       - name: Build the package in the container of the distribution
@@ -118,7 +120,7 @@ jobs:
           docker run --rm \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
             -v "$RUNNER_TEMP/podman:/src/podman" -v "$RUNNER_TEMP/netavark:/src/netavark" \
-            -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
+            -v "$RUNNER_TEMP/aardvark:/src/aardvark" -v "$RUNNER_TEMP/extras:/src/extras:ro" -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
             -v "$RUNNER_TEMP/out:/out" "package-$ID" \
             bash /scripts/package/rpm/run-build.sh "$ID" "$pv" /out
           ls -l "$RUNNER_TEMP/out"
