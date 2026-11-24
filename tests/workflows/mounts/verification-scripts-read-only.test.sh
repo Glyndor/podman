@@ -49,6 +49,7 @@ WRITABLE = {
     ("reusable-package.yml", "Build the package in the container of the distribution", "$RUNNER_TEMP/netavark"): "cargo writes the build tree of netavark",
     ("reusable-package.yml", "Build the package in the container of the distribution", "$RUNNER_TEMP/aardvark"): "cargo writes the build tree of aardvark-dns",
     ("reusable-package.yml", "Build the package in the container of the distribution", "$RUNNER_TEMP/out"): "the packages are written here",
+    ("reusable-package.yml", "Make the repository the package manager will read, with the tool of the distribution", "$RUNNER_TEMP/repo"): "createrepo_c writes the metadata of the repository here",
 }
 # How many times each step mounts the scripts directory, which is once for every
 # `docker run` that runs a script from it.
@@ -58,6 +59,7 @@ SCRIPT_MOUNTS = {
     ("reusable-build.yml", "Check an older release refuses the package"): 1,
     ("release.yml", "Upgrade from it without losing an edited policy.json"): 1,
     ("reusable-package.yml", "Build the package in the container of the distribution"): 1,
+    ("reusable-package.yml", "Make the repository the package manager will read, with the tool of the distribution"): 1,
     ("reusable-package.yml", "Install it with the package manager on a clean image and over the distribution's Podman, and run containers"): 1,
 }
 CHAINS = {";", "&&", "||", "|", "&", "(", ")"}

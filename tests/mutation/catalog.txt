@@ -542,3 +542,7 @@ package-engine-files-the-configuration-is-empty	scripts/package/verify/engine-fi
 
 rpm-check-replacement-cannot-ask-the-repositories-what3	scripts/package/rpm/check-replacement.sh	reqs="$(requires_of "$pkg")" || { echo "cannot ask the repositories what $pkg requires" >&2; exit 1; }	reqs="$(requires_of "$pkg")" || true	tests/package/rpm/check-replacement.test.sh
 rpm-check-replacement-zypper-requirers-unreadable	scripts/package/rpm/check-replacement.sh	|| { echo "cannot ask zypper what requires podman" >&2; exit 1; }	|| true	tests/package/rpm/check-replacement.test.sh
+make-repo-input-is-not-a-directory	scripts/package/rpm/make-repo.sh	[ -d "$in" ] ||	true ||	tests/package/rpm/make-repo.test.sh
+make-repo-output-is-not-a-directory	scripts/package/rpm/make-repo.sh	[ -d "$out" ] ||	true ||	tests/package/rpm/make-repo.test.sh
+make-repo-no-rpm-to-make-a-repository-of	scripts/package/rpm/make-repo.sh	compgen -G "$in/*.rpm" > /dev/null ||	true ||	tests/package/rpm/make-repo.test.sh
+make-repo-writes-no-repomd	scripts/package/rpm/make-repo.sh	[ -f "$out/repodata/repomd.xml" ] ||	true ||	tests/package/rpm/make-repo.test.sh

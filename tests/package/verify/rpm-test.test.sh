@@ -54,5 +54,27 @@ check "one that stays is shown with ps, its network and the containers of the us
 check "and the check no longer asks only for the first one at the instant" 0 "$(grep -c 'test -z "$(pasta_left)"' "$HERE/scripts/package/verify/runtime-checks.sh")"
 check "the checks that need a machine of the distribution name themselves in the log" 1 "$(grep -c 'echo "== \$name"' "$SCRIPT")"
 
+# --- the repository: its metadata is made before, in the build container, and read by every image ---
+WORKM="$(mktemp -d)"
+trap 'rm -rf "$WORKM"' EXIT
+sed -n '/^pm_make_metadata() {/,/^}/p' "$SCRIPT" > "$WORKM/pm_make_metadata.sh"
+check "the function that makes the metadata when there is none is found" 1 "$(grep -c '^pm_make_metadata() {' "$WORKM/pm_make_metadata.sh")"
+mkdir -p "$WORKM/bin" "$WORKM/withmeta/repodata" "$WORKM/without"
+: > "$WORKM/withmeta/repodata/repomd.xml"
+for tool in dnf zypper createrepo_c; do
+	printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\n' "$tool" "$WORKM" > "$WORKM/bin/$tool"
+	chmod +x "$WORKM/bin/$tool"
+done
+meta() { # <family> <dir> -> exit status and the calls of the tools
+	: > "$WORKM/calls"
+	( PATH="$WORKM/bin:$PATH"; export family="$1"; . "$WORKM/pm_make_metadata.sh"; pm_make_metadata "$2" ) > /dev/null 2>&1
+	echo "$? $(paste -sd'|' "$WORKM/calls")"
+}
+check "with the metadata made before, no tool is asked for anything, on every family" "0 |0 |0 " "$(meta el "$WORKM/withmeta")|$(meta suse "$WORKM/withmeta")|$(meta fedora "$WORKM/withmeta")"
+check "without it on an EL image, dnf installs the tool and it makes the metadata" "0 dnf install -y createrepo_c|createrepo_c $WORKM/without" "$(meta el "$WORKM/without")"
+check "and on openSUSE, zypper does" "0 zypper --non-interactive install --no-recommends createrepo_c|createrepo_c $WORKM/without" "$(meta suse "$WORKM/without")"
+check "the repository of the proof is the packages and the metadata made before, copied together" 1 "$(grep -c 'cp -r "$rpms/repodata" "$repo/"' "$SCRIPT")"
+check "and the repositories are no longer made by installing the tool in the two package managers' branches" 0 "$(sed -n '/^pm_add_repo() {/,/^}/p; /pm_add_repo() {/,/} ;;/p' "$SCRIPT" | grep -c 'createrepo_c')"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

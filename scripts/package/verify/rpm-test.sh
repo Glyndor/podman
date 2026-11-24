@@ -45,6 +45,17 @@ nevr="$epoch:$version-$revision.glyndor.$id"
 # missing otherwise shows up minutes in, as the failure of the one check that needed it.
 bash "$scripts/package/require-tools.sh" rpm "$here/test-tools.txt" || exit 1
 
+# The metadata of the repository is made before this runs, in the build container of the distribution (make-repo.sh), and
+# is found next to the packages: an image that has no createrepo_c in its repositories, Red Hat's UBI, reads the same
+# repository. Without it, the tool of the image makes it.
+pm_make_metadata() { # <repository directory with the rpm files, and repodata when it was made before>
+	[ -f "$1/repodata/repomd.xml" ] && return 0
+	case "$family" in
+		suse) zypper --non-interactive install --no-recommends createrepo_c ;;
+		*) dnf install -y createrepo_c ;;
+	esac && createrepo_c "$1"
+}
+
 # --- what the distribution's package manager is called here ------------------------------------
 case "$family" in
 	suse)
@@ -53,8 +64,7 @@ case "$family" in
 		pm_upgrade() { zypper --non-interactive update --allow-vendor-change; }
 		pm_reinstall() { zypper --non-interactive install --force "$@"; }
 		pm_add_repo() {
-			zypper --non-interactive install --no-recommends createrepo_c \
-				&& createrepo_c "$1" \
+			pm_make_metadata "$1" \
 				&& zypper --non-interactive addrepo --no-gpgcheck "file://$1" glyndor-test \
 				&& zypper --non-interactive refresh glyndor-test
 		} ;;
@@ -64,8 +74,7 @@ case "$family" in
 		pm_upgrade() { dnf upgrade -y; }
 		pm_reinstall() { dnf reinstall -y "$@"; }
 		pm_add_repo() {
-			dnf install -y createrepo_c \
-				&& createrepo_c "$1" \
+			pm_make_metadata "$1" \
 				&& printf '[glyndor-test]\nname=Glyndor test repository\nbaseurl=file://%s\nenabled=1\ngpgcheck=0\nrepo_gpgcheck=0\n' "$1" > /etc/yum.repos.d/glyndor-test.repo
 		} ;;
 esac
@@ -138,6 +147,7 @@ fi
 
 repo="$(mktemp -d)"
 cp "$rpms"/*.rpm "$repo/"
+[ ! -d "$rpms/repodata" ] || cp -r "$rpms/repodata" "$repo/"
 check "the packages are put in a repository the package manager reads" pm_add_repo "$repo"
 if [ "$mode" = upgrade ] && [ -n "$before" ]; then
 	check "the update replaces the distribution's packages" pm_upgrade
