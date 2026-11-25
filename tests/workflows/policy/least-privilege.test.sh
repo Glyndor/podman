@@ -60,6 +60,7 @@ ALLOWED = {
     ("watchdog.yml", "alert", "issues"): "opens the issue when the release is behind upstream",
     ("watchdog.yml", "keyring-watch-freshness", "issues"): "opens the issue when the keyring watch stopped",
     ("watchdog.yml", "mutation-freshness", "issues"): "opens the issue when the mutation sweep stopped",
+    ("watchdog.yml", "tool-versions", "issues"): "opens the issue when a pinned linter is behind upstream",
 }
 LEVELS = {"read", "write", "none"}
 

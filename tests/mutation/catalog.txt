@@ -75,6 +75,15 @@ delivery-lag-release-unreadable	scripts/monitoring/delivery-lag.sh	|| { echo "ca
 schedule-freshness-newest-run-too-old	scripts/monitoring/schedule-freshness.sh	if [ "$hours" -gt "$max_hours" ]; then	if false; then	tests/monitoring/schedule-freshness.test.sh
 schedule-freshness-start-is-not-before-now	scripts/monitoring/schedule-freshness.sh	[[ "$since" =~ ^[0-9]+$ ]] && [ "$since" -le "$now" ] \	true \	tests/monitoring/schedule-freshness.test.sh,tests/workflows/watchdog/watchdog-freshness.test.sh
 schedule-freshness-no-run-finished	scripts/monitoring/schedule-freshness.sh	if [ "$newest" = none ]; then	if false; then	tests/monitoring/schedule-freshness.test.sh,tests/workflows/watchdog/watchdog-freshness.test.sh
+tools-past-lag	scripts/monitoring/check-tool-versions.sh	    if days > lag_days:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-first-newer	scripts/monitoring/check-tool-versions.sh	    days = (now - min(newer)).days	    days = (now - max(newer)).days	tests/monitoring/check-tool-versions.test.sh
+tools-unreadable	scripts/monitoring/check-tool-versions.sh	        problems.append(f"cannot read the releases of {upstream}: {exc}")	        pass	tests/monitoring/check-tool-versions.test.sh
+tools-no-release	scripts/monitoring/check-tool-versions.sh	    if not found:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-pins-disagree	scripts/monitoring/check-tool-versions.sh	    if len(shellcheck) != 1:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-verdict	scripts/monitoring/check-tool-versions.sh	if problems or behind:	if False:	tests/monitoring/check-tool-versions.test.sh
+tools-lag-constant	scripts/monitoring/check-tool-versions.sh	lag_days = LAG_DAYS	lag_days = int(os.environ.get("MAX_LAG_DAYS", LAG_DAYS))	tests/monitoring/check-tool-versions.test.sh
+tools-overrides	scripts/monitoring/check-tool-versions.sh	            if given:	            if False:	tests/monitoring/check-tool-versions.test.sh
+tools-actionlint-pins-disagree	scripts/monitoring/check-tool-versions.sh	    if len(actionlint) != 1:	    if False:	tests/monitoring/check-tool-versions.test.sh
 check-commit-identity-personal-address	scripts/quality/check-commit-identity.sh	[ "$bad" -eq 0 ] || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }	[ "$bad" -eq 0 ] || true	tests/quality/check-commit-identity.test.sh
 check-commit-identity-range-that-cannot-be-listed	scripts/quality/check-commit-identity.sh	the range could not be checked" >&2; exit 1; }	the range could not be checked" >&2; }	tests/quality/check-commit-identity.test.sh
 check-mutation-coverage-a-finding-fails	scripts/quality/check-mutation-coverage.sh	if errors:	if False:	tests/quality/check-mutation-coverage.test.sh

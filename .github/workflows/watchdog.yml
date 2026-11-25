@@ -6,6 +6,9 @@ name: watchdog
 # asks whether the newest release is missing something upstream (or this
 # repository's own build recipe) has had for more than a day, and says so.
 #
+# shellcheck and actionlint are pinned by version and sha256 inside workflows, where Dependabot does
+# not look, so the third job compares those pins with the releases upstream has published.
+#
 # The same goes for the daily keyring-watch, which says when upstream changes the
 # keys that sign Podman: a cron that stops firing says nothing, so the second job
 # asks whether it has run in the last two days.
@@ -38,6 +41,8 @@ on:
     paths:
       - .github/workflows/watchdog.yml
       - scripts/monitoring/**
+      - .github/workflows/tests.yml
+      - .github/workflows/reusable-workflow-lint.yml
   workflow_dispatch:
 
 permissions: {}
@@ -270,4 +275,44 @@ jobs:
             gh issue comment "$open" --body "$body"
           else
             gh issue create --title "$title" --label type:bug --label prio:P2 --label area:ci --body "$body"
+          fi
+
+  # shellcheck and actionlint decide required checks and are pinned by version and sha256 in tests.yml and
+  # reusable-workflow-lint.yml. Dependabot moves `uses:` pins and nothing else, so a version written as a value had no
+  # update path: a frozen linter stays green while the releases after it fix bugs and learn new checks. The script compares
+  # the pins with the newest releases of koalaman/shellcheck and rhysd/actionlint and fails when a newer one has been out
+  # for more than thirty days. Two `gh release list` calls on public repositories, so `contents: read` is all it holds;
+  # the script imports yaml, which the runner image ships.
+  tool-versions:
+    name: pinned tool versions
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      issues: write
+    # Ceiling, not measured: two gh calls and a checkout.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the pinned tool versions with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/monitoring/check-tool-versions.sh
+
+      - name: Open an issue, or add to the one that is open
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="A pinned linter is behind upstream"
+          body="shellcheck or actionlint has a release that has been out for more than thirty days and the pin has not moved, or the check could not read a pin or upstream. Read the run: $RUN_URL"
+          open="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --label type:deps --label prio:P2 --label area:ci --body "$body"
           fi
