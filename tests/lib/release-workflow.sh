@@ -104,6 +104,27 @@ elif rule == "previous":
     want = "${{ needs.plan.outputs.previous_mldsa }}"
     if str((jobs["sign"].get("env") or {}).get("PREVIOUS_MLDSA", "")) != want:
         print(f"sign does not take PREVIOUS_MLDSA from {want}")
+elif rule == "checkout":
+    # No job of release.yml checks out a ref it was handed: the checkout is the commit of the event, and the jobs that
+    # sign and publish compare it with the commit the plan resolved in the very next step, before any code of the
+    # repository runs. A ref taken from an output is what CodeQL reads as untrusted code in a job that uploads an artifact.
+    for name, cfg in jobs.items():
+        for s in cfg.get("steps") or []:
+            if str(s.get("uses", "")).startswith("actions/checkout@") and "ref" in (s.get("with") or {}):
+                print(f"{name} checks out a ref")
+    for name in ("sign", "publish"):
+        cfg = jobs[name]
+        steps = cfg["steps"]
+        at = [i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith("actions/checkout@")]
+        if len(at) != 1:
+            print(f"{name} has {len(at)} checkouts, expected 1")
+            continue
+        nxt = steps[at[0] + 1]
+        run = str(nxt.get("run", ""))
+        if "git rev-parse HEAD" not in run or '"$SHA"' not in run or "exit 1" not in run:
+            print(f"{name}: the step after the checkout does not refuse a HEAD that is not the commit the plan resolved")
+        if str((cfg.get("env") or {}).get("SHA", "")) != "${{ needs.plan.outputs.sha }}":
+            print(f"{name} does not take SHA from the plan")
 elif rule == "isolation":
     # What a job that signs or publishes may do with what the build jobs handed it. The
     # artifacts are third-party output: they are downloaded one by name, outside the
