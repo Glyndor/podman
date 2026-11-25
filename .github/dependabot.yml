@@ -56,6 +56,11 @@ updates:
     directories:
       - "/scripts/package/images/*"
     ignore:
+      # Amazon Linux 2023 is pinned by its floating tag, 2023, and the digest of that tag is what moves. The registry also has
+      # a tag for every build (2023.0.20230614.0, 2023.9.20251208.0), and Dependabot reads those as versions of "2023": it
+      # proposed 2023.0.20230614.0, an image from 2023, in place of the current one (podman#105). Nothing above 2023 is taken.
+      - dependency-name: "amazonlinux/amazonlinux"
+        versions: [">2023"]
       - dependency-name: "*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
     schedule:

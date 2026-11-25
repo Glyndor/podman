@@ -591,3 +591,5 @@ install-build-deps-unknown-extra	scripts/package/rpm/install-build-deps.sh	*) ec
 install-build-deps-crun-without-json-c	scripts/package/rpm/install-build-deps.sh	*:crun) required+=(libcap-devel json-c-devel) ;;	*:crun) ;;	tests/package/rpm/install-build-deps.test.sh
 install-build-deps-catatonit-without-static-libc	scripts/package/rpm/install-build-deps.sh	*:catatonit) required+=(autoconf automake libtool glibc-static) ;;	*:catatonit) required+=(autoconf automake libtool) ;;	tests/package/rpm/install-build-deps.test.sh
 install-build-deps-suse-names	scripts/package/rpm/install-build-deps.sh	suse:crun) required+=(libcap-devel libjson-c-devel) ;;	suse:crun) required+=(libcap-devel json-c-devel) ;;	tests/package/rpm/install-build-deps.test.sh
+package-image-amzn2023-dated-tag	scripts/package/images/amzn2023/Dockerfile	amazonlinux:2023@sha256:	amazonlinux:2023.0.20230614.0@sha256:	tests/package/image-tags.test.sh
+dependabot-images-take-the-dated-amazon-tags	.github/dependabot.yml	        versions: [">2023"]	        versions: []	tests/package/image-tags.test.sh
