@@ -6,7 +6,7 @@
 # into that image beside the base is a compiler, a short-name list, the source of
 # passt and the AppArmor tools that compile its profile, and each comes through apt,
 # which checks it against a signed Release file:
-# Rust from trixie-backports instead of an installer piped into a shell, passt's source
+# Rust and Go from trixie-backports instead of an installer piped into a shell, passt's source
 # from the archive because its tags carry no signature, the short names from Debian's
 # package because upstream's spec fetches the head of an unsigned branch. Replacing any
 # of them with a download left every suite green, and a change there is a change to
@@ -60,7 +60,7 @@ for ins in instructions:
             print(f"an apt source that is not Debian's trixie-backports: {source}")
 joined = " ".join(instructions)
 for need, what in (
-    (r"apt-get install [^&]*-t trixie-backports cargo rustc\b", "Rust is not installed from trixie-backports"),
+    (r"apt-get install [^&]*-t trixie-backports cargo rustc golang-go\b", "Rust and Go are not installed from trixie-backports"),
     (r"apt-get source [^&]*-t trixie-backports passt\b", "the source of passt is not taken from trixie-backports"),
     (r"apt-get download golang-github-containers-common\b", "the short-name list is not taken from Debian's package"),
     (r"apt-get install [^&]*(?<![\w-])apparmor(?![\w-])", "apparmor_parser is not installed, and the build compiles the profile of pasta with it"),
@@ -87,8 +87,10 @@ add() { cp "$D" "$B" && printf '%s\n' "$1" >> "$B"; } # <line>: a copy with one 
 
 swap "apt-get install -y -qq --no-install-recommends -t trixie-backports cargo rustc" "curl -sSf https://sh.rustup.rs | sh -s -- -y"
 check "Rust from an installer piped into a shell is named, twice over" \
-	"RUN downloads with curl, which checks nothing|RUN downloads with rustup, which checks nothing|Rust is not installed from trixie-backports" \
+	"RUN downloads with curl, which checks nothing|RUN downloads with rustup, which checks nothing|Rust and Go are not installed from trixie-backports" \
 	"$(violations "$B" | paste -sd'|')"
+swap "-t trixie-backports cargo rustc golang-go" "cargo rustc golang-go"
+check "Rust and Go from whatever release answers are named" "Rust and Go are not installed from trixie-backports" "$(violations "$B")"
 swap "apt-get source -qq -t trixie-backports passt" "git clone --depth 1 https://passt.top/passt"
 check "the source of passt from a clone is named" \
 	"RUN downloads with git clone, which checks nothing|the source of passt is not taken from trixie-backports" "$(violations "$B" | paste -sd'|')"

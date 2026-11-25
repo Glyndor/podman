@@ -259,7 +259,8 @@ dockerfile-base-is-not-pinned-by-digest	scripts/build/Dockerfile	FROM debian:13@
 dockerfile-ubuntu2404-is-not-pinned-by-digest	scripts/build/Dockerfile	FROM ubuntu:24.04@sha256:	FROM ubuntu:24.04 #	tests/build/dockerfile-base-images.test.sh
 dockerfile-ubuntu2604-is-not-pinned-by-digest	scripts/build/Dockerfile	FROM ubuntu:26.04@sha256:	FROM ubuntu:26.04 #	tests/build/dockerfile-base-images.test.sh
 dockerfile-ubuntu2204-is-not-pinned-by-digest	scripts/build/Dockerfile	FROM ubuntu:22.04@sha256:	FROM ubuntu:22.04 #	tests/build/dockerfile-base-images.test.sh
-dockerfile-rust-is-not-from-the-archive	scripts/build/Dockerfile	&& apt-get install -y -qq --no-install-recommends -t trixie-backports cargo rustc \	&& curl -sSf https://sh.rustup.rs | sh -s -- -y \	tests/build/dockerfile-sources.test.sh
+dockerfile-rust-is-not-from-the-archive	scripts/build/Dockerfile	&& apt-get install -y -qq --no-install-recommends -t trixie-backports cargo rustc golang-go \	&& curl -sSf https://sh.rustup.rs | sh -s -- -y \	tests/build/dockerfile-sources.test.sh
+dockerfile-go-is-not-from-the-archive	scripts/build/Dockerfile	-t trixie-backports cargo rustc golang-go \	-t trixie-backports cargo rustc \	tests/build/dockerfile-sources.test.sh
 dockerfile-passt-source-is-not-from-the-archive	scripts/build/Dockerfile	&& apt-get source -qq -t trixie-backports passt \	&& git clone --depth 1 https://passt.top/passt \	tests/build/dockerfile-sources.test.sh
 dockerfile-shortnames-are-not-from-the-archive	scripts/build/Dockerfile	&& apt-get download golang-github-containers-common \	&& wget -q https://example.invalid/shortnames.conf \	tests/build/dockerfile-sources.test.sh
 commit-hygiene-secret-scan-reads-the-last-commit-only	.github/workflows/commit-hygiene.yml	bash "$RUNNER_TEMP/check-secrets.sh" "$BASE" "$HEAD"	bash "$RUNNER_TEMP/check-secrets.sh" "$HEAD~1" "$HEAD"	tests/workflows/pr-checks/commit-hygiene-range.test.sh
