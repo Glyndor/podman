@@ -4,7 +4,7 @@ The README shows the pipeline as a diagram; these are its steps in full.
 
 - A scheduled workflow looks for the newest stable tag of [Podman](https://github.com/podman-container-tools/podman), [netavark](https://github.com/containers/netavark) and [aardvark-dns](https://github.com/containers/aardvark-dns) every six hours. Pre-releases are ignored. A new tag of any of the three starts a release.
 - Each tag must be an annotated tag signed by a key listed in [containers/release-keys](https://github.com/containers/release-keys); the keys are kept in `keyring/podman/`. An unsigned, expired or unknown signature stops the run.
-- The package is built from the official sources with the upstream `make` targets. Rust comes from Debian's own `trixie-backports`.
+- The package is built from the official sources with the upstream `make` targets. Rust and Go come from Debian's own `trixie-backports`.
 - Before signing, the same package is installed on clean Debian 13, Ubuntu 24.04 and Ubuntu 26.04, and runs a container on each, including one on a bridge network.
 - It links only libc and libm (both in `libc6`), libgcc and libseccomp, so one package serves every release. Signature checks use Go's OpenPGP instead of gpgme, and subid and sqlite are not linked, because those libraries are renamed between releases. Debian 12 and Ubuntu 22.04 are not supported: their glibc is older than netavark needs, and each build installs the package on both to show that apt refuses it.
 - On Ubuntu 24.04 the package uses `runc`, because that release's `crun` is too old for current Podman.

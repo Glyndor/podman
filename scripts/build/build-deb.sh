@@ -25,8 +25,10 @@ stage="$(mktemp -d)"
 work="$(mktemp -d)"
 trap 'rm -rf "$stage" "$work"' EXIT
 
-# GOTOOLCHAIN=auto lets the go in Debian 13 fetch the exact toolchain go.mod
-# asks for; the module proxy checks it against the Go checksum database.
+# The go of the build image comes from trixie-backports and is newer than the one go.mod asks
+# for, so it builds Podman itself. GOTOOLCHAIN=auto stays for the day go.mod asks for a newer
+# one than the archive has: the go command then fetches that toolchain, and the module proxy
+# checks it against the Go checksum database.
 export GOTOOLCHAIN=auto
 # containers_image_openpgp uses Go's own OpenPGP instead of gpgme, and the build
 # image has no subid or sqlite headers, so Podman links only libseccomp. That is

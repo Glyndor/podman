@@ -27,13 +27,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 FROM base AS build
 # The apparmor package is here for apparmor_parser, which compiles the profile of pasta
 # the build edits; its abi and abstractions are the base that profile includes.
-# netavark and aardvark-dns need a newer Rust than Debian 13 ships, so cargo and
-# rustc come from trixie-backports, which is Debian's own signed archive.
+# netavark and aardvark-dns need a newer Rust than Debian 13 ships, and Podman asks for a newer
+# Go than the 1.24 of trixie (its go.mod names the release), so cargo, rustc and go come from
+# trixie-backports, which is Debian's own signed archive. With a Go at least as new as the one
+# go.mod asks for, the build uses it and fetches no toolchain from the module proxy.
 RUN echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/backports.list \
 	&& apt-get update -qq \
-	&& apt-get install -y -qq --no-install-recommends -t trixie-backports cargo rustc \
+	&& apt-get install -y -qq --no-install-recommends -t trixie-backports cargo rustc golang-go \
 	&& apt-get install -y -qq --no-install-recommends \
-		ca-certificates git make gcc golang-go go-md2man pkg-config dpkg-dev xz-utils file \
+		ca-certificates git make gcc go-md2man pkg-config dpkg-dev xz-utils file \
 		protobuf-compiler python3 apparmor \
 		libseccomp-dev libsystemd-dev libapparmor-dev libbtrfs-dev \
 	&& rm -rf /var/lib/apt/lists/*
