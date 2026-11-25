@@ -3,21 +3,21 @@
 # Debian 13 and has to install on the other releases too, so the two Ubuntu
 # stages are clean installs the same smoke test runs against. They are pinned by
 # digest like the rest, so Dependabot moves them.
-FROM debian:13@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6 AS base
+FROM debian:13@sha256:3cda3ca472ce45507a5109c6a3907093e24d9ae67d55954c9a07a45665dafba2 AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS ubuntu2404
+FROM ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b AS ubuntu2404
 ENV DEBIAN_FRONTEND=noninteractive
 
 FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS ubuntu2604
 ENV DEBIAN_FRONTEND=noninteractive
 
 # An older release, only used to prove the package is refused there.
-FROM ubuntu:22.04@sha256:f64b2ffc2f10ab8f8505aa56b2664bd846cbb9df87c7e2532e30f7667021c0e6 AS ubuntu2204
+FROM ubuntu:22.04@sha256:b000e69a50ff940390233025e7a337fb8469b509e2334fa4d018ac30f3e18cdb AS ubuntu2204
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Debian 12, glibc 2.36, for the same proof.
-FROM debian:12@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8 AS debian12
+FROM debian:12@sha256:1d04200c2ece1d4d75a2a6f8e11ebce7d86a2ae28b34bb2c9cbb3ee9f4953e75 AS debian12
 ENV DEBIAN_FRONTEND=noninteractive
 
 # No gpgme, assuan, subid or sqlite headers on purpose: those libraries change
