@@ -6,14 +6,14 @@
 FROM debian:13@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6 AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
-FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS ubuntu2404
+FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS ubuntu2404
 ENV DEBIAN_FRONTEND=noninteractive
 
 FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS ubuntu2604
 ENV DEBIAN_FRONTEND=noninteractive
 
 # An older release, only used to prove the package is refused there.
-FROM ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde AS ubuntu2204
+FROM ubuntu:22.04@sha256:f64b2ffc2f10ab8f8505aa56b2664bd846cbb9df87c7e2532e30f7667021c0e6 AS ubuntu2204
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Debian 12, glibc 2.36, for the same proof.
