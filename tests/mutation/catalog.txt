@@ -606,3 +606,4 @@ read-released-second-signature-readable	scripts/upstream/read-released.sh	|| { e
 read-released-signature-verifies	scripts/upstream/read-released.sh	|| { echo "the signature of components.txt of $latest does not verify" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
 read-released-record-names-its-release	scripts/upstream/read-released.sh	if [ "$(grep -c '^release ' "$record")" != 1 ] || ! grep -qxF "release $latest" "$record"; then	if false; then	tests/upstream/read-released.test.sh
 read-released-signing-library	scripts/upstream/read-released.sh	echo "the signing library could not be installed to verify components.txt" >&2	echo x >&2	tests/upstream/read-released.test.sh
+read-released-verifies-downloaded-mldsa	scripts/upstream/read-released.sh	args+=(--mldsa-sig "$record.mldsa65.sig" --mldsa-keys "$anchor" --require-mldsa)	:	tests/upstream/read-released.test.sh

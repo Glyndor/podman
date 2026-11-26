@@ -161,5 +161,55 @@ check "and so is one in the plan's outputs" "plan does not hand on previous_mlds
 	"$(violations previous "$BAD")"
 
 
+# --- publish and rehearsal run the verification of the signed set, with the anchors each of them reads, and pass its
+# failure on: the names of their steps say nothing about that.
+for job in publish rehearsal; do
+	case "$job" in
+		publish) label="Verify every signature against the published keys" ;;
+		rehearsal) label="Verify every signature against the throwaway keys" ;;
+	esac
+	V="$WORK/verify-$job"
+	WS="$V/ws"
+	RT="$V/rt"
+	mkdir -p "$V/bin" "$WS/scripts/release"
+
+	if ! step release.yml "$job" "name=$label" "$V"; then
+		check "$job: verification step exists" 0 1
+		continue
+	fi
+
+	cat > "$V/bin/python3" <<'PY'
+#!/bin/sh
+[ "$1 $2 $3" = "-I -m venv" ] || exit 97
+mkdir -p "$4/bin"
+printf '#!/bin/sh\nexit 0\n' > "$4/bin/python"
+chmod +x "$4/bin/python"
+PY
+	cat > "$WS/scripts/release/signed-set.sh" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@" > "$CALLS"
+exit "$CHECK_EXIT"
+SH
+	chmod +x "$V/bin/python3" "$WS/scripts/release/signed-set.sh"
+
+	for answer in 0 83; do
+		rm -rf "$RT"; mkdir "$RT"
+		: > "$V/calls"
+		run_step "$V" "$WS" PATH="$V/bin:$PATH" \
+			RUNNER_TEMP="$RT" GITHUB_WORKSPACE="$WS" \
+			TAG=v6.2.0 REQUIRE_MLDSA=true \
+			CALLS="$V/calls" CHECK_EXIT="$answer"
+		check "$job: propagates verifier exit $answer" "$answer" "$rc"
+
+		ed="$WS/keyring/glyndor-release-ed25519.b64"
+		if [ "$job" = rehearsal ]; then
+			ed="$RT/dry-public/ed25519.b64"
+		fi
+		want="verify|$RT/signed|$ed|$WS/keyring/glyndor-release-mldsa65.b64|true|$RT/verifyvenv"
+		check "$job: verifies the signed set with the expected anchors" \
+			"$want" "$(paste -sd'|' "$V/calls")"
+	done
+done
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

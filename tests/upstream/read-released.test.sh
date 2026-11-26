@@ -117,6 +117,12 @@ refused "a signing library that cannot be installed" "could not be installed"
 printf 'QUJD\n' > "$root/keyring/glyndor-release-mldsa65.b64"
 record v6.2.0+r2; sign; ask v6.2.0+r2
 refused "a record without the second signature once the anchor holds a key" "no readable components.txt.mldsa65.sig"
+# A second signature that downloads and does not verify is refused, not only one that is missing.
+cp "$HERE/tests/release/fixtures/mldsa65/vector.mldsa65.b64" "$root/keyring/glyndor-release-mldsa65.b64"
+record v6.2.0+r2; sign
+head -c 3308 /dev/zero > "$FAKE_DIR/components.txt.mldsa65.sig"
+ask v6.2.0+r2
+refused "a downloaded but malformed second signature" "does not verify"
 printf '# no second key yet\n' > "$root/keyring/glyndor-release-mldsa65.b64"
 
 # --- the release published before records were signed: that tag with that record, and nothing else ---
