@@ -5,11 +5,13 @@ Besides the `.deb`, this repository builds Podman as an rpm for the distribution
 tags as the `.deb`, whose signatures are verified the same way, and they carry the same decisions:
 netavark and aardvark-dns of the same release in `/usr/libexec/podman`, the containers-common
 configuration of the release, and no gpgme, subid or sqlite linked. Nothing is compiled from a
-source that upstream did not sign.
+source that upstream did not sign, except conmon and passt where a distribution has to compile
+them, which publish no signature: what is trusted there is the commit a reviewer pinned (see below).
 
 Today the rows of the table are Fedora 45 and 44, Enterprise Linux 9 and 10 (built on AlmaLinux and also proved on Rocky and on Red Hat's UBI image), Amazon Linux 2023 and openSUSE Leap 16.1 and Tumbleweed. `package-check.yml` builds them on a pull request that
-changes how they are built, and each package is installed with `dnf` on a clean image and over the
-Fedora Podman, runs containers with and without root, and is removed. Release runs do not publish
+changes how they are built, and each package is installed with the package manager of its
+distribution (`dnf`, or `zypper` on openSUSE) on a clean image and over the distribution's own Podman,
+runs containers with and without root, and is removed. Release runs do not publish
 them yet.
 
 ## What a package says
@@ -19,8 +21,11 @@ them yet.
   and older than the next Podman.
 - The epoch is the one the distribution's own `podman` has (Fedora 5), because without one the package
   would be older than the distribution's at the same version and `dnf upgrade` would never replace it.
-- `podman` provides and obsoletes `podman-remote`, `podman-quadlet`, `netavark`, `aardvark-dns`,
-  `containers-common`, `containers-common-extra` and `skopeo-containers`, and obsoletes `podman-machine` and `podman-tests`, so a host that has the
+- `podman` provides and obsoletes `podman-remote`, `podman-quadlet`, `netavark`, `aardvark-dns` and, on Fedora,
+  Enterprise Linux and Amazon Linux, `containers-common`, `containers-common-extra` and `skopeo-containers`
+  (on openSUSE, the names that distribution gives them: `libcontainers-common`, `libcontainers-image`,
+  `libcontainers-storage`, `libcontainers-policy`, `libcontainers-default-policy`, `libcontainers-openSUSE-policy`
+  and `registries-conf`), and obsoletes `podman-machine` and `podman-tests`, so a host that has the
   distribution's packages upgrades without conflict and a later build of those by the distribution is not
   installed beside it. `podman-docker` and `podmansh` are built as the packages the distribution has, so a
   host that has them installed upgrades them too.

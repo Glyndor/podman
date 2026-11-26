@@ -3,9 +3,9 @@ name: Build and prove a native package (reusable)
 # Builds the rpm of one distribution for one architecture from the three verified upstream
 # tags, in the container of that distribution, and then installs it with the package manager
 # of that distribution on a clean image and on one that has the distribution's own Podman,
-# starts containers with and without root, and uninstalls it. release.yml and
-# package-check.yml call it once for every id of scripts/package/distros.txt and every
-# architecture of its row.
+# starts containers with and without root, and uninstalls it. package-check.yml calls it
+# once for every id of scripts/package/distros.txt and every architecture of its row;
+# release.yml does not call it yet, because release runs do not publish the rpm packages.
 #
 # Third-party code runs here (a compiler, the distribution's repositories, upstream sources),
 # so it holds contents: read and no secrets, and the checkout keeps no credentials. What it
