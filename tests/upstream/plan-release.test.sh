@@ -92,15 +92,23 @@ cat > "$WORK/bin/gh" <<'GH'
 case "$1 $2" in
 	"release list") echo v6.2.0+r2 ;;
 	"release download")
+		case " $* " in *" components.txt.sig "*) exit 1 ;; esac
 		while [ $# -gt 0 ]; do [ "$1" = --output ] && out="$2"; shift; done
 		cp "$RELEASE_COMPONENTS" "$out" ;;
 esac
 GH
 chmod +x "$WORK/bin/gh"
 printf 'v6.2.0\nv6.2.0+r2\n' > "$WORK/t-r2"
-RELEASE_COMPONENTS="$WORK/extra" PATH="$WORK/bin:$PATH" bash "$HERE/scripts/upstream/read-released.sh" "$WORK/read" >/dev/null 2>&1
+# The record of these releases is the one the repository accepts without a signature: read-released.sh runs from a copy
+# whose keyring names it. The signed form has its own cases in tests/upstream/read-released.test.sh.
+mkdir -p "$WORK/repo/scripts/upstream" "$WORK/repo/keyring"
+cp "$HERE/scripts/upstream/read-released.sh" "$WORK/repo/scripts/upstream/"
+pinned() { printf 'v6.2.0+r2 %s\n' "$(sha256sum "$1" | cut -d' ' -f1)" > "$WORK/repo/keyring/release-without-signed-components"; }
+pinned "$WORK/extra"
+RELEASE_COMPONENTS="$WORK/extra" PATH="$WORK/bin:$PATH" bash "$WORK/repo/scripts/upstream/read-released.sh" "$WORK/read" >/dev/null 2>&1
 check "a release read back with an extra line is not published again" "build=false" "$("$SCRIPT" "$fresh" "$WORK/read" "$WORK/t-r2")"
-RELEASE_COMPONENTS="$WORK/extra-old" PATH="$WORK/bin:$PATH" bash "$HERE/scripts/upstream/read-released.sh" "$WORK/read" >/dev/null 2>&1
+pinned "$WORK/extra-old"
+RELEASE_COMPONENTS="$WORK/extra-old" PATH="$WORK/bin:$PATH" bash "$WORK/repo/scripts/upstream/read-released.sh" "$WORK/read" >/dev/null 2>&1
 check "and one read back with a stale component is, as the next revision" "build=true tag=v6.2.0+r3" \
 	"$("$SCRIPT" "$fresh" "$WORK/read" "$WORK/t-r2" | paste -sd' ')"
 

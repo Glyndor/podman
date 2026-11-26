@@ -157,6 +157,9 @@ signed_dir() { # <mldsa true|false>
 		head -c 64 /dev/zero > "$WORK/sg/podman_6.2.0+r12_$a.deb.sig"
 		[ "$1" != true ] || head -c 3309 /dev/zero > "$WORK/sg/podman_6.2.0+r12_$a.deb.mldsa65.sig"
 	done
+	printf 'release v6.2.0+r12\n' > "$WORK/sg/components.txt"
+	head -c 64 /dev/zero > "$WORK/sg/components.txt.sig"
+	[ "$1" != true ] || head -c 3309 /dev/zero > "$WORK/sg/components.txt.mldsa65.sig"
 }
 signed() { out="$(bash "$SCRIPT" signed v6.2.0+r12 "$WORK/sg" "$1" 2>&1)"; rc=$?; }
 signed_dir false; signed false
@@ -184,6 +187,18 @@ out="$(bash "$SCRIPT" signed v6.2.0+r12 "$WORK/sg" maybe 2>&1)"; rc=$?
 check "a second-signature flag that is neither true nor false is refused" "1 1" "$rc $(says 'is true or false')"
 out="$(bash "$SCRIPT" signed v6.2.0+r11 "$WORK/sg" false 2>&1)"; rc=$?
 check "a signed set of another version is refused" "1" "$rc"
+signed_dir false; rm "$WORK/sg/components.txt"; signed false
+check "a signed set without components.txt is refused" "1 1" "$rc $(says 'not exactly the expected one')"
+signed_dir false; rm "$WORK/sg/components.txt.sig"; signed false
+check "and one without the signature of components.txt" "1 1" "$rc $(says 'not exactly the expected one')"
+signed_dir true; rm "$WORK/sg/components.txt.mldsa65.sig"; signed true
+check "and one without its second signature when that is required" "1 1" "$rc $(says 'not exactly the expected one')"
+signed_dir false; head -c 63 /dev/zero > "$WORK/sg/components.txt.sig"; signed false
+check "a signature of components.txt of the wrong size is refused" "1 1" "$rc $(says 'is not 64 bytes')"
+signed_dir false; head -c 4097 /dev/zero > "$WORK/sg/components.txt"; signed false
+check "a components.txt over the cap is refused" "1 1" "$rc $(says 'components.txt is over the size cap')"
+signed_dir false; rm "$WORK/sg/components.txt"; ln -s podman_6.2.0+r12_amd64.deb.sig "$WORK/sg/components.txt"; signed false
+check "a link in place of components.txt is refused" "1" "$rc"
 
 # --- usage -------------------------------------------------------------------------------
 bash "$SCRIPT" > /dev/null 2>&1; check "no arguments is a usage error" 2 "$?"

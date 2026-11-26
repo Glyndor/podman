@@ -223,6 +223,10 @@ jobs:
       PREVIOUS_MLDSA: ${{ needs.plan.outputs.previous_mldsa }}
       DRY_RUN: ${{ needs.plan.outputs.dry_run }}
       SHA: ${{ needs.plan.outputs.sha }}
+      PODMAN: ${{ needs.plan.outputs.podman }}
+      NETAVARK: ${{ needs.plan.outputs.netavark }}
+      AARDVARK: ${{ needs.plan.outputs.aardvark }}
+      RECIPE: ${{ needs.plan.outputs.recipe }}
     steps:
       # The commit of the event, which the plan resolved and every job of the run uses: no ref is named here, and the next
       # step refuses a checkout at any other commit. A ref that came from an output made CodeQL read this job's code as
@@ -416,17 +420,15 @@ jobs:
             exit 1
           fi
           required=false
-          require=()
           if [ -n "$GLYNDOR_RELEASE_MLDSA65_KEY" ] || [ "$PREVIOUS_MLDSA" = true ] || [ "$switched" = true ]; then
             required=true
-            require=(--require-mldsa)
           fi
-          for arch in amd64 arm64; do
-            deb="$stage/podman_${version}_${arch}.deb"
-            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$deb"
-            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$ed25519" \
-              --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$anchor" "${require[@]}"
+          # The record of the release is signed with the packages, with the same keys.
+          bash "$GITHUB_WORKSPACE/scripts/release/signed-set.sh" components "$stage/components.txt"
+          for name in "podman_${version}_amd64.deb" "podman_${version}_arm64.deb" components.txt; do
+            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$stage/$name"
           done
+          bash "$GITHUB_WORKSPACE/scripts/release/signed-set.sh" verify "$stage" "$ed25519" "$anchor" "$required" "$RUNNER_TEMP/signvenv"
           echo "require_mldsa=$required" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -553,14 +555,7 @@ jobs:
           python3 -I -m venv "$RUNNER_TEMP/verifyvenv"
           py="$RUNNER_TEMP/verifyvenv/bin/python"
           "$py" -I -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
-          version="${TAG#v}"
-          require=()
-          if [ "$REQUIRE_MLDSA" = true ]; then require=(--require-mldsa); fi
-          for arch in amd64 arm64; do
-            deb="$RUNNER_TEMP/signed/podman_${version}_${arch}.deb"
-            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64" \
-              --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64" "${require[@]}"
-          done
+          bash "$GITHUB_WORKSPACE/scripts/release/signed-set.sh" verify "$RUNNER_TEMP/signed" "$GITHUB_WORKSPACE/keyring/glyndor-release-ed25519.b64" "$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64" "$REQUIRE_MLDSA" "$RUNNER_TEMP/verifyvenv"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/signed/podman_*.deb
@@ -573,15 +568,14 @@ jobs:
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] || { echo "::error::the tag '$TAG' is not a version; refusing to publish."; exit 1; }
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::the commit '$SHA' is not a full commit id; refusing to publish."; exit 1; }
           version="${TAG#v}"
-          printf 'podman %s\nnetavark %s\naardvark-dns %s\nrecipe %s\n' "$PODMAN" "$NETAVARK" "$AARDVARK" "$RECIPE" > "$RUNNER_TEMP/components.txt"
           # The assets are named one by one from the tag. The ML-DSA-65 signatures are published
           # whenever the signing step required them, and the check of the set already refused a
           # release in which one was missing: a release is immutable, and one without its second
           # signature cannot be completed later.
           assets=()
-          for arch in amd64 arm64; do
-            assets+=("podman_${version}_${arch}.deb" "podman_${version}_${arch}.deb.sig")
-            if [ "$REQUIRE_MLDSA" = true ]; then assets+=("podman_${version}_${arch}.deb.mldsa65.sig"); fi
+          for name in "podman_${version}_amd64.deb" "podman_${version}_arm64.deb" components.txt; do
+            assets+=("$name" "$name.sig")
+            if [ "$REQUIRE_MLDSA" = true ]; then assets+=("$name.mldsa65.sig"); fi
           done
           # The tag is made here, on the commit the plan fixed and on nothing else. The API refuses a
           # reference that exists, whatever commit it points at, so a tag that somebody made while the
@@ -591,7 +585,7 @@ jobs:
             || { echo "::error::the tag $TAG could not be created on $SHA: it exists already, or the API refused; refusing to publish."; exit 1; }
           gh release create "$TAG" --verify-tag --title "Podman ${TAG#v}" \
             --notes "Podman $PODMAN with netavark $NETAVARK and aardvark-dns $AARDVARK, each built from its upstream tag on Debian 13. The tag signatures were verified against the keys in containers/release-keys, and each package was installed and run before signing." \
-            "${assets[@]}" "$RUNNER_TEMP/components.txt"
+            "${assets[@]}"
 
   # The end of a rehearsal, in the place of publish: it checks the signed set and every signature the
   # way publish does, against the public halves of the throwaway keys, and shows that no release was
@@ -633,16 +627,9 @@ jobs:
           python3 -I -m venv "$RUNNER_TEMP/verifyvenv"
           py="$RUNNER_TEMP/verifyvenv/bin/python"
           "$py" -I -m pip install --quiet --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/release/sign-requirements.txt"
-          version="${TAG#v}"
           anchor="$GITHUB_WORKSPACE/keyring/glyndor-release-mldsa65.b64"
           if [ -f "$RUNNER_TEMP/dry-public/mldsa65.b64" ]; then anchor="$RUNNER_TEMP/dry-public/mldsa65.b64"; fi
-          require=()
-          if [ "$REQUIRE_MLDSA" = true ]; then require=(--require-mldsa); fi
-          for arch in amd64 arm64; do
-            deb="$RUNNER_TEMP/signed/podman_${version}_${arch}.deb"
-            "$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/verify-sig.py" "$deb" "$deb.sig" "$RUNNER_TEMP/dry-public/ed25519.b64" \
-              --mldsa-sig "$deb.mldsa65.sig" --mldsa-keys "$anchor" "${require[@]}"
-          done
+          bash "$GITHUB_WORKSPACE/scripts/release/signed-set.sh" verify "$RUNNER_TEMP/signed" "$RUNNER_TEMP/dry-public/ed25519.b64" "$anchor" "$REQUIRE_MLDSA" "$RUNNER_TEMP/verifyvenv"
       - name: Show that no release was made
         env:
           GH_TOKEN: ${{ github.token }}
