@@ -262,9 +262,9 @@ CONTROL
 # /etc/containers belongs to the administrator and this package puts nothing in it. Releases
 # before config_free_since shipped /etc/containers/policy.json as a plain file of the package, the
 # policy that says which images may be pulled, so on an upgrade from one of those dpkg removes the
-# file, edited or not, because the new package no longer lists it. preinst sets an edited one
-# aside, which is any file whose sum is not one of the defaults those releases shipped, and
-# postinst puts it back. When there is no file in /etc at the end of a first install or of that
+# file, edited or not, because the new package no longer lists it. preinst sets aside an edited
+# one, which is any file whose sum is not one of the defaults those releases shipped, and a link
+# put in its place, which dpkg removes as well, and postinst puts it back. When there is no file in /etc at the end of a first install or of that
 # upgrade, postinst copies the default of /usr/share/containers there: buildah and skopeo of
 # Debian and Ubuntu read the policy only from /etc/containers, and Podman falls back to /usr/share.
 # Nothing is a conffile, so dpkg never asks; a file deleted by the administrator after that is not
@@ -277,11 +277,16 @@ cat > "$stage/DEBIAN/preinst" <<PREINST
 set -e
 if [ "\$1" = upgrade ] && dpkg --compare-versions "\$2" lt "$config_free_since"; then
 	f="\${DPKG_ROOT:-}/etc/containers/policy.json"
-	if [ -f "\$f" ] && [ ! -L "\$f" ]; then
+	if [ -L "\$f" ]; then
+		# A link is the administrator's arrangement, whatever it points at: the link itself is set aside, because dpkg
+		# removes it with the file it replaced.
+		rm -f "\$f.glyndor-kept"
+		cp -P "\$f" "\$f.glyndor-kept"
+	elif [ -f "\$f" ]; then
 		sum="\$(md5sum < "\$f" | cut -d' ' -f1)"
 		case " $known_policy_sums " in
 			*" \$sum "*) ;;
-			*) cp -p "\$f" "\$f.glyndor-kept" ;;
+			*) rm -f "\$f.glyndor-kept"; cp -p "\$f" "\$f.glyndor-kept" ;;
 		esac
 	fi
 fi
@@ -313,18 +318,27 @@ if [ "\$1" = configure ]; then
 		mkdir -p "\$root/var/lib/glyndor-podman"
 		md5sum < "\$f" | cut -d' ' -f1 > "\$rec"
 	}
+	# A link counts as there even when what it points at is not.
+	there() { [ -e "\$1" ] || [ -L "\$1" ]; }
+	same() { # two copies of the policy are the same: two links to one place, or two files with the same bytes
+		if [ -L "\$1" ] || [ -L "\$2" ]; then
+			[ -L "\$1" ] && [ -L "\$2" ] && [ "\$(readlink "\$1")" = "\$(readlink "\$2")" ]
+		else
+			cmp -s "\$1" "\$2"
+		fi
+	}
 	if [ -z "\$2" ] || dpkg --compare-versions "\$2" lt "$config_free_since"; then
-		if [ -e "\$f.glyndor-kept" ] && [ ! -e "\$f" ]; then
+		if there "\$f.glyndor-kept" && ! there "\$f"; then
 			mv "\$f.glyndor-kept" "\$f"
 			echo "podman: kept your /etc/containers/policy.json, which this package no longer ships" >&2
-		elif [ ! -e "\$f" ] && [ ! -L "\$f" ]; then
+		elif ! there "\$f"; then
 			mkdir -p "\$root/etc/containers"
 			cp -p "\$root/usr/share/containers/policy.json" "\$f"
 			record
 		fi
 	fi
-	if [ -e "\$f.glyndor-kept" ]; then
-		if [ -e "\$f" ] && ! cmp -s "\$f.glyndor-kept" "\$f"; then
+	if there "\$f.glyndor-kept"; then
+		if there "\$f" && ! same "\$f.glyndor-kept" "\$f"; then
 			mv "\$f.glyndor-kept" "\$f.glyndor-previous"
 			echo "podman: an upgrade that was interrupted left your earlier /etc/containers/policy.json as policy.json.glyndor-previous" >&2
 		else

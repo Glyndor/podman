@@ -113,26 +113,28 @@ check "so nothing is a conffile and dpkg never asks about one" 0 "$(dpkg-deb -e 
 ctl="$WORK/ctl"
 mkdir -p "$ctl"; dpkg-deb -e "$deb" "$ctl"
 EMPTY=d41d8cd98f00b204e9800998ecf8427e
-upgrade_case() { # <old version, "" for a first install> <setup: unedited-r11|unedited-empty|edited|absent|link> -> prints what is left
+upgrade_case() { # <old version, "" for a first install> <setup: unedited-r11|unedited-empty|edited|absent|link|dangling> -> prints what is left (a link: where it points)
 	local root="$WORK/root"; rm -rf "$root"; mkdir -p "$root/etc/containers" "$root/usr/share/containers"
 	printf '%s\n' "$DEFAULT_NEW" > "$root/usr/share/containers/policy.json"
 	case "$2" in
 		unedited-r11) cp "$HERE/tests/build/fixtures/policy.json.r7-to-r11" "$root/etc/containers/policy.json" ;;
 		unedited-empty) : > "$root/etc/containers/policy.json" ;;
 		edited) printf '{"default":[{"type":"reject"}]}\n' > "$root/etc/containers/policy.json" ;;
-		link) ln -s /nonexistent "$root/etc/containers/policy.json" ;;
+		link) printf '{"default":[{"type":"reject"}]}\n' > "$root/central.json"; ln -s "$root/central.json" "$root/etc/containers/policy.json" ;;
+		dangling) ln -s /nonexistent "$root/etc/containers/policy.json" ;;
 		absent) ;;
 	esac
 	if [ -n "$1" ]; then
 		DPKG_ROOT="$root" sh "$ctl/preinst" upgrade "$1" > "$WORK/pre.out" 2>&1; pre_rc=$?
-		# dpkg removes what the old package had and the new one does not list
-		[ "$2" = link ] || rm -f "$root/etc/containers/policy.json"
-		[ "$2" != link ] || true
+		# dpkg removes what the old package had and the new one does not list, a link in its place as well
+		rm -f "$root/etc/containers/policy.json"
 		DPKG_ROOT="$root" sh "$ctl/postinst" configure "$1" > "$WORK/post.out" 2>&1; post_rc=$?
 	else
 		pre_rc=0; DPKG_ROOT="$root" sh "$ctl/postinst" configure > "$WORK/post.out" 2>&1; post_rc=$?
 	fi
-	left="$(cat "$root/etc/containers/policy.json" 2>/dev/null | tr -d '\n')"; kept="$([ -e "$root/etc/containers/policy.json.glyndor-kept" ] && echo kept-file-left)"
+	if [ -L "$root/etc/containers/policy.json" ]; then left="link:$(readlink "$root/etc/containers/policy.json")"
+	else left="$(cat "$root/etc/containers/policy.json" 2>/dev/null | tr -d '\n')"; fi
+	kept="$([ -e "$root/etc/containers/policy.json.glyndor-kept" ] || [ -L "$root/etc/containers/policy.json.glyndor-kept" ] && echo kept-file-left)"
 	echo "$pre_rc$post_rc|$left|$kept"
 }
 DEFAULT_NEW='{"default":[{"type":"insecureAcceptAnything"},{"new":"default"}]}'
@@ -146,7 +148,9 @@ check "from r11, unedited (the file of releases r7 to r11 as published): the new
 check "from r11, the file of the empty default (r2 to r6): the new default replaces it" "00|$want_new|" "$(upgrade_case 6.2.0+r4 unedited-empty)"
 check "from r11, deleted by the administrator: the default is copied, once, so buildah and skopeo have a policy" "00|$want_new|" "$(upgrade_case 6.2.0+r11 absent)"
 check "from a release that already is this one, nothing is done: an edited file is whatever dpkg left, and an absent one stays absent" "00||" "$(upgrade_case 6.2.0+r12 absent)"
-check "a policy.json that is a link is not read, copied or replaced by the preinst" "00||" "$(upgrade_case 6.2.0+r11 link)"
+check "from r11, a link to the administrator's policy: the link is back and points where it did, nothing is left beside it" "00|link:$WORK/root/central.json|" "$(upgrade_case 6.2.0+r11 link)"
+check "and the file it points to is untouched" '{"default":[{"type":"reject"}]}' "$(tr -d '\n' < "$WORK/root/central.json")"
+check "from r11, a link that points nowhere is kept as it was, and the default is not copied over it" "00|link:/nonexistent|" "$(upgrade_case 6.2.0+r11 dangling)"
 # --- what a purge takes away, and what an interrupted upgrade leaves ----------------------------------------
 # postrm purge removes /etc/containers/policy.json when postinst made it and nobody changed it, and only then.
 root="$WORK/root"
@@ -195,6 +199,18 @@ interrupted() { # <what the administrator does in /etc before the next configura
 check "an interrupted upgrade: the next configuration puts the administrator's file back, and the kept copy is gone" "{\"default\":[{\"type\":\"reject\"}]}|0|0|0" "$(interrupted nothing)"
 check "an interrupted upgrade and a file the administrator made in the meantime: that file stays, the earlier one is kept under another name, and it is said" "{\"default\":[{\"type\":\"reject\"},{\"x\":1}]}|0|1|1" "$(interrupted other)"
 check "an interrupted upgrade and the same file made again: the kept copy is dropped, nothing is lost" "{\"default\":[{\"type\":\"reject\"}]}|0|0|0" "$(interrupted same)"
+# the same with a link: the kept copy is the link itself, whatever it points at
+linked() { # <what the administrator does in /etc before the next configuration: nothing|same|other>
+	rm -rf "$root"; mkdir -p "$root/etc/containers" "$root/usr/share/containers"; printf '%s\n' "$DEFAULT_NEW" > "$root/usr/share/containers/policy.json"
+	ln -s /srv/central.json "$root/etc/containers/policy.json"
+	DPKG_ROOT="$root" sh "$ctl/preinst" upgrade 6.2.0+r11 > /dev/null 2>&1; rm -f "$root/etc/containers/policy.json"
+	case "$1" in same) ln -s /srv/central.json "$root/etc/containers/policy.json" ;; other) ln -s /srv/other.json "$root/etc/containers/policy.json" ;; esac
+	DPKG_ROOT="$root" sh "$ctl/postinst" configure 6.2.0+r11 > "$WORK/post.out" 2>&1
+	echo "$(readlink "$root/etc/containers/policy.json" || echo none)|$(find "$root/etc/containers" -name "*.glyndor-kept" | wc -l)|$(readlink "$root/etc/containers/policy.json.glyndor-previous" || echo none)"
+}
+check "an interrupted upgrade with a link: the next configuration puts the link back" "/srv/central.json|0|none" "$(linked nothing)"
+check "an interrupted upgrade and the same link made again: the kept link is dropped" "/srv/central.json|0|none" "$(linked same)"
+check "an interrupted upgrade and another link made in the meantime: that one stays, the earlier one is kept under another name" "/srv/other.json|0|/srv/central.json" "$(linked other)"
 for f in ./usr/bin/passt ./usr/bin/pasta ./etc/apparmor.d/usr.bin.passt ./etc/apparmor.d/abstractions/passt \
 	./etc/apparmor.d/usr.bin.pasta ./etc/apparmor.d/abstractions/pasta; do
 	check "passt ships $f" "$f" "$(dpkg-deb -c "$deb" 2>/dev/null | awk '{print $6}' | grep -x "$f")"

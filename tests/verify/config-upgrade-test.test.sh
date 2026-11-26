@@ -24,6 +24,8 @@ bash "$SCRIPT" "$WORK/old.deb" "$WORK/new.deb" > /dev/null 2>&1; check "packages
 for case in unedited edited reinstall deleted; do
 	check "the case '$case' is run" 1 "$([ "$(grep -c "^check \"$case" "$SCRIPT")" -ge 1 ] && echo 1 || echo 0)"
 done
+check "the case of a link in the place of the file is run, with one that points at a file and one that points nowhere" "1 1" \
+	"$([ "$(grep -c 'check "linked to' "$SCRIPT")" -ge 1 ] && echo 1 || echo 0) $(grep -c 'for linked in "\$central" /nonexistent-policy.json' "$SCRIPT")"
 check "no force option and no answer is given to dpkg: the runs of the new package have stdin closed, and none forces a conffile" "1 0" \
 	"$([ "$(grep -c 'apt-get install -y "$new" < /dev/null' "$SCRIPT")" -ge 1 ] && echo 1 || echo 0) $(grep '"$new"' "$SCRIPT" | grep -c -e '--force-conf' -e 'DEBCONF_NONINTERACTIVE_SEEN')"
 check "the constant of the version the file stopped being shipped is the one of build-deb.sh" "$(sed -n 's/^config_free_since="\(.*\)"/\1/p' "$HERE/scripts/build/build-deb.sh")" \

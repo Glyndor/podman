@@ -99,6 +99,20 @@ rm -f "$policy"
 out="$(apt-get install -y --reinstall "$new" < /dev/null 2>&1)"; rc=$?
 check "deleted afterwards, by an administrator who is on this release: it stays deleted" test "$rc" -eq 0 -a ! -e "$policy"
 
+# --- a link in the place of the file: the administrator's arrangement survives the upgrade, whatever it points at ---
+central=/etc/glyndor-test-central-policy.json
+for linked in "$central" /nonexistent-policy.json; do
+	reset_old shipped || exit 1
+	printf '%s\n' "$admin_policy" > "$central"
+	rm -f "$policy" && ln -s "$linked" "$policy"
+	upgrade
+	check "linked to $linked: the upgrade exits 0" test "$rc" -eq 0
+	check "linked to $linked: the link is still there and points where it did" test -L "$policy" -a "$(readlink "$policy")" = "$linked"
+	check "linked to $linked: the file it pointed at is untouched" test "$(cat "$central")" = "$admin_policy"
+	check "linked to $linked: nothing is left beside it" nothing_beside
+	rm -f "$policy" "$central"
+done
+
 # --- purge: what the maintainer script made goes with the package, unless the administrator changed it ---
 apt-get purge -y -qq podman > /dev/null 2>&1; rm -f "$policy"
 out="$(apt-get install -y "$new" < /dev/null 2>&1)"; rc=$?
