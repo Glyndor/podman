@@ -14,9 +14,10 @@
 #                                     cap, whose control file says package podman, version <V>
 #                                     and that architecture. They are copied flat into <out-dir>,
 #                                     which must be empty or absent.
-#   signed <tag> <dir> <mldsa>        <dir> holds exactly the two packages, a 64-byte Ed25519
-#                                     signature beside each, and, when <mldsa> is true, a 3309-byte
-#                                     ML-DSA-65 signature beside each; when it is false, none.
+#   signed <tag> <dir> <mldsa>        <dir> holds exactly the two packages and components.txt, a
+#                                     64-byte Ed25519 signature beside each, and, when <mldsa> is
+#                                     true, a 3309-byte ML-DSA-65 signature beside each; when it is
+#                                     false, none.
 #
 # Usage: check-artifacts.sh built <tag> <in-dir> <out-dir>
 #        check-artifacts.sh signed <tag> <dir> <true|false>
@@ -32,6 +33,7 @@ dir="$3"
 version="${tag#v}"
 archs=(amd64 arm64)
 max_deb=$((300 * 1024 * 1024))
+max_record=4096
 [ -d "$dir" ] && [ ! -L "$dir" ] || { echo "$dir is not a directory" >&2; exit 1; }
 
 # listing <dir>: every entry below it with its type, as `<path> <type>`, in a fixed order.
@@ -67,20 +69,23 @@ case "$mode" in
 		[ "$#" -eq 4 ] || { echo "usage: check-artifacts.sh signed <tag> <dir> <true|false>" >&2; exit 2; }
 		mldsa="$4"
 		case "$mldsa" in true | false) ;; *) echo "the second-signature flag is true or false, not '$mldsa'" >&2; exit 1 ;; esac
+		files=(components.txt)
+		for a in "${archs[@]}"; do files+=("podman_${version}_$a.deb"); done
 		want=""
-		for a in "${archs[@]}"; do
-			want+="podman_${version}_$a.deb f"$'\n'"podman_${version}_$a.deb.sig f"$'\n'
-			if [ "$mldsa" = true ]; then want+="podman_${version}_$a.deb.mldsa65.sig f"$'\n'; fi
+		for name in "${files[@]}"; do
+			want+="$name f"$'\n'"$name.sig f"$'\n'
+			if [ "$mldsa" = true ]; then want+="$name.mldsa65.sig f"$'\n'; fi
 		done
 		want="$(printf '%s' "$want" | LC_ALL=C sort)"
 		got="$(listing "$dir")"
 		[ "$got" = "$want" ] || { printf 'the signed set is not exactly the expected one.\nexpected:\n%s\nfound:\n%s\n' "$want" "$got" >&2; exit 1; }
-		for a in "${archs[@]}"; do
-			deb="$dir/podman_${version}_$a.deb"
-			[ "$(size_of "$deb")" -le "$max_deb" ] || { echo "the signed package $deb is over the size cap of $max_deb bytes" >&2; exit 1; }
-			[ "$(size_of "$deb.sig")" -eq 64 ] || { echo "$deb.sig is not 64 bytes, the size of an Ed25519 signature" >&2; exit 1; }
+		[ "$(size_of "$dir/components.txt")" -le "$max_record" ] || { echo "components.txt is over the size cap of $max_record bytes" >&2; exit 1; }
+		for name in "${files[@]}"; do
+			file="$dir/$name"
+			[ "$(size_of "$file")" -le "$max_deb" ] || { echo "the signed package $file is over the size cap of $max_deb bytes" >&2; exit 1; }
+			[ "$(size_of "$file.sig")" -eq 64 ] || { echo "$file.sig is not 64 bytes, the size of an Ed25519 signature" >&2; exit 1; }
 			if [ "$mldsa" = true ]; then
-				[ "$(size_of "$deb.mldsa65.sig")" -eq 3309 ] || { echo "$deb.mldsa65.sig is not 3309 bytes, the size of an ML-DSA-65 signature" >&2; exit 1; }
+				[ "$(size_of "$file.mldsa65.sig")" -eq 3309 ] || { echo "$file.mldsa65.sig is not 3309 bytes, the size of an ML-DSA-65 signature" >&2; exit 1; }
 			fi
 		done ;;
 	*) echo "usage: check-artifacts.sh built <tag> <in-dir> <out-dir> | signed <tag> <dir> <true|false>" >&2; exit 2 ;;

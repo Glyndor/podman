@@ -446,9 +446,6 @@ check-artifacts-control-says-another-package	scripts/release/check-artifacts.sh	
 check-artifacts-signed-needs-a-flag	scripts/release/check-artifacts.sh	[ "$#" -eq 4 ] || { echo "usage: check-artifacts.sh signed <tag> <dir> <true|false>" >&2; exit 2; }	[ "$#" -eq 4 ] || true	tests/release/check-artifacts.test.sh
 check-artifacts-flag-is-not-a-boolean	scripts/release/check-artifacts.sh	*) echo "the second-signature flag is true or false, not '$mldsa'" >&2; exit 1 ;; esac	*) ;; esac	tests/release/check-artifacts.test.sh
 check-artifacts-signed-set-is-not-exact	scripts/release/check-artifacts.sh	[ "$got" = "$want" ] || { printf 'the signed set is not exactly the expected one.\nexpected:\n%s\nfound:\n%s\n' "$want" "$got" >&2; exit 1; }	[ "$got" = "$want" ] || true	tests/release/check-artifacts.test.sh
-check-artifacts-signed-package-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size_of "$deb")" -le "$max_deb" ] || { echo "the signed package $deb is over the size cap of $max_deb bytes" >&2; exit 1; }	[ "$(size_of "$deb")" -le "$max_deb" ] || true	tests/release/check-artifacts.test.sh
-check-artifacts-ed25519-size	scripts/release/check-artifacts.sh	[ "$(size_of "$deb.sig")" -eq 64 ] || { echo "$deb.sig is not 64 bytes, the size of an Ed25519 signature" >&2; exit 1; }	[ "$(size_of "$deb.sig")" -eq 64 ] || true	tests/release/check-artifacts.test.sh
-check-artifacts-mldsa-size	scripts/release/check-artifacts.sh	[ "$(size_of "$deb.mldsa65.sig")" -eq 3309 ] || { echo "$deb.mldsa65.sig is not 3309 bytes, the size of an ML-DSA-65 signature" >&2; exit 1; }	[ "$(size_of "$deb.mldsa65.sig")" -eq 3309 ] || true	tests/release/check-artifacts.test.sh
 check-artifacts-unknown-mode	scripts/release/check-artifacts.sh	*) echo "usage: check-artifacts.sh built <tag> <in-dir> <out-dir> | signed <tag> <dir> <true|false>" >&2; exit 2 ;;	*) true ;;	tests/release/check-artifacts.test.sh
 sign-reads-through-a-link	.github/scripts/release/sign.py	sys.exit(f"refusing to sign {path}: {exc}")	pass	tests/release/release-signing.test.sh
 sign-writes-through-a-link	.github/scripts/release/sign.py	sys.exit(f"cannot write {path}: {exc}")	pass	tests/release/release-signing.test.sh
@@ -593,3 +590,20 @@ install-build-deps-catatonit-without-static-libc	scripts/package/rpm/install-bui
 install-build-deps-suse-names	scripts/package/rpm/install-build-deps.sh	suse:crun) required+=(libcap-devel libjson-c-devel) ;;	suse:crun) required+=(libcap-devel json-c-devel) ;;	tests/package/rpm/install-build-deps.test.sh
 package-image-amzn2023-dated-tag	scripts/package/images/amzn2023/Dockerfile	amazonlinux:2023@sha256:	amazonlinux:2023.0.20230614.0@sha256:	tests/package/image-tags.test.sh
 dependabot-images-take-the-dated-amazon-tags	.github/dependabot.yml	        versions: [">2023"]	        versions: []	tests/package/image-tags.test.sh
+check-artifacts-record-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size_of "$dir/components.txt")" -le "$max_record" ] ||	true ||	tests/release/check-artifacts.test.sh
+check-artifacts-signed-package-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size_of "$file")" -le "$max_deb" ] ||	true ||	tests/release/check-artifacts.test.sh
+check-artifacts-ed25519-size	scripts/release/check-artifacts.sh	[ "$(size_of "$file.sig")" -eq 64 ] ||	true ||	tests/release/check-artifacts.test.sh
+check-artifacts-mldsa-size	scripts/release/check-artifacts.sh	[ "$(size_of "$file.mldsa65.sig")" -eq 3309 ] ||	true ||	tests/release/check-artifacts.test.sh
+signed-set-usage	scripts/release/signed-set.sh	usage() { echo "usage: signed-set.sh components <out> | verify <dir> <ed25519.b64> <mldsa65.b64> <true|false> <venv>" >&2; exit 2; }	usage() { :; }	tests/release/signed-set.test.sh
+signed-set-tag-is-a-version	scripts/release/signed-set.sh	[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] ||	true ||	tests/release/signed-set.test.sh
+signed-set-component-is-a-value	scripts/release/signed-set.sh	[[ "$value" =~ ^[A-Za-z0-9.+_-]+$ ]] ||	true ||	tests/release/signed-set.test.sh
+signed-set-flag-is-true-or-false	scripts/release/signed-set.sh	case "$require" in true | false) ;; *)	case "$require" in *) ;; zz)	tests/release/signed-set.test.sh
+signed-set-environment-is-there	scripts/release/signed-set.sh	[ -x "$py" ] ||	true ||	tests/release/signed-set.test.sh
+signed-set-signature-verifies	scripts/release/signed-set.sh	|| { echo "the signature of ${file##*/} does not verify" >&2; exit 1; }	|| true	tests/release/signed-set.test.sh
+signed-set-record-names-its-release	scripts/release/signed-set.sh	if [ "$(grep -c "^release " "$dir/components.txt")" != 1 ] || ! grep -qxF "release $tag" "$dir/components.txt"; then	if false; then	tests/release/signed-set.test.sh
+read-released-unsigned-only-the-pinned-pair	scripts/upstream/read-released.sh	|| { echo "release $latest carries no readable signature of its components.txt, and it is not the release named in ${pin#"$here"/} with that record" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
+read-released-second-signature-readable	scripts/upstream/read-released.sh	|| { echo "release $latest has no readable components.txt.mldsa65.sig" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
+read-released-signature-verifies	scripts/upstream/read-released.sh	|| { echo "the signature of components.txt of $latest does not verify" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
+read-released-record-names-its-release	scripts/upstream/read-released.sh	if [ "$(grep -c '^release ' "$record")" != 1 ] || ! grep -qxF "release $latest" "$record"; then	if false; then	tests/upstream/read-released.test.sh
+read-released-signing-library	scripts/upstream/read-released.sh	echo "the signing library could not be installed to verify components.txt" >&2	echo x >&2	tests/upstream/read-released.test.sh
+read-released-verifies-downloaded-mldsa	scripts/upstream/read-released.sh	args+=(--mldsa-sig "$record.mldsa65.sig" --mldsa-keys "$anchor" --require-mldsa)	:	tests/upstream/read-released.test.sh

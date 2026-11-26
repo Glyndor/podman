@@ -30,7 +30,8 @@ S="$WORK/sign"
 if step release.yml sign secret=GLYNDOR_RELEASE_ED25519_KEY "$S"; then
 	check "the signing step's run block has no expression in it" 0 "$(grep -c '\${{' "$S/run.sh")"
 	mkdir -p "$S/bin"
-	mkdir -p "$S/rt/signvenv/bin"
+	# The step writes the record of the release into the stage before it signs, from the components the plan names.
+	mkdir -p "$S/rt/signvenv/bin" "$S/rt/stage"
 	printf '#!/bin/sh\necho "signing would start: $*"\nexit 42\n' > "$S/rt/signvenv/bin/python"
 	chmod +x "$S/rt/signvenv/bin/python"
 	others=()
@@ -40,7 +41,7 @@ if step release.yml sign secret=GLYNDOR_RELEASE_ED25519_KEY "$S"; then
 	sign() { # <key> [tag]
 		rm -rf "$S/art"; mkdir "$S/art"
 		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$HERE" TAG="${2-v6.2.0}" PREVIOUS_MLDSA=false GITHUB_OUTPUT="$S/out" \
-			"${others[@]}" GLYNDOR_RELEASE_ED25519_KEY="$1"
+			"${others[@]}" GLYNDOR_RELEASE_ED25519_KEY="$1" PODMAN=v6.2.0 NETAVARK=v2.1.0 AARDVARK=v2.1.3 RECIPE=r1
 	}
 	sign ""
 	check "no signing key: refused before signing" "1 0" "$rc $(says 'signing would start')"

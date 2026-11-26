@@ -44,7 +44,8 @@ PY
 	# sign <switch: on|off|committed|missing|raw> <anchor: keyed|empty> <secret> <second signature: present|absent>
 	# With "raw", $RAW is written to the switch with printf %b.
 	sign() {
-		rm -rf "$S/art" "$S/rt" "$WS"; mkdir -p "$S/art" "$S/rt/stage" "$S/rt/signvenv/bin" "$WS/keyring"; : > "$S/calls"; : > "$S/out"
+		rm -rf "$S/art" "$S/rt" "$WS"; mkdir -p "$S/art" "$S/rt/stage" "$S/rt/signvenv/bin" "$WS/keyring" "$WS/scripts/release"; : > "$S/calls"; : > "$S/out"
+		cp "$HERE/scripts/release/signed-set.sh" "$WS/scripts/release/"
 		# The virtual environment the step before this one made, and the packages the check
 		# of the download let through; a fake python stands in for the signing library.
 		cp "$S/venv-python" "$S/rt/signvenv/bin/python"
@@ -53,6 +54,7 @@ PY
 			: > "$S/rt/stage/podman_6.2.0_$a.deb"
 			[ "$4" = absent ] || : > "$S/rt/stage/podman_6.2.0_$a.deb.mldsa65.sig"
 		done
+		[ "$4" = absent ] || : > "$S/rt/stage/components.txt.mldsa65.sig"
 		case "$1" in
 			on) printf "${head}required\n" > "$SWITCH" ;;
 			off) printf "$head" > "$SWITCH" ;;
@@ -66,7 +68,7 @@ PY
 		esac
 		cp "$HERE/keyring/glyndor-release-ed25519.b64" "$WS/keyring/"
 		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$WS" \
-			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" TAG=v6.2.0 \
+			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" TAG=v6.2.0 PODMAN=v6.2.0 NETAVARK=v2.1.0 AARDVARK=v2.1.3 RECIPE=r1 \
 			GLYNDOR_RELEASE_ED25519_KEY=an-ed25519-seed GLYNDOR_RELEASE_MLDSA65_KEY="$3" PREVIOUS_MLDSA=false
 	}
 	signed() { grep -c 'sign.py ' "$S/calls"; }
@@ -82,8 +84,8 @@ PY
 		if { [ "$sw" = on ] && [ "$an" = empty ]; } || { [ "$an" = keyed ] && [ -z "$se" ]; }; then
 			want="1 stopped"
 		else
-			req=0; { [ "$sw" = on ] || [ -n "$se" ]; } && req=2
-			# A refusal stops the loop at the first package.
+			req=0; { [ "$sw" = on ] || [ -n "$se" ]; } && req=3
+			# A refusal stops the loop at the first file.
 			rc_want=0; [ "$req" -gt 0 ] && [ "$sig" = absent ] && { rc_want=1; req=1; }
 			want="$rc_want $req"
 		fi
@@ -104,12 +106,12 @@ PY
 	check "switch on, no second signature: refused by the verifier, as required" "1 1" \
 		"$rc $(says 'the hybrid release signature is required')"
 	sign on keyed a-seed present
-	check "switch on, key, secret and signature: through, and the release is told it is required" "0 2 1" \
+	check "switch on, key, secret and signature: through, and the release is told it is required" "0 3 1" \
 		"$rc $(required) $(grep -c -x require_mldsa=true "$S/out")"
 
 	# --- the switch as committed --------------------------------------------------
 	sign committed empty "" absent
-	check "the switch this repository commits requires nothing: the release of today goes through" "0 2 0 1" \
+	check "the switch this repository commits requires nothing: the release of today goes through" "0 3 0 1" \
 		"$rc $(signed) $(required) $(grep -c -x require_mldsa=false "$S/out")"
 	check "and it says so in a comment, with no line that would switch it on" 0 "$(grep -c -x 'required' "$HERE/keyring/second-signature-required")"
 	sign missing empty "" absent
@@ -130,7 +132,7 @@ PY
 	unread "a NUL in a comment" "# a comment\0# another\n" "$bytes"
 	unread "a byte past ASCII" "${head}# \200\n" "$bytes"
 	RAW="${head}\n   # an indented comment\n\nrequired" sign raw keyed a-seed present
-	check "blank lines, an indented comment and the line with no line feed after it: read as on" "0 2" "$rc $(required)"
+	check "blank lines, an indented comment and the line with no line feed after it: read as on" "0 3" "$rc $(required)"
 else
 	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the step that holds the signing key"
 fi

@@ -54,7 +54,7 @@ publish: a download takes more than one artifact
 publish: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 merges artifacts into one directory" "$(violations isolation "$BAD")"
 sabotage release.yml "          path: \${{ runner.temp }}/built/deb-arm64" "          path: \${{ github.workspace }}/deb-arm64" "$BAD" >/dev/null 2>&1
 check "a download into the checkout is named" "sign: a download goes somewhere other than runner.temp" "$(violations isolation "$BAD")"
-sabotage release.yml '"$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$deb"' '"$py" "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$deb"' "$BAD" >/dev/null 2>&1
+sabotage release.yml '"$py" -I "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$stage/$name"' '"$py" "$GITHUB_WORKSPACE/.github/scripts/release/sign.py" "$stage/$name"' "$BAD" >/dev/null 2>&1
 check "Python started without -I beside a key is named" "sign: Sign every package, then verify against the published key starts Python without -I: \"\$py\" \"\$GITHUB_WORKSPACE/.github/scripts/release/sign.py\" \"\$" "$(violations isolation "$BAD")"
 sabotage release.yml '          py="$RUNNER_TEMP/signvenv/bin/python"
 ' '          py="$RUNNER_TEMP/signvenv/bin/python"

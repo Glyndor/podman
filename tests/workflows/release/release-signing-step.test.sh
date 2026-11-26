@@ -46,7 +46,8 @@ PY
 	REL="$WS/.github/scripts/release"
 	# The third argument is what the plan said about the newest release, false by default.
 	sign() { # <anchor: empty|keyed|missing|indented|committed|cr|crlf|bom|tab|nul|high> <mldsa secret, may be empty> [previous]
-		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/calls.keys" "$S/out"; mkdir -p "$S/art" "$S/rt/stage" "$S/rt/signvenv/bin" "$WS/keyring"
+		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/calls.keys" "$S/out"; mkdir -p "$S/art" "$S/rt/stage" "$S/rt/signvenv/bin" "$WS/keyring" "$WS/scripts/release"
+		cp "$HERE/scripts/release/signed-set.sh" "$WS/scripts/release/"
 		: > "$S/calls"; : > "$S/out"
 		# The environment the step before made, and the packages the check of the download let through.
 		cp "$S/venv-python" "$S/rt/signvenv/bin/python"
@@ -77,7 +78,7 @@ PY
 			high) printf '# Glyndor release ML-DSA-65 public keys.\n# \200 a byte past ASCII\n' > "$ANCHOR" ;;
 		esac
 		run_step "$S" "$S/art" PATH="$S/bin:$PATH" RUNNER_TEMP="$S/rt" GITHUB_WORKSPACE="$WS" \
-			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" TAG=v6.2.0 \
+			GITHUB_OUTPUT="$S/out" CALLS="$S/calls" TAG=v6.2.0 PODMAN=v6.2.0 NETAVARK=v2.1.0 AARDVARK=v2.1.3 RECIPE=r1 \
 			GLYNDOR_RELEASE_ED25519_KEY=an-ed25519-seed GLYNDOR_RELEASE_MLDSA65_KEY="$2" PREVIOUS_MLDSA="${3-false}" "${EXTRA_ENV[@]}"
 	}
 	verify_line() { # <deb> [--require-mldsa]: the call the step must make for a package
@@ -115,7 +116,9 @@ PY
 		check "$state anchor, no secret: the packages go through" "0 true" "$rc $(grep -qx require_mldsa=false "$S/out" && echo true)"
 		check "$state anchor, no secret: each package is verified against the anchor, with no requirement" \
 			"1 1" "$(calls "$(verify_line "$S/rt/stage/podman_6.2.0_amd64.deb")") $(calls "$(verify_line "$S/rt/stage/podman_6.2.0_arm64.deb")")"
-		check "$state anchor, no secret: each package is signed first" "2" "$(signed)"
+		check "$state anchor, no secret: each package and the record of the release are signed first" "3" "$(signed)"
+		check "$state anchor, no secret: the record is verified too" "1" "$(calls "$(verify_line "$S/rt/stage/components.txt")")"
+		check "$state anchor, no secret: the record is the one of this release and these components" "release v6.2.0|podman v6.2.0|netavark v2.1.0|aardvark-dns v2.1.3|recipe r1" "$(paste -sd'|' "$S/rt/stage/components.txt")"
 	done
 	sign keyed AAAA-a-seed
 	check "a committed key and the secret: the packages go through" "0" "$rc"
@@ -126,7 +129,7 @@ PY
 	check "and each package is verified against the anchor with the second signature required" \
 		"1 1" "$(calls "$(verify_line "$S/rt/stage/podman_6.2.0_amd64.deb" --require-mldsa)") $(calls "$(verify_line "$S/rt/stage/podman_6.2.0_arm64.deb" --require-mldsa)")"
 	check "and the release is told it is required" 1 "$(grep -c -x require_mldsa=true "$S/out")"
-	check "and nothing is verified that was not signed first" "sign verify sign verify" \
+	check "and nothing is verified that was not signed first" "sign sign sign verify verify verify" \
 		"$(sed -n 's#^-I [^ ]*/\(sign\|verify-sig\)\.py .*#\1#p' "$S/calls" | sed 's/-sig//' | paste -sd' ')"
 	sign keyed ""
 	check "a committed key and no secret: refused" "1" "$rc"
@@ -136,7 +139,7 @@ PY
 	check "a secret and no committed key: the second signature is still required of the verifier" \
 		"0 1 1" "$rc $(calls "$(verify_line "$S/rt/stage/podman_6.2.0_amd64.deb" --require-mldsa)") $(calls "$(verify_line "$S/rt/stage/podman_6.2.0_arm64.deb" --require-mldsa)")"
 	sign committed ""
-	check "the anchor this repository commits, no secret: the packages go through" "0 2" "$rc $(signed)"
+	check "the anchor this repository commits, no secret: the packages go through" "0 3" "$rc $(signed)"
 	# A carriage return is a line break to the verifier and not to this step, so a
 	# key behind one would be a comment here and required of nobody.
 	for state in cr crlf bom tab nul high; do

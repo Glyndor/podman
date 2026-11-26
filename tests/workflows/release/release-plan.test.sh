@@ -61,6 +61,7 @@ case "$1 $2" in "release view") echo "$1 $2 $3" ;; *) echo "$1 $2" ;; esac >> "$
 case "$1 $2" in
 	"release list") printf '%s\n' "${LATEST:-}" ;;
 	"release download")
+		case " $* " in *" components.txt.sig "*) exit 1 ;; esac
 		while [ $# -gt 0 ]; do [ "$1" = --output ] && { printf '%b' "$COMPONENTS" > "$2"; exit 0; }; shift; done
 		exit 1 ;;
 	"release view") [ -z "${ASSETS_FAIL:-}" ] || exit 1; printf '%b' "${ASSETS:-}" ;;
@@ -76,6 +77,12 @@ GH
 	said() { sed -n "s/^$1=//p" "$P/out" | paste -sd' '; }
 	old='podman v6.1.0\nnetavark v2.1.0\naardvark-dns v2.1.3\nrecipe r1\n'
 	ed='components.txt\npodman_6.1.0_amd64.deb\npodman_6.1.0_amd64.deb.sig\n'
+	# The records of these releases are the ones the repository accepts without a signature; the signed form has its
+	# own cases in tests/upstream/read-released.test.sh.
+	mkdir -p "$WS/keyring"
+	{ printf 'v6.1.0 %s\n' "$(printf '%b' "$old" | sha256sum | cut -d' ' -f1)"
+		printf 'v6.2.0 %s\n' "$(printf '%b' 'podman v6.2.0\nnetavark v2.1.0\naardvark-dns v2.1.3\nrecipe r1\n' | sha256sum | cut -d' ' -f1)"
+	} > "$WS/keyring/release-without-signed-components"
 
 	plan
 	check "no release yet: a first release, and the newest carries no second signature" \
@@ -85,7 +92,7 @@ GH
 	plan LATEST=v6.1.0 TAGS=v6.1.0 COMPONENTS="$old" ASSETS="${ed}podman_6.1.0_amd64.deb.mldsa65.sig\n"
 	check "the newest release signed twice: previous_mldsa=true" "0 true" "$rc $(said previous_mldsa)"
 	check "and the release is listed and its components fetched once, then its assets asked of that tag" \
-		"release list|release download|release view v6.1.0" "$(paste -sd'|' "$P/gh.log")"
+		"release list|release download|release download|release view v6.1.0" "$(paste -sd'|' "$P/gh.log")"
 	check "and the rest of the plan is unchanged" "true v6.2.0 v6.2.0 c0ffee-podman" "$(said build) $(said tag) $(said podman) $(said podman_sha)"
 	plan LATEST=v6.1.0 TAGS=v6.1.0 COMPONENTS="$old" ASSETS_FAIL=1
 	check "an asset list that cannot be read stops the plan, and says nothing about the signature" "1 " \
@@ -97,7 +104,7 @@ GH
 	same='podman v6.2.0\nnetavark v2.1.0\naardvark-dns v2.1.3\nrecipe r1\n'
 	plan LATEST=v6.2.0 TAGS=v6.2.0 COMPONENTS="$same" ASSETS_FAIL=1
 	check "nothing to build: the plan succeeds even when the asset list cannot be read" "0 false" "$rc $(said build)"
-	check "and it does not ask for the list" "release list|release download" "$(paste -sd'|' "$P/gh.log")"
+	check "and it does not ask for the list" "release list|release download|release download" "$(paste -sd'|' "$P/gh.log")"
 	check "and hands on what it always did, and nothing about the signature" \
 		"sha build dry_run version podman netavark aardvark recipe podman_sha netavark_sha aardvark_sha" "$(sed 's/=.*//' "$P/out" | paste -sd' ')"
 	# A rehearsal builds whether or not something is new, under a version no release can have.

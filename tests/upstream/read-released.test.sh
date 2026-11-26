@@ -2,7 +2,10 @@
 #
 # Tests for scripts/upstream/read-released.sh against a fake gh that behaves like
 # the real one where it matters: `release download` refuses to overwrite an
-# existing file unless --clobber is given.
+# existing file unless --clobber is given, an asset that is not there fails, and a
+# release list that does not ask to leave pre-releases out returns one. The script
+# runs from a copy of the repository with keys made for the run, so the records are
+# signed with the real sign.py and verified with the real verify-sig.py.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -20,45 +23,128 @@ mkdir "$WORK/bin"
 cat > "$WORK/bin/gh" <<'GH'
 #!/usr/bin/env bash
 case "$1 $2" in
-	"release list") printf '%s\n' "${FAKE_LATEST:-}" ;;
+	"release list")
+		case " $* " in *" --exclude-pre-releases "*) printf '%s\n' "${FAKE_LATEST:-}" ;; *) printf '%s\n' "${FAKE_PRE:-${FAKE_LATEST:-}}" ;; esac ;;
 	"release download")
-		clobber=0; out=""
+		clobber=0; out=""; pattern=""
 		while [ $# -gt 0 ]; do
-			case "$1" in --clobber) clobber=1 ;; --output) out="$2"; shift ;; esac
+			case "$1" in --clobber) clobber=1 ;; --output) out="$2"; shift ;; --pattern) pattern="$2"; shift ;; esac
 			shift
 		done
-		[ "${FAKE_NO_ASSET:-0}" = 0 ] || { echo "no assets match" >&2; exit 1; }
 		if [ -e "$out" ] && [ "$clobber" = 0 ]; then echo "$out already exists (use --clobber)" >&2; exit 1; fi
-		printf '%b' "${FAKE_COMPONENTS:-}" > "$out"
+		[ -f "$FAKE_DIR/$pattern" ] || { echo "no assets match $pattern" >&2; exit 1; }
+		[ "${FAKE_DOWNLOAD_FAILS:-}" != "$pattern" ] || { echo "HTTP 502" >&2; exit 1; }
+		cp "$FAKE_DIR/$pattern" "$out"
 		# Anything a client prints on success must not reach the caller's stdout, which
 		# carries the tag and nothing else.
-		echo "downloaded components.txt" ;;
+		echo "downloaded $pattern" ;;
 	"release view")
 		[ "${FAKE_VIEW_FAILS:-0}" = 0 ] || { echo "HTTP 502" >&2; exit 1; }
 		[ "$3" = "${FAKE_LATEST:-}" ] || { echo "asked about $3" >&2; exit 1; }
-		printf '%b' "${FAKE_ASSETS:-}" ;;
+		if [ -n "${FAKE_ASSETS+x}" ]; then printf '%b' "$FAKE_ASSETS"; else (cd "$FAKE_DIR" && ls); fi ;;
 esac
 GH
 chmod +x "$WORK/bin/gh"
 export PATH="$WORK/bin:$PATH"
 # gh prints the tag name through --jq; the fake prints it directly.
 
+# A copy of the repository with keys of its own, so that what is verified is signed here.
+root="$WORK/repo"
+mkdir -p "$root/scripts/upstream" "$root/.github/scripts/release" "$root/keyring"
+cp "$HERE/scripts/upstream/read-released.sh" "$root/scripts/upstream/"
+cp "$HERE/.github/scripts/release/sign.py" "$HERE/.github/scripts/release/verify-sig.py" "$HERE/.github/scripts/release/sign-requirements.txt" "$root/.github/scripts/release/"
+python3 -I "$HERE/.github/scripts/release/dry-run-keys.py" "$WORK/keys" > /dev/null
+python3 -I "$HERE/.github/scripts/release/dry-run-keys.py" "$WORK/other" > /dev/null
+cp "$WORK/keys/ed25519.b64" "$root/keyring/glyndor-release-ed25519.b64"
+printf '# no second key yet\n' > "$root/keyring/glyndor-release-mldsa65.b64"
+pin="$root/keyring/release-without-signed-components"
+printf '# none\n' > "$pin"
+SCRIPT="$root/scripts/upstream/read-released.sh"
+export RELEASE_VERIFY_PYTHON; RELEASE_VERIFY_PYTHON="$(command -v python3)"
+export FAKE_DIR="$WORK/assetdir"
+record() { # <release line tag> [more lines]: the record the release carries, unsigned
+	rm -rf "$FAKE_DIR"; mkdir -p "$FAKE_DIR"
+	printf 'release %s\npodman v6.2.0\nrecipe abc\n' "$1" > "$FAKE_DIR/components.txt"
+}
+sign() { # [seed file]: signs the record in place
+	( read -r GLYNDOR_RELEASE_ED25519_KEY < "${1:-$WORK/keys/ed25519.seed}"; export GLYNDOR_RELEASE_ED25519_KEY
+		python3 -I "$HERE/.github/scripts/release/sign.py" "$FAKE_DIR/components.txt" > /dev/null )
+}
 out="$WORK/released"
+ask() { # <tag>: the first form, with the output file holding something old
+	printf 'stale\n' > "$out"
+	tag="$(FAKE_LATEST="$1" "$SCRIPT" "$out" 2> "$WORK/err")"; rc=$?
+}
+refused() { # <description> <message>: failed, said why, and left no record behind
+	check "$1: fails and says why" "1 1" "$rc $(grep -c -- "$2" "$WORK/err")"
+	check "$1: leaves no record, not even the old one, and prints no tag" "absent " "$([ -e "$out" ] && echo present || echo absent) $tag"
+}
+
 tag="$(FAKE_LATEST="" "$SCRIPT" "$out" 2>/dev/null)"; rc=$?
 check "no release yet: succeeds, and names no tag" "0 " "$rc $tag"
 check "and leaves the file empty" 0 "$(wc -c < "$out")"
 
-printf 'stale\n' > "$out"
-tag="$(FAKE_LATEST="v6.2.0+r2" FAKE_COMPONENTS='podman v6.2.0\nrecipe abc\n' "$SCRIPT" "$out" 2>/dev/null)"; rc=$?
-check "a release with components: succeeds even if the file already exists" 0 "$rc"
-check "and holds the components of that release" "podman v6.2.0 recipe abc" "$(paste -sd' ' "$out")"
-check "and prints its tag, and nothing else" "v6.2.0+r2" "$tag"
+record v6.2.0+r2; sign; ask v6.2.0+r2
+check "a signed record of the release is accepted" "0 v6.2.0+r2" "$rc $tag"
+check "and is what the file holds" "release v6.2.0+r2 podman v6.2.0 recipe abc" "$(paste -sd' ' "$out")"
+record v6.2.0+r2; sign; printf 'x\n' >> "$FAKE_DIR/components.txt"; ask v6.2.0+r2
+refused "a record changed after it was signed" "does not verify"
+record v6.2.0+r2; sign "$WORK/other/ed25519.seed"; ask v6.2.0+r2
+refused "a record signed with another key" "does not verify"
+record v6.2.0+r2; ask v6.2.0+r2
+refused "a record with no signature" "carries no readable signature"
+record v6.2.0+r1; sign; ask v6.2.0+r2
+refused "a signed record put on another release" "does not name that release"
+record v6.2.0+r2; printf 'release v6.2.0+r1\n' >> "$FAKE_DIR/components.txt"; sign; ask v6.2.0+r2
+refused "a signed record that names two releases" "does not name that release"
+record v6.2.0+r2; sign; rm "$FAKE_DIR/components.txt"; ask v6.2.0+r2
+refused "a release with no components.txt" "has no readable components.txt"
+record v6.2.0+r2; printf 'recipe abc\n' > "$FAKE_DIR/components.txt"; sign; ask v6.2.0+r2
+refused "a record that names no podman version" "names no podman version"
+record v6.2.0+r2; sign; FAKE_DOWNLOAD_FAILS=components.txt.sig ask v6.2.0+r2
+refused "a signature that cannot be downloaded" "carries no readable signature"
+record v6.2.0+r2; sign; FAKE_VIEW_FAILS=1 ask v6.2.0+r2
+check "the first form does not ask for the assets, as for the watchdog" "0 v6.2.0+r2" "$rc $tag"
+record v6.2.0+r9; ask v6.2.0+r9; FAKE_PRE=v6.2.0+r9 record v6.2.0+r2; sign; FAKE_PRE=v6.2.0+r9 ask v6.2.0+r2
+check "a pre-release is not the release that is read" "0 v6.2.0+r2" "$rc $tag"
 
-FAKE_LATEST="v6.2.0" FAKE_NO_ASSET=1 "$SCRIPT" "$out" >/dev/null 2>"$WORK/err"; rc=$?
-check "a release whose components cannot be read fails, and says so" "1 1" "$rc $(grep -c 'release v6.2.0 has no readable components.txt' "$WORK/err")"
+# Without an interpreter that has the library, one is made here; when that cannot be done, nothing is read.
+mkdir -p "$WORK/nopython"; printf '#!/bin/sh\nexit 1\n' > "$WORK/nopython/python3"; chmod +x "$WORK/nopython/python3"
+record v6.2.0+r2; sign; RELEASE_VERIFY_PYTHON='' PATH="$WORK/nopython:$PATH" ask v6.2.0+r2
+refused "a signing library that cannot be installed" "could not be installed"
 
-FAKE_LATEST="v6.2.0" FAKE_COMPONENTS='recipe abc\n' "$SCRIPT" "$out" >/dev/null 2>"$WORK/err"; rc=$?
-check "a components.txt without podman fails, and says so" "1 1" "$rc $(grep -c 'components.txt of v6.2.0 names no podman version' "$WORK/err")"
+# --- the second signature, once the anchor holds a key -------------------------------------------
+printf 'QUJD\n' > "$root/keyring/glyndor-release-mldsa65.b64"
+record v6.2.0+r2; sign; ask v6.2.0+r2
+refused "a record without the second signature once the anchor holds a key" "no readable components.txt.mldsa65.sig"
+# A second signature that downloads and does not verify is refused, not only one that is missing.
+cp "$HERE/tests/release/fixtures/mldsa65/vector.mldsa65.b64" "$root/keyring/glyndor-release-mldsa65.b64"
+record v6.2.0+r2; sign
+head -c 3308 /dev/zero > "$FAKE_DIR/components.txt.mldsa65.sig"
+ask v6.2.0+r2
+refused "a downloaded but malformed second signature" "does not verify"
+printf '# no second key yet\n' > "$root/keyring/glyndor-release-mldsa65.b64"
+
+# --- the release published before records were signed: that tag with that record, and nothing else ---
+record v6.2.0+r2; sum="$(sha256sum "$FAKE_DIR/components.txt" | cut -d' ' -f1)"
+printf '# the release published before records were signed\nv6.2.0+r2 %s\n' "$sum" > "$pin"
+ask v6.2.0+r2
+check "the pinned release with the pinned record is accepted without a signature" "0 v6.2.0+r2" "$rc $tag"
+record v6.2.0+r2; printf 'netavark v9.9.9\n' >> "$FAKE_DIR/components.txt"; ask v6.2.0+r2
+refused "the pinned tag with another record" "carries no readable signature"
+record v6.2.0+r2; ask v6.2.0+r3
+refused "another tag with the pinned record" "carries no readable signature"
+printf '# v6.2.0+r2 %s\n' "$sum" > "$pin"; record v6.2.0+r2; ask v6.2.0+r2
+refused "a pin that is only a comment" "carries no readable signature"
+printf 'v6.2.0+r2 %s extra\n' "$sum" > "$pin"; record v6.2.0+r2; ask v6.2.0+r2
+refused "a pin line with anything more on it" "carries no readable signature"
+rm "$pin"; record v6.2.0+r2; ask v6.2.0+r2
+refused "no pin file" "carries no readable signature"
+printf 'v6.2.0+r2 %s\n' "$sum" > "$pin"; record v6.2.0+r2; sign "$WORK/other/ed25519.seed"; ask v6.2.0+r2
+refused "a pinned release that does carry a signature is verified, and a bad one is refused" "does not verify"
+check "the pin in this repository names one release, with a sha256" 1 \
+	"$(grep -vE '^[[:space:]]*(#|$)' "$HERE/keyring/release-without-signed-components" | grep -cE '^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)? [0-9a-f]{64}$')"
+check "and nothing else" 1 "$(grep -cvE '^[[:space:]]*(#|$)' "$HERE/keyring/release-without-signed-components")"
 
 # --- the asset list, for whether the newest release carries a second signature -----
 assets="$WORK/assets"
@@ -75,8 +161,6 @@ check "an asset list that cannot be read fails, and says so" "1 1" "$rc $(grep -
 FAKE_LATEST="v6.2.0+r3" FAKE_ASSETS='' "$SCRIPT" --assets v6.2.0+r3 "$assets" 2>"$WORK/err" >/dev/null; rc=$?
 check "an empty asset list fails: it is not read as a release with no second signature" "1 1" \
 	"$rc $(grep -c 'does not name components.txt' "$WORK/err")"
-FAKE_LATEST="v6.2.0+r3" FAKE_COMPONENTS='podman v6.2.0\n' FAKE_VIEW_FAILS=1 "$SCRIPT" "$out" >/dev/null 2>&1; rc=$?
-check "the first form does not ask for the assets, as for the watchdog" 0 "$rc"
 
 "$SCRIPT" >/dev/null 2>&1; check "no argument fails" 1 "$?"
 "$SCRIPT" "$out" "$assets" >/dev/null 2>&1; check "the old two-file form is a usage error, not a silent half" 2 "$?"
