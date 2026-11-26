@@ -67,7 +67,7 @@ sabotage release.yml "        working-directory: \${{ runner.temp }}/tools
         env:
           GLYNDOR_RELEASE_ED25519_KEY" "$BAD" >/dev/null 2>&1
 check "a signing step that runs in the directory of the packages is named" "sign: Sign every package, then verify against the published key runs in a directory that holds artifacts" "$(violations isolation "$BAD")"
-check "the two checks of the downloads run before any step that holds a key, in the job that signs" "Check the artifact of each package is the one the build uploaded|Check each package is the file the build hashed before it ran|Check what was built is exactly the packages of the tag|Install the signing library|Sign every package, then verify against the published key" \
+check "the two checks of the downloads run before any step that holds a key, in the job that signs" "Check the checkout is the commit the plan resolved|Check the artifact of each package is the one the build uploaded|Check each package is the file the build hashed before it ran|Check what was built is exactly the packages of the tag|Install the signing library|Sign every package, then verify against the published key" \
 	"$(python3 - "$HERE/.github/workflows/release.yml" <<'PY'
 import sys, yaml
 steps = yaml.safe_load(open(sys.argv[1]))["jobs"]["sign"]["steps"]
