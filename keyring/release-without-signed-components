@@ -1,4 +1,0 @@
-# The release published before components.txt was signed: its tag and the sha256 of its components.txt. This
-# line is the only record scripts/upstream/read-released.sh accepts without a signature, and it goes once a
-# release with a signed record exists.
-v6.2.1+r4 769bfd9fee986faf3b8c59454951c2007a31a68ae75c6765ee455bd246e64028

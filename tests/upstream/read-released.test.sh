@@ -57,8 +57,6 @@ python3 -I "$HERE/.github/scripts/release/dry-run-keys.py" "$WORK/keys" > /dev/n
 python3 -I "$HERE/.github/scripts/release/dry-run-keys.py" "$WORK/other" > /dev/null
 cp "$WORK/keys/ed25519.b64" "$root/keyring/glyndor-release-ed25519.b64"
 printf '# no second key yet\n' > "$root/keyring/glyndor-release-mldsa65.b64"
-pin="$root/keyring/release-without-signed-components"
-printf '# none\n' > "$pin"
 SCRIPT="$root/scripts/upstream/read-released.sh"
 export RELEASE_VERIFY_PYTHON; RELEASE_VERIFY_PYTHON="$(command -v python3)"
 export FAKE_DIR="$WORK/assetdir"
@@ -124,27 +122,6 @@ head -c 3308 /dev/zero > "$FAKE_DIR/components.txt.mldsa65.sig"
 ask v6.2.0+r2
 refused "a downloaded but malformed second signature" "does not verify"
 printf '# no second key yet\n' > "$root/keyring/glyndor-release-mldsa65.b64"
-
-# --- the release published before records were signed: that tag with that record, and nothing else ---
-record v6.2.0+r2; sum="$(sha256sum "$FAKE_DIR/components.txt" | cut -d' ' -f1)"
-printf '# the release published before records were signed\nv6.2.0+r2 %s\n' "$sum" > "$pin"
-ask v6.2.0+r2
-check "the pinned release with the pinned record is accepted without a signature" "0 v6.2.0+r2" "$rc $tag"
-record v6.2.0+r2; printf 'netavark v9.9.9\n' >> "$FAKE_DIR/components.txt"; ask v6.2.0+r2
-refused "the pinned tag with another record" "carries no readable signature"
-record v6.2.0+r2; ask v6.2.0+r3
-refused "another tag with the pinned record" "carries no readable signature"
-printf '# v6.2.0+r2 %s\n' "$sum" > "$pin"; record v6.2.0+r2; ask v6.2.0+r2
-refused "a pin that is only a comment" "carries no readable signature"
-printf 'v6.2.0+r2 %s extra\n' "$sum" > "$pin"; record v6.2.0+r2; ask v6.2.0+r2
-refused "a pin line with anything more on it" "carries no readable signature"
-rm "$pin"; record v6.2.0+r2; ask v6.2.0+r2
-refused "no pin file" "carries no readable signature"
-printf 'v6.2.0+r2 %s\n' "$sum" > "$pin"; record v6.2.0+r2; sign "$WORK/other/ed25519.seed"; ask v6.2.0+r2
-refused "a pinned release that does carry a signature is verified, and a bad one is refused" "does not verify"
-check "the pin in this repository names one release, with a sha256" 1 \
-	"$(grep -vE '^[[:space:]]*(#|$)' "$HERE/keyring/release-without-signed-components" | grep -cE '^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)? [0-9a-f]{64}$')"
-check "and nothing else" 1 "$(grep -cvE '^[[:space:]]*(#|$)' "$HERE/keyring/release-without-signed-components")"
 
 # --- the asset list, for whether the newest release carries a second signature -----
 assets="$WORK/assets"
