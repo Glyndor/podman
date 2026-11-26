@@ -17,8 +17,6 @@ Each release carries one `.deb` and one detached `.sig` per architecture, `compo
 
 `components.txt` records what a release was built from: its first line names the release, and the next ones the upstream tags and the id of the build recipe. The plan and the watchdog compare it with upstream, so it is signed with the packages, by the job that holds the keys, and `scripts/upstream/read-released.sh` reads it only after its signature verifies against the keys of the checkout and its first line names the release it came from. A pre-release is not read. A record that cannot be shown to be signed stops the run in red.
 
-The releases published before records were signed have no signature. `keyring/release-without-signed-components` names the one of them that was the newest when this changed, by its tag and the sha256 of its `components.txt`, and only that pair is accepted without a signature. Once a release with a signed record exists, a pull request removes the line.
-
 ## What the package contains
 
 The configuration of the release is under `/usr/share/containers`, and the package ships no file under `/etc/containers`, which is the administrator's: Podman reads `containers.conf`, `registries.conf` and `policy.json` from there when `/etc` has none. buildah and skopeo of Debian and Ubuntu read the policy only from `/etc/containers/policy.json`, so `postinst` copies the default there when there is none, once. Releases before `6.2.0+r12` shipped that file as part of the package; on the upgrade from one of them an edited file is kept, and so is a link that was put in its place (whatever it points at), and an unedited file is replaced by the new default.

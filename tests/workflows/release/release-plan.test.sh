@@ -61,8 +61,19 @@ case "$1 $2" in "release view") echo "$1 $2 $3" ;; *) echo "$1 $2" ;; esac >> "$
 case "$1 $2" in
 	"release list") printf '%s\n' "${LATEST:-}" ;;
 	"release download")
-		case " $* " in *" components.txt.sig "*) exit 1 ;; esac
-		while [ $# -gt 0 ]; do [ "$1" = --output ] && { printf '%b' "$COMPONENTS" > "$2"; exit 0; }; shift; done
+		signature=0; case " $* " in *" components.txt.sig "*) signature=1 ;; esac
+		while [ $# -gt 0 ]; do
+			if [ "$1" = --output ]; then
+				record="$2"; [ "$signature" = 0 ] || record="$2.record"
+				{ printf 'release %s\n' "$LATEST"; printf '%b' "$COMPONENTS"; } > "$record"
+				if [ "$signature" = 1 ]; then
+					. "$REPO_SRC/tests/lib/signed-record.sh"
+					sign_record "$REPO_SRC" "$KEYS" "$record" && cp "$record.sig" "$2"
+				fi
+				exit
+			fi
+			shift
+		done
 		exit 1 ;;
 	"release view") [ -z "${ASSETS_FAIL:-}" ] || exit 1; printf '%b' "${ASSETS:-}" ;;
 	*) exit 1 ;;
@@ -72,18 +83,16 @@ GH
 	plan() { # [VAR=value]...: runs the step; sets $rc, $out and $P/out
 		rm -rf "$P/rt"; mkdir "$P/rt"; : > "$P/out"; : > "$P/gh.log"
 		run_step "$P" "$WS" PATH="$P/bin:$PATH" RUNNER_TEMP="$P/rt" GITHUB_OUTPUT="$P/out" GH_LOG="$P/gh.log" \
-			GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 GH_TOKEN=a-token GH_REPO=owner/repo "$@"
+			GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 GH_TOKEN=a-token GH_REPO=owner/repo \
+			REPO_SRC="$HERE" KEYS="$P/keys" RELEASE_VERIFY_PYTHON="$(command -v python3)" "$@"
 	}
 	said() { sed -n "s/^$1=//p" "$P/out" | paste -sd' '; }
 	old='podman v6.1.0\nnetavark v2.1.0\naardvark-dns v2.1.3\nrecipe r1\n'
 	ed='components.txt\npodman_6.1.0_amd64.deb\npodman_6.1.0_amd64.deb.sig\n'
-	# The records of these releases are the ones the repository accepts without a signature; the signed form has its
-	# own cases in tests/upstream/read-released.test.sh.
-	mkdir -p "$WS/keyring"
-	{ printf 'v6.1.0 %s\n' "$(printf '%b' "$old" | sha256sum | cut -d' ' -f1)"
-		printf 'v6.2.0 %s\n' "$(printf '%b' 'podman v6.2.0\nnetavark v2.1.0\naardvark-dns v2.1.3\nrecipe r1\n' | sha256sum | cut -d' ' -f1)"
-	} > "$WS/keyring/release-without-signed-components"
-
+	# The records of these releases are signed, as read-released.sh asks, with keys made for the run.
+	# shellcheck source=tests/lib/signed-record.sh
+	. "$HERE/tests/lib/signed-record.sh"
+	signing_repo "$HERE" "$WS" "$P/keys"
 	plan
 	check "no release yet: a first release, and the newest carries no second signature" \
 		"0 true v6.2.0 false" "$rc $(said build) $(said tag) $(said previous_mldsa)"

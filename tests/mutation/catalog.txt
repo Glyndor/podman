@@ -601,9 +601,9 @@ signed-set-flag-is-true-or-false	scripts/release/signed-set.sh	case "$require" i
 signed-set-environment-is-there	scripts/release/signed-set.sh	[ -x "$py" ] ||	true ||	tests/release/signed-set.test.sh
 signed-set-signature-verifies	scripts/release/signed-set.sh	|| { echo "the signature of ${file##*/} does not verify" >&2; exit 1; }	|| true	tests/release/signed-set.test.sh
 signed-set-record-names-its-release	scripts/release/signed-set.sh	if [ "$(grep -c "^release " "$dir/components.txt")" != 1 ] || ! grep -qxF "release $tag" "$dir/components.txt"; then	if false; then	tests/release/signed-set.test.sh
-read-released-unsigned-only-the-pinned-pair	scripts/upstream/read-released.sh	|| { echo "release $latest carries no readable signature of its components.txt, and it is not the release named in ${pin#"$here"/} with that record" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
 read-released-second-signature-readable	scripts/upstream/read-released.sh	|| { echo "release $latest has no readable components.txt.mldsa65.sig" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
 read-released-signature-verifies	scripts/upstream/read-released.sh	|| { echo "the signature of components.txt of $latest does not verify" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
 read-released-record-names-its-release	scripts/upstream/read-released.sh	if [ "$(grep -c '^release ' "$record")" != 1 ] || ! grep -qxF "release $latest" "$record"; then	if false; then	tests/upstream/read-released.test.sh
 read-released-signing-library	scripts/upstream/read-released.sh	echo "the signing library could not be installed to verify components.txt" >&2	echo x >&2	tests/upstream/read-released.test.sh
 read-released-verifies-downloaded-mldsa	scripts/upstream/read-released.sh	args+=(--mldsa-sig "$record.mldsa65.sig" --mldsa-keys "$anchor" --require-mldsa)	:	tests/upstream/read-released.test.sh
+read-released-signature-is-there	scripts/upstream/read-released.sh	|| { echo "release $latest carries no readable signature of its components.txt" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
