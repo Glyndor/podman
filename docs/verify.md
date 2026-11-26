@@ -1,6 +1,6 @@
 # Verifying a package
 
-Each release publishes `podman_<version>_<arch>.deb` and `podman_<version>_<arch>.deb.sig`, an Ed25519 signature made with the Glyndor release key, plus a `components.txt` that lists the upstream versions it was built from. The public key is in [`keyring/glyndor-release-ed25519.b64`](../keyring/glyndor-release-ed25519.b64).
+Each release publishes `podman_<version>_<arch>.deb` and `podman_<version>_<arch>.deb.sig`, an Ed25519 signature made with the Glyndor release key, plus a `components.txt` that lists the upstream versions it was built from, signed the same way (`components.txt.sig`). The public key is in [`keyring/glyndor-release-ed25519.b64`](../keyring/glyndor-release-ed25519.b64).
 
 `apt` verifies the archive signature automatically, so this is only needed when downloading a package by hand. There are two independent checks.
 
