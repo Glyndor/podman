@@ -9,7 +9,19 @@ set -u
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT="$HERE/scripts/upstream/verify-tag.sh"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# The temporary keyrings the run makes are all under $WORK, the one the script makes included: every one of them is
+# closed on the way out, none of them is left running, and the folder of sockets each one made under /run goes with it.
+export TMPDIR="$WORK/tmp"
+mkdir -p "$TMPDIR"
+close_agents() {
+	local dir
+	for dir in "$WORK"/gh-* "$TMPDIR"/*; do
+		[ -d "$dir" ] || continue
+		gpgconf --homedir "$dir" --kill all > /dev/null 2>&1 || true
+		gpgconf --homedir "$dir" --remove-socketdir > /dev/null 2>&1 || true
+	done
+}
+trap 'close_agents; rm -rf "$WORK"' EXIT
 pass=0; fail=0
 
 check() { # <desc> <want> <got>
