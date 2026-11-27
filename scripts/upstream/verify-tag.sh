@@ -49,7 +49,14 @@ esac
 
 GNUPGHOME="$(mktemp -d)"
 export GNUPGHOME
-trap 'rm -rf "$GNUPGHOME"' EXIT
+# The agent of the temporary keyring is closed before its folder goes, and the folder of sockets it made under /run goes
+# with it: none is left running, and nothing of it is left on the disk.
+cleanup() {
+	gpgconf --homedir "$GNUPGHOME" --kill all > /dev/null 2>&1 || true
+	gpgconf --homedir "$GNUPGHOME" --remove-socketdir > /dev/null 2>&1 || true
+	rm -rf "$GNUPGHOME"
+}
+trap cleanup EXIT
 
 shopt -s nullglob
 files=("$keys"/*.asc)

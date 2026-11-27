@@ -59,7 +59,14 @@ fetch_capped() {
 
 wanted="$(bash "$here/../distros.sh" field "$id" extras)"
 gnupg="$(mktemp -d)"
-trap 'rm -rf "$gnupg"' EXIT
+# The agent of the temporary keyring is closed before its folder goes, and the folder of sockets it made under /run goes
+# with it: none is left running, and nothing of it is left on the disk.
+cleanup() {
+	gpgconf --homedir "$gnupg" --kill all > /dev/null 2>&1 || true
+	gpgconf --homedir "$gnupg" --remove-socketdir > /dev/null 2>&1 || true
+	rm -rf "$gnupg"
+}
+trap cleanup EXIT
 export GNUPGHOME="$gnupg"
 
 for name in ${wanted//,/ }; do
