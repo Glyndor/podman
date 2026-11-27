@@ -2,7 +2,7 @@
 # index, so the arm64 runner pulls its own. The tag is NOT a dated one (2023.9.20251208.0 and the like): Dependabot once moved
 # it to 2023.0.20230614.0, an image of three years before, which it reads as a newer version of "2023". The digest of the tag
 # is what Dependabot moves, and .github/dependabot.yml ignores the versions above it.
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023@sha256:5c38fd85b00ce8c094315d9b71f671f880052314a22bd25f1a027821bf61d9d7
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023@sha256:47a249649c57ca32b2d4bd5f46149383d5852610eb2c6230e33ce9c3ab8c8459
 
 # What the proof of a package runs on this machine, named in scripts/package/verify/test-tools.txt: runuser
 # comes from util-linux, useradd, newuidmap and newgidmap from shadow-utils, getcap from libcap. A minimal image
