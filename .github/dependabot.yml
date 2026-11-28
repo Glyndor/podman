@@ -1,5 +1,14 @@
 version: 2
 
+# The registry of the openSUSE images. It is public and serves anonymous pulls, but the update job reaches only
+# the hosts this file declares: the shared list of public registries does not carry it, so without this declaration
+# the job is refused with 403 and the openSUSE images are never watched. It is the declaration that opens the
+# host, not a credential: the registry is read anonymously, and it is read without one.
+registries:
+  opensuse:
+    type: docker-registry
+    url: registry.opensuse.org
+
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -61,6 +70,9 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/scripts/package/images/*"
+    # The registry declared above, so the job reaches the openSUSE images it builds the packages in.
+    registries:
+      - opensuse
     ignore:
       # Amazon Linux 2023 is pinned by its floating tag, 2023, and the digest of that tag is what moves. The registry also has
       # a tag for every build (2023.0.20230614.0, 2023.9.20251208.0), and Dependabot reads those as versions of "2023": it
