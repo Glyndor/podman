@@ -36,8 +36,8 @@
 # the tree (`find`, `git ls-files`) depends on the whole tree by name, so its entry
 # is `**`. tests/quality/scope/suite-scope-reads.test.sh reads the text of each
 # suite and fails on a file it reaches that the entry does not cover; it also asks
-# for a path a suite only names to a script or a key, so a few entries are wider
-# than what the suite opens.
+# for a path a suite or a step it runs only names, so a few entries are wider than
+# what the suite opens.
 #
 # PATTERN SYNTAX
 #
@@ -422,6 +422,7 @@ tests/workflows/policy/workflows-contract.test.sh
 	tests/lib/**
 	scripts/release/**
 	keyring/**
+	.github/scripts/release/**
 
 tests/workflows/pr-checks/commit-hygiene-range.test.sh
 	.github/workflows/commit-hygiene.yml
@@ -484,6 +485,7 @@ tests/workflows/release/release-upgrade-job.test.sh
 	.github/workflows/release.yml
 	keyring/**
 	tests/lib/**
+	.github/scripts/release/**
 
 tests/workflows/watchdog/watchdog-delivery-lag.test.sh
 	.github/workflows/**

@@ -10,20 +10,23 @@
 #   * a path built on the folder of the file that names it (`$HERE/...`,
 #     `$here/../...`, `$(dirname "$0")/...`);
 #   * a folder `find` walks;
+#   * what the block of a workflow step reaches when the suite runs that step
+#     against the repository itself, as its folder or as GITHUB_WORKSPACE;
 #   * what the scripts and the libraries of tests/lib reached that way reach in
 #     turn, by the same two forms of a path;
 #   * for the suite of the mutation coverage check, every file the catalogue
 #     names, which that check reads.
 #
-# It reads text, so it does not see: a path put together at run time, a step of a
-# workflow run with the repository as its workspace, what `git ls-files` or
-# `git archive` read, a copy of a whole folder under another variable, or a path
-# a library takes as any argument but its first. Those entries were written from
-# a trace of what each suite opens, and the weekly full run of mutation.yml is
-# what notices an entry that no longer matches. The workflows are left out: a
-# change to one runs every suite.
+# It reads text, so it does not see: a path put together at run time, what
+# `git ls-files` or `git archive` read, a file only looked for and not opened, a
+# copy of a whole folder under another variable, a path a library takes as any
+# argument but its first, or a step handed the repository in another way than
+# the two above. The entries were written from a trace of what each suite opens,
+# and the weekly full run of mutation.yml is what notices, after a merge, an
+# entry that no longer matches. The workflows are left out: a change to one runs
+# every suite.
 #
-# Requires: bash, python3.
+# Requires: bash, python3 with PyYAML.
 # The fixtures are suites written as text, with the variables meant to reach them
 # unexpanded.
 # shellcheck disable=SC2016
@@ -48,6 +51,7 @@ check() { # <description> <expected> <actual>
 problems() {
 	python3 -I - "$1" <<'PY'
 import fnmatch, glob, os, re, sys
+import yaml
 root = sys.argv[1]
 
 # A path spelled from the root, not one that hangs from a variable or a folder.
@@ -60,6 +64,11 @@ DERIVED = re.compile(r'\b([A-Za-z_]\w*)="?\$\(\s*cd "\$\{?([A-Za-z_]\w*)\}?((?:/
 VARIABLE = re.compile(r'\$\{?([A-Za-z_]\w*|1)\}?"?/([\w.*?/-]+)')
 INLINE = re.compile(r'\$\(dirname "\$(?:0|\{BASH_SOURCE\[0\]\})"\)((?:/[\w.*?-]+)+)')
 WALK = re.compile(r'\bfind "?(?:\$\{?(?:HERE|here|root|ROOT)\}?"?/)?(scripts|keyring|docs|tests)(?=[\s"\')])')
+# `step <workflow> <job> <selector> "$dir"` of tests/lib/workflow-step.sh, and a
+# run of that step in the repository or with the repository as its workspace.
+STEP = re.compile(r'\bstep ([\w.-]+\.yml) ([\w-]+) (?:"((?:name|secret)=[^"]*)"|((?:name|secret)=\S+)) "\$\{?(\w+)\}?"')
+AT_ROOT = re.compile(r'\brun_step "\$\{?(\w+)\}?"'
+                     r'(?: "\$\{?HERE\}?"|[^\n]*?\bGITHUB_WORKSPACE="?\$\{?HERE\}?"?(?=[\s;]|$))', re.M)
 # The check this suite runs on the repository reads every file the catalogue names.
 CATALOGUE_READER = "tests/quality/check-mutation-coverage.test.sh"
 CATALOGUE = "tests/mutation/catalog.txt"
@@ -97,6 +106,11 @@ def reached(rel, kind):
                 found[os.path.join(bases[name], tail)] = True
         for tail in INLINE.findall(line):
             found[os.path.join(folder, "." + tail)] = True
+    return existing(found)
+
+
+def existing(found):
+    """Of the paths found, those of the repository, normalised."""
     out = {}
     for path, used in found.items():
         # A period that ends a sentence goes; the dots of `..` stay.
@@ -115,9 +129,48 @@ def reached(rel, kind):
     return out
 
 
+def step_reads(suite):
+    """path -> the workflow, for what the steps the suite runs against the
+    repository reach."""
+    with open(os.path.join(root, suite), errors="replace") as fh:
+        text = fh.read().replace("\\\n", " ")
+    ran = set(AT_ROOT.findall(text))
+    out = {}
+    for flow, job, quoted, bare, folder in STEP.findall(text):
+        source = os.path.join(root, ".github/workflows", flow)
+        if folder not in ran or not os.path.isfile(source):
+            continue
+        with open(source) as fh:
+            steps = ((yaml.safe_load(fh).get("jobs") or {}).get(job) or {}).get("steps") or []
+        kind, _, want = (quoted or bare).partition("=")
+        for step in steps:
+            if kind == "name":
+                chosen = step.get("name") == want
+            else:
+                chosen = "secrets." + want in str(step.get("env"))
+            if not chosen:
+                continue
+            found = {}
+            for line in str(step.get("run", "")).split("\n"):
+                if line.lstrip().startswith("#"):
+                    continue
+                for path in LITERAL.findall(line):
+                    found[path] = True
+                for name, tail in VARIABLE.findall(line):
+                    if name == "GITHUB_WORKSPACE":
+                        found[tail] = True
+            for path in existing(found):
+                out[path] = ".github/workflows/" + flow
+    return out
+
+
 def reads(suite):
     """path -> the file that reaches it, for everything the suite reaches."""
     seen, queue, done = {}, [(suite, "suite")], set()
+    for path, flow in sorted(step_reads(suite).items()):
+        seen[path] = flow
+        if path.endswith((".sh", ".py")) and os.path.isfile(os.path.join(root, path)):
+            queue.append((path, "script"))
     while queue:
         rel, kind = queue.pop(0)
         if rel in done:
@@ -256,6 +309,23 @@ check "and a pattern a new suite would not match does not cover it" "$(uncovered
 cover 'tests/**'
 check "and the whole folder does" "" "$(problems "$D")"
 
+# step_tree <name> <block of the step> <how the suite runs it>
+step_tree() {
+	tree "$1" "step w.yml j name=sign \"\$S\"
+$3"
+	mkdir -p "$D/.github/workflows"
+	printf 'jobs:\n  j:\n    steps:\n      - name: sign\n        run: %s\n' "$2" > "$D/.github/workflows/w.yml"
+}
+step_tree workspace 'bash "$GITHUB_WORKSPACE/scripts/b/y.sh"' \
+	$'run_step "$S" "$S/art" \\\n\tGITHUB_WORKSPACE="$HERE" TAG=v1'
+check "what a step reaches with the repository as its workspace is a read of the suite" \
+	"$(uncovered scripts/b/y.sh .github/workflows/w.yml)" "$(problems "$D")"
+step_tree folder 'cat keyring/k' 'run_step "$S" "$HERE"'
+check "and so is what a step run in the repository reaches" \
+	"$(uncovered keyring/k .github/workflows/w.yml)" "$(problems "$D")"
+step_tree elsewhere 'cat keyring/k' 'run_step "$S" "$WORK" GITHUB_WORKSPACE="$WORK/ws"'
+check "a step run somewhere else is not a read of the repository" "" "$(problems "$D")"
+
 tree catalogue 'true'
 mv "$D/tests/a/one.test.sh" "$D/tests/a/two.test.sh"
 mkdir -p "$D/tests/quality" "$D/tests/mutation"; printf 'true\n' > "$D/tests/quality/check-mutation-coverage.test.sh"
@@ -309,6 +379,11 @@ check "without tests/lib the suite of the mutation runner is reported" "1" \
 	"$(missed tests/mutation/run-mutations.test.sh 'tests/lib/**' tests/lib/mutation-syntax.sh)"
 check "without tests the suite of the scope step is reported" "1" \
 	"$(missed tests/quality/scope/ci-job-scope-suites.test.sh 'tests/**' tests)"
+cp "$HERE/scripts/quality/scope/suite-scope.txt" "$real/scripts/quality/scope/suite-scope.txt"
+check "without scripts/release the suite of the workflow contract is reported, through the step it runs" "1" \
+	"$(missed tests/workflows/policy/workflows-contract.test.sh 'scripts/release/**' scripts/release/signed-set.sh)"
+check "and without keyring too" "1" \
+	"$(missed tests/workflows/policy/workflows-contract.test.sh 'keyring/**' keyring/second-signature-required)"
 cp "$HERE/scripts/quality/scope/suite-scope.txt" "$real/scripts/quality/scope/suite-scope.txt"
 check "and with every line back the copy reports nothing" "" "$(problems "$real")"
 
