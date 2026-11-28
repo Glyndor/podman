@@ -63,9 +63,10 @@ tabled() { out="$(GLYNDOR_DISTROS_FILE="$WORK/distros.txt" GLYNDOR_EXTRAS_FILE="
 table "$row_x86"
 tabled release 6.2.1
 check "a table of one row names that row's files" "0 4" "$rc $(grep -c '\.rpm$' <<< "$out")"
-table 'arch|pacman|arch|x86_64|0|0|0|upstream|20260716||'
+table "$row_x86" 'arch|pacman|arch|x86_64|0|0|0|upstream|20260716||'
 tabled leg 6.2.1 arch x86_64
 check "a pacman row is not an rpm distribution" "1 1" "$rc $(says 'is not an rpm distribution')"
+table 'arch|pacman|arch|x86_64|0|0|0|upstream|20260716||'
 tabled release 6.2.1
 check "a table with no rpm row names no release" "1 1" "$rc $(says 'has no rpm row')"
 tabled legs

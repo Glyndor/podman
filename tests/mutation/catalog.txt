@@ -289,7 +289,7 @@ rpm-run-the-distributions-commonpackage-ships-no-000shortnamesc	scripts/package/
 package-payload-unknown-family	scripts/package/build-payload.sh	*) echo "unknown family: $family" >&2; exit 2 ;;	*) selinux=1 ;;	tests/package/build-payload.test.sh
 package-payload-links-a-library-it-should-not	scripts/package/build-payload.sh	*gpgme* | *assuan* | *subid* | *sqlite*)	__never__)	tests/package/build-payload.test.sh
 package-distros-unknown-architectures	scripts/package/distros.sh	case "$2" in all | x86_64 | aarch64) ;; *) echo "unknown architectures: $2" >&2; exit 2 ;; esac	case "$2" in *) ;; esac	tests/package/distros.test.sh
-package-distros-no-usage	scripts/package/distros.sh	echo "usage: distros.sh field <id> <column> | ids <format> | matrix <format> <arches|all>" >&2	true	tests/package/distros.test.sh
+package-distros-no-usage	scripts/package/distros.sh	echo "usage: distros.sh field <id> <column> | ids <format> | rows <format> | matrix <format> <arches|all>" >&2	true	tests/package/distros.test.sh
 rpm-deps-unknown-family	scripts/package/rpm/install-build-deps.sh	*) echo "no build dependencies are known for the family: $family" >&2; exit 2 ;;	*) true ;;	tests/package/rpm/install-build-deps.test.sh
 rpm-check-replacement-something-uncovered	scripts/package/rpm/check-replacement.sh	if [ -n "$bad" ]; then	if false; then	tests/package/rpm/check-replacement.test.sh
 rpm-check-replacement-requirers-unreadable	scripts/package/rpm/check-replacement.sh	|| { echo "cannot ask the repositories what requires podman" >&2; exit 1; }	|| true	tests/package/rpm/check-replacement.test.sh
@@ -413,15 +413,15 @@ rpm-legs-report-without-hashes	scripts/release/rpm/legs.sh	[ -n "${files:-}" ] |
 rpm-legs-artifact-not-the-reported	scripts/release/rpm/legs.sh	>&2 || exit 1	>&2 || true	tests/release/rpm/legs.test.sh
 rpm-names-usage	scripts/release/rpm/names.sh	usage() { echo "usage: names.sh legs | leg <version> <id> <arch> | release <version>" >&2; exit 2; }	usage() { :; }	tests/release/rpm/names.test.sh
 rpm-names-refusal	scripts/release/rpm/names.sh	die() { echo "$*" >&2; exit 1; }	die() { echo "$*" >&2; }	tests/release/rpm/names.test.sh
-rpm-names-no-rpm-row	scripts/release/rpm/names.sh	[ -n "$ids" ] ||	true ||	tests/release/rpm/names.test.sh
-rpm-names-format	scripts/release/rpm/names.sh	[ "$(field "$3" format)" = rpm ] ||	true ||	tests/release/rpm/names.test.sh
+rpm-names-no-rpm-row	scripts/release/rpm/names.sh	[ -n "$table" ] ||	true ||	tests/release/rpm/names.test.sh
+rpm-names-format	scripts/release/rpm/names.sh	[ -n "$row" ] ||	true ||	tests/release/rpm/names.test.sh
 rpm-names-arch	scripts/release/rpm/names.sh	case ",$arches," in *",$4,"*) ;; *) die "$3 is not built for $4" ;; esac	:	tests/release/rpm/names.test.sh
 rpm-names-noarch-leg	scripts/release/rpm/names.sh	case ",$arches," in *,x86_64,*) ;; *) die "$id is not built for x86_64, the leg the noarch packages come from" ;; esac	:	tests/release/rpm/names.test.sh
-rpm-names-extra-pinned-once	scripts/release/rpm/names.sh	[[ "$found" =~ ^[0-9][0-9A-Za-z.]*$ ]] ||	true ||	tests/release/rpm/names.test.sh
-rpm-names-extra-unpinned-goes-on	scripts/release/rpm/names.sh	v="$(extra_version "$name")" || exit 1	v="$(extra_version "$name")" || true	tests/release/rpm/names.test.sh
+rpm-names-extra-pinned-once	scripts/release/rpm/names.sh	[ "${#found[@]}" -eq 1 ] && [[ "$v" =~ ^[0-9][0-9A-Za-z.]*$ ]] ||	true ||	tests/release/rpm/names.test.sh
 rpm-stage-usage	scripts/release/rpm/stage-built.sh	[ "$#" -eq 5 ] ||	true ||	tests/release/rpm/stage-built.test.sh
 rpm-stage-names	scripts/release/rpm/stage-built.sh	|| { echo "the packages of $id $arch cannot be named" >&2; exit 1; }	|| true	tests/release/rpm/stage-built.test.sh
 rpm-stage-built-is-a-directory	scripts/release/rpm/stage-built.sh	[ -d "$built" ] && [ ! -L "$built" ] ||	true ||	tests/release/rpm/stage-built.test.sh
 rpm-stage-set-exact	scripts/release/rpm/stage-built.sh	[ "$got" = "$want" ] ||	true ||	tests/release/rpm/stage-built.test.sh
 rpm-stage-destination-empty	scripts/release/rpm/stage-built.sh	[ -d "$stage" ] && [ ! -L "$stage" ] && [ -z "$(ls -A "$stage")" ] ||	true ||	tests/release/rpm/stage-built.test.sh
 rpm-stage-over-the-cap	scripts/release/rpm/stage-built.sh	[ "$(stat -c %s -- "$built/$name")" -le "$max_rpm" ] ||	true ||	tests/release/rpm/stage-built.test.sh
+distros-rows-usage	scripts/package/distros.sh	[ "$#" -eq 1 ] || { echo "usage: distros.sh rows <format>" >&2; exit 2; }	true	tests/package/distros.test.sh

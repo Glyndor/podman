@@ -30,13 +30,10 @@ extras="${GLYNDOR_EXTRAS_FILE:-$here/../../package/extras.txt}"
 usage() { echo "usage: names.sh legs | leg <version> <id> <arch> | release <version>" >&2; exit 2; }
 die() { echo "$*" >&2; exit 1; }
 
-field() { bash "$distros" field "$1" "$2" || die "distros.txt does not say the $2 of $1"; }
-
-rpm_ids() {
-	local ids
-	ids="$(bash "$distros" ids rpm)" || die "the rpm rows of distros.txt cannot be read"
-	[ -n "$ids" ] || die "distros.txt has no rpm row"
-	printf '%s\n' "$ids"
+# table: the rpm rows, "<id>|<arches>|<extras>", from one reading of distros.txt, which is validated on the way
+read_table() {
+	table="$(bash "$distros" rows rpm)" || die "the rpm rows of distros.txt cannot be read"
+	[ -n "$table" ] || die "distros.txt has no rpm row"
 }
 
 # version <release version>: VR, the version the packages carry, and R, their revision
@@ -45,22 +42,23 @@ version() {
 	r="${vr##*+r}"
 }
 
-# extra_version <name>: the version extras.txt pins for a dependency, exactly one
+# extra_version <name>: sets v to the version extras.txt pins for a dependency, exactly one
 extra_version() {
-	local found
+	local name _ rest found=()
 	[ -f "$extras" ] || die "$extras is missing"
-	found="$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$extras" | awk -F'|' -v n="$1" '$1 == n {print $2}')"
-	[[ "$found" =~ ^[0-9][0-9A-Za-z.]*$ ]] || die "extras.txt pins no single version for $1 (found '$found')"
-	printf '%s' "$found"
+	while IFS='|' read -r name rest _ || [ -n "$name" ]; do
+		[ "$name" != "$1" ] || found+=("$rest")
+	done < "$extras"
+	v="${found[*]}"
+	[ "${#found[@]}" -eq 1 ] && [[ "$v" =~ ^[0-9][0-9A-Za-z.]*$ ]] || die "extras.txt pins no single version for $1 (found '$v')"
 }
 
-# arch_files <id> <arch>, noarch_files <id>: the files of one leg, after version
+# arch_files <id> <arch> <extras>, noarch_files <id>: the files of one leg, after version
 arch_files() {
-	local wanted name v
+	local name
 	printf 'podman-%s-%s.glyndor.%s.%s.rpm\n' "$vr" "$r" "$1" "$2"
-	wanted="$(field "$1" extras)"
-	for name in ${wanted//,/ }; do
-		v="$(extra_version "$name")" || exit 1
+	for name in ${3//,/ }; do
+		extra_version "$name"
 		printf '%s-%s-%s.glyndor.%s.%s.rpm\n' "$name" "$v" "$r" "$1" "$2"
 	done
 }
@@ -74,28 +72,28 @@ noarch_files() {
 case "${1:-}" in
 	legs)
 		[ "$#" -eq 1 ] || usage
-		ids="$(rpm_ids)"
-		for id in $ids; do
-			arches="$(field "$id" arches)"
+		read_table
+		while IFS='|' read -r id arches _; do
 			for arch in ${arches//,/ }; do printf '%s %s\n' "$id" "$arch"; done
-		done ;;
+		done <<< "$table" ;;
 	leg)
 		[ "$#" -eq 4 ] || usage
 		version "$2"
-		[ "$(field "$3" format)" = rpm ] || die "$3 is not an rpm distribution"
-		arches="$(field "$3" arches)"
+		read_table
+		row="$(awk -F'|' -v id="$3" '$1 == id' <<< "$table")"
+		[ -n "$row" ] || die "$3 is not an rpm distribution"
+		IFS='|' read -r id arches wanted <<< "$row"
 		case ",$arches," in *",$4,"*) ;; *) die "$3 is not built for $4" ;; esac
-		arch_files "$3" "$4"
-		noarch_files "$3" ;;
+		arch_files "$id" "$4" "$wanted"
+		noarch_files "$id" ;;
 	release)
 		[ "$#" -eq 2 ] || usage
 		version "$2"
-		ids="$(rpm_ids)"
-		for id in $ids; do
-			arches="$(field "$id" arches)"
+		read_table
+		while IFS='|' read -r id arches wanted; do
 			case ",$arches," in *,x86_64,*) ;; *) die "$id is not built for x86_64, the leg the noarch packages come from" ;; esac
-			for arch in ${arches//,/ }; do arch_files "$id" "$arch"; done
+			for arch in ${arches//,/ }; do arch_files "$id" "$arch" "$wanted"; done
 			noarch_files "$id"
-		done ;;
+		done <<< "$table" ;;
 	*) usage ;;
 esac

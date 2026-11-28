@@ -93,14 +93,19 @@ sign_file() { # <file> [seed]: signs it as the release does
 	( read -r GLYNDOR_RELEASE_ED25519_KEY < "${2:-$WORK/keys/ed25519.seed}"; export GLYNDOR_RELEASE_ED25519_KEY
 		python3 -I "$HERE/.github/scripts/release/sign.py" "$1" > /dev/null )
 }
+# A whole set is signed once for each seed and copied after: forty four files take seconds to sign.
 signed() { # <seed>: the whole set of the release, hashed and signed
-	rm -rf "$set_dir"; mkdir "$set_dir"
+	local master="$WORK/master-${1:+other}"
+	rm -rf "$set_dir"
+	if [ -d "$master" ]; then cp -a "$master" "$set_dir"; return; fi
+	mkdir "$set_dir"
 	bash "$SCRIPT" components "$set_dir/components.txt"
 	printf 'a package\n' > "$set_dir/podman_6.2.0+r3_amd64.deb"; printf 'another\n' > "$set_dir/podman_6.2.0+r3_arm64.deb"
 	fake_rpms "$set_dir" 6.2.0+r3
 	bash "$SCRIPT" sums "$set_dir"
 	local f
 	while IFS= read -r f; do sign_file "$set_dir/$f" "${1:-}"; done <<< "$(bash "$SCRIPT" list)"
+	cp -a "$set_dir" "$master"
 }
 verify() { out="$(bash "$SCRIPT" verify "$set_dir" "$WORK/keys/ed25519.b64" "$WORK/mldsa.b64" "${1:-false}" "${2:-$WORK/venv}" 2>&1)"; rc=$?; }
 signed; verify
