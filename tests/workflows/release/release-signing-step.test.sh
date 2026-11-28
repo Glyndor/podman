@@ -19,6 +19,8 @@ check() { # <desc> <want> <got>
 . "$HERE/tests/lib/workflow-step.sh"
 # shellcheck source=tests/lib/release-workflow.sh
 . "$HERE/tests/lib/release-workflow.sh"
+# shellcheck source=tests/lib/rpm-set.sh
+. "$HERE/tests/lib/rpm-set.sh"
 
 # --- release.yml, sign: the step that signs, and the second signature --------------
 S="$WORK/sign"
@@ -46,12 +48,13 @@ PY
 	REL="$WS/.github/scripts/release"
 	# The third argument is what the plan said about the newest release, false by default.
 	sign() { # <anchor: empty|keyed|missing|indented|committed|cr|crlf|bom|tab|nul|high> <mldsa secret, may be empty> [previous]
-		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/calls.keys" "$S/out"; mkdir -p "$S/art" "$S/rt/stage" "$S/rt/signvenv/bin" "$WS/keyring" "$WS/scripts/release"
-		cp "$HERE/scripts/release/signed-set.sh" "$WS/scripts/release/"
+		rm -rf "$S/art" "$S/rt" "$WS" "$S/calls" "$S/calls.keys" "$S/out"; mkdir -p "$S/art" "$S/rt/signvenv/bin" "$WS/keyring"
 		: > "$S/calls"; : > "$S/out"
 		# The environment the step before made, and the packages the check of the download let through.
 		cp "$S/venv-python" "$S/rt/signvenv/bin/python"
-		touch "$S/rt/stage/podman_6.2.0_amd64.deb" "$S/rt/stage/podman_6.2.0_arm64.deb"
+		sign_stage "$WS" "$S/rt/stage" 6.2.0
+		local gone
+		for gone in "${EXTRA_ENV[@]}"; do case "$gone" in MISSING=*) rm "$S/rt/stage/${gone#MISSING=}" ;; esac; done
 		# The switch as committed, which requires nothing: release-second-signature.test.sh
 		# runs this step with it on.
 		cp "$HERE/keyring/second-signature-required" "$WS/keyring/"
@@ -116,9 +119,13 @@ PY
 		check "$state anchor, no secret: the packages go through" "0 true" "$rc $(grep -qx require_mldsa=false "$S/out" && echo true)"
 		check "$state anchor, no secret: each package is verified against the anchor, with no requirement" \
 			"1 1" "$(calls "$(verify_line "$S/rt/stage/podman_6.2.0_amd64.deb")") $(calls "$(verify_line "$S/rt/stage/podman_6.2.0_arm64.deb")")"
-		check "$state anchor, no secret: each package and the record of the release are signed first" "3" "$(signed)"
+		check "$state anchor, no secret: every package, the record and the list of hashes are signed first" "44" "$(signed)"
+		check "$state anchor, no secret: every one of them, by name" "$(signed_names 6.2.0 | sed "s#^#$S/rt/stage/#")" \
+			"$(sed -n 's#^-I [^ ]*/sign\.py ##p' "$S/calls")"
 		check "$state anchor, no secret: the record is verified too" "1" "$(calls "$(verify_line "$S/rt/stage/components.txt")")"
-		check "$state anchor, no secret: the record is the one of this release and these components" "release v6.2.0|podman v6.2.0|netavark v2.1.0|aardvark-dns v2.1.3|recipe r1" "$(paste -sd'|' "$S/rt/stage/components.txt")"
+		check "$state anchor, no secret: the record is the one of this release and these components" "release v6.2.0|podman v6.2.0|netavark v2.1.0|aardvark-dns v2.1.3|recipe r1|ids $(bash "$HERE/scripts/package/distros.sh" ids rpm | paste -sd' ')|recipe-package $(bash "$HERE/scripts/build/recipe-id.sh" "$HERE/scripts/package")" "$(paste -sd'|' "$S/rt/stage/components.txt")"
+		check "$state anchor, no secret: the list of hashes names every package and the record" "43 0" \
+			"$(grep -c . "$S/rt/stage/SHA256SUMS") $(cd "$S/rt/stage" && sha256sum --strict -c SHA256SUMS > /dev/null 2>&1; echo "$?")"
 	done
 	sign keyed AAAA-a-seed
 	check "a committed key and the secret: the packages go through" "0" "$rc"
@@ -129,8 +136,14 @@ PY
 	check "and each package is verified against the anchor with the second signature required" \
 		"1 1" "$(calls "$(verify_line "$S/rt/stage/podman_6.2.0_amd64.deb" --require-mldsa)") $(calls "$(verify_line "$S/rt/stage/podman_6.2.0_arm64.deb" --require-mldsa)")"
 	check "and the release is told it is required" 1 "$(grep -c -x require_mldsa=true "$S/out")"
-	check "and nothing is verified that was not signed first" "sign sign sign verify verify verify" \
-		"$(sed -n 's#^-I [^ ]*/\(sign\|verify-sig\)\.py .*#\1#p' "$S/calls" | sed 's/-sig//' | paste -sd' ')"
+	check "and nothing is verified that was not signed first" "44 sign 44 verify" \
+		"$(sed -n 's#^-I [^ ]*/\(sign\|verify-sig\)\.py .*#\1#p' "$S/calls" | sed 's/-sig//' | uniq -c | awk '{print $1, $2}' | paste -sd' ')"
+	missing=podmansh-6.2.0+r1-1.glyndor.leap161.noarch.rpm
+	EXTRA_ENV=(MISSING="$missing")
+	sign keyed AAAA-a-seed
+	check "a package that is not there when the list of hashes is written: stopped before anything is signed" "1 1 0" \
+		"$rc $(says 'SHA256SUMS is not written without every file') $(signed)"
+	EXTRA_ENV=()
 	sign keyed ""
 	check "a committed key and no secret: refused" "1" "$rc"
 	check "and it says the secret is what is missing" 1 "$(says 'holds a public key and GLYNDOR_RELEASE_MLDSA65_KEY is not configured')"
@@ -139,7 +152,7 @@ PY
 	check "a secret and no committed key: the second signature is still required of the verifier" \
 		"0 1 1" "$rc $(calls "$(verify_line "$S/rt/stage/podman_6.2.0_amd64.deb" --require-mldsa)") $(calls "$(verify_line "$S/rt/stage/podman_6.2.0_arm64.deb" --require-mldsa)")"
 	sign committed ""
-	check "the anchor this repository commits, no secret: the packages go through" "0 3" "$rc $(signed)"
+	check "the anchor this repository commits, no secret: the packages go through" "0 44" "$rc $(signed)"
 	# A carriage return is a line break to the verifier and not to this step, so a
 	# key behind one would be a comment here and required of nobody.
 	for state in cr crlf bom tab nul high; do

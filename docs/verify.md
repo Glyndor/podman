@@ -1,6 +1,6 @@
 # Verifying a package
 
-Each release publishes `podman_<version>_<arch>.deb` and `podman_<version>_<arch>.deb.sig`, an Ed25519 signature made with the Glyndor release key, plus a `components.txt` that lists the upstream versions it was built from, signed the same way (`components.txt.sig`). The public key is in [`keyring/glyndor-release-ed25519.b64`](../keyring/glyndor-release-ed25519.b64).
+Each release publishes `podman_<version>_<arch>.deb` and `podman_<version>_<arch>.deb.sig`, an Ed25519 signature made with the Glyndor release key, plus a `components.txt` that lists the upstream versions it was built from, signed the same way (`components.txt.sig`). Releases after `6.2.1+r5` also publish the [rpm packages](packages.md), named `<name>-<version>-<revision>.glyndor.<id>.<arch>.rpm`, and `SHA256SUMS`, with the sha256 of every package and of `components.txt`, each with its own `.sig` made the same way. The public key is in [`keyring/glyndor-release-ed25519.b64`](../keyring/glyndor-release-ed25519.b64).
 
 `apt` verifies the archive signature automatically, so this is only needed when downloading a package by hand. There are two independent checks.
 
@@ -29,9 +29,18 @@ A good package prints `Signature Verified Successfully` and exits with status 0.
 
 The key is read from this repository, so this proves the package was signed by whoever holds the private key that matches it. To pin the key independently of GitHub, copy the file once and compare it against a copy you obtained from another channel.
 
+## An rpm package, or the list of hashes
+
+An rpm package and `SHA256SUMS` are checked exactly like the `.deb`: set `deb` to the name of the file, whatever it is, and run the last two commands above. The packages carry no rpm signature of their own: the repository that serves them signs each one when it admits it, so `rpm -K` on a file downloaded from a release does not check it, and `rpm -qip` shows what it says it is. To check several files at once, verify the signature of `SHA256SUMS` first and then compare the files you downloaded with it:
+
+```bash
+openssl pkeyutl -verify -pubin -inkey glyndor-release.pem -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig
+sha256sum --ignore-missing --check SHA256SUMS
+```
+
 ## The second signature, when a release has one
 
-Releases do not carry it yet. When they do, each package has a third file, `podman_<version>_<arch>.deb.mldsa65.sig`: an ML-DSA-65 (FIPS 204) signature over the same bytes, made with a second key whose public half will be in [`keyring/glyndor-release-mldsa65.b64`](../keyring/glyndor-release-mldsa65.b64). It is added beside the Ed25519 signature and never replaces it: a package that has it is good only when both verify. The second signature is not required yet. Until it is, a package without it is judged by its Ed25519 signature alone. Three things make it required, and any one is enough: the line `required` in [`keyring/second-signature-required`](../keyring/second-signature-required), the secret `GLYNDOR_RELEASE_MLDSA65_KEY` being set, and the newest release already carrying the second signature. While any of them holds, the release workflow refuses to publish a package without a second signature that verifies. Taking the line out of that file therefore does not retire the requirement while the secret is set or the newest release carries the signature.
+Releases do not carry it yet. When they do, each signed file has a third file, such as `podman_<version>_<arch>.deb.mldsa65.sig`: an ML-DSA-65 (FIPS 204) signature over the same bytes, made with a second key whose public half will be in [`keyring/glyndor-release-mldsa65.b64`](../keyring/glyndor-release-mldsa65.b64). It is added beside the Ed25519 signature and never replaces it: a package that has it is good only when both verify. The second signature is not required yet. Until it is, a package without it is judged by its Ed25519 signature alone. Three things make it required, and any one is enough: the line `required` in [`keyring/second-signature-required`](../keyring/second-signature-required), the secret `GLYNDOR_RELEASE_MLDSA65_KEY` being set, and the newest release already carrying the second signature. While any of them holds, the release workflow refuses to publish a package without a second signature that verifies. Taking the line out of that file therefore does not retire the requirement while the secret is set or the newest release carries the signature.
 
 Checking it needs OpenSSL 3.5 or later, which Debian 13 and Ubuntu 26.04 ship. Ubuntu 24.04 ships OpenSSL 3.0, which has no ML-DSA-65 and reports the algorithm as not supported, so the second signature cannot be checked there; the Ed25519 signature above still verifies on it. When it holds one, the key file holds a raw 1952-byte ML-DSA-65 public key in base64, and the steps below put the standard 22-byte DER header in front of it to get a key OpenSSL reads. The file has one key per line, and two during a key rotation; the steps take the first, and a package is good when either verifies it. With `deb` and `base` set as above:
 

@@ -174,7 +174,7 @@ watchdog-a-late-delivery-fails-the-job	.github/workflows/watchdog.yml	exit "$lat
 watchdog-a-stale-keyring-watch-fails-the-job	.github/workflows/watchdog.yml	exit "$keyring_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
 watchdog-a-stale-sweep-fails-the-job	.github/workflows/watchdog.yml	exit "$sweep_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
 release-build-runs-when-there-is-nothing-to-build	.github/workflows/release.yml	if: needs.plan.outputs.build == 'true'	if: always()	tests/workflows/release/release-contract.test.sh
-release-sign-does-not-wait-for-the-build	.github/workflows/release.yml	needs: [plan, build-amd64, build-arm64]	needs: [plan]	tests/workflows/release/release-contract.test.sh
+release-sign-does-not-wait-for-the-build	.github/workflows/release.yml	needs: [plan, build-amd64, build-arm64, rpm]	needs: [plan]	tests/workflows/release/release-contract.test.sh
 keyring-watch-branch-step-runs-when-the-keys-agree	.github/workflows/keyring-watch.yml	if: steps.diff.outputs.differs == 'true'	if: always()	tests/workflows/keyring/keyring-watch-copy.test.sh
 dependabot-rebase-runs-on-every-event	.github/workflows/dependabot-automerge.yml	if: github.event_name == 'push'	if: always()	tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh
 check-secrets-sample-words-are-read-in-the-whole-line	scripts/quality/check-secrets.sh	grep -qiE -- "$sample_word" <<< "$value"	grep -qiE -- "$sample_word" <<< "$1"	tests/quality/check-secrets.test.sh
@@ -246,16 +246,6 @@ release-publish-tag-already-exists	.github/workflows/release.yml	|| { echo "::er
 release-sign-environment	.github/workflows/release.yml	    environment: release	    environment: staging	tests/workflows/release/release-contract.test.sh
 reusable-build-the-signed-package-is-uploaded-as-a-check	.github/workflows/reusable-build.yml	inputs.upload && 'deb' || 'check'	inputs.upload && 'check' || 'check'	tests/workflows/build/reusable-build-upload-gate.test.sh
 reusable-build-the-test-job-downloads-another-name	.github/workflows/reusable-build.yml	inputs.upload && 'deb-' || 'check-'	inputs.upload && 'deb-' || 'chek-'	tests/workflows/build/reusable-build-upload-gate.test.sh
-release-sign-reported-id-is-not-a-number	.github/workflows/release.yml	[[ "$want_id" =~ ^[0-9]+$ ]] || {	[[ "$want_id" =~ ^[0-9]+$ ]] || true || {	tests/workflows/release/release-artifacts.test.sh
-release-sign-reported-digest-is-not-a-sha256	.github/workflows/release.yml	[[ "$want_digest" =~ ^[0-9a-f]{64}$ ]] || {	[[ "$want_digest" =~ ^[0-9a-f]{64}$ ]] || true || {	tests/workflows/release/release-artifacts.test.sh
-release-sign-the-id-is-not-listed-once	.github/workflows/release.yml	[ "$(printf '%s\n' "$rows" | grep -c .)" = 1 ] \	true \	tests/workflows/release/release-artifacts.test.sh
-release-sign-the-artifact-has-another-name	.github/workflows/release.yml	[ "$name" = "deb-$arch" ] || {	[ "$name" = "deb-$arch" ] || true || {	tests/workflows/release/release-artifacts.test.sh
-release-sign-the-artifact-expired	.github/workflows/release.yml	[ "$expired" = false ] || {	[ "$expired" = false ] || true || {	tests/workflows/release/release-artifacts.test.sh
-release-sign-the-artifact-is-for-another-commit	.github/workflows/release.yml	[ "$head" = "$SHA" ] || {	[ "$head" = "$SHA" ] || true || {	tests/workflows/release/release-artifacts.test.sh
-release-sign-the-digest-differs	.github/workflows/release.yml	[ "${digest#sha256:}" = "$want_digest" ] || {	[ "${digest#sha256:}" = "$want_digest" ] || true || {	tests/workflows/release/release-artifacts.test.sh
-release-sign-the-reported-hash-is-not-a-sha256	.github/workflows/release.yml	[[ "$want" =~ ^[0-9a-f]{64}$ ]] || {	[[ "$want" =~ ^[0-9a-f]{64}$ ]] || true || {	tests/workflows/release/release-artifacts.test.sh
-release-sign-the-package-is-not-a-regular-file	.github/workflows/release.yml	[ "$(stat -c %F "$file" 2> /dev/null)" = "regular file" ] \	true \	tests/workflows/release/release-artifacts.test.sh
-release-sign-the-package-is-not-the-hashed-file	.github/workflows/release.yml	[ "$got" = "$want" ] || {	[ "$got" = "$want" ] || true || {	tests/workflows/release/release-artifacts.test.sh
 reusable-build-hash-not-exactly-one-package	.github/workflows/reusable-build.yml	if [ "${#debs[@]}" -ne 1 ] || [ ! -f "${debs[0]}" ] || [ -L "${debs[0]}" ]; then	if false; then	tests/workflows/build/reusable-build-hash.test.sh
 reusable-build-hash-the-package-has-another-name	.github/workflows/reusable-build.yml	[ "$(basename "${debs[0]}")" = "podman_${VERSION}_${ARCH}.deb" ] || {	[ "$(basename "${debs[0]}")" = "podman_${VERSION}_${ARCH}.deb" ] || true || {	tests/workflows/build/reusable-build-hash.test.sh
 tests-mldsa-wheel-hashes-not-required	.github/workflows/tests.yml	--disable-pip-version-check --require-hashes --only-binary=:all: -r .github	--disable-pip-version-check --only-binary=:all: -r .github	tests/workflows/policy/tests-installs-mldsa-wheel.test.sh
@@ -273,3 +263,18 @@ package-check-gate-decide-gave-no-answer	.github/workflows/package-check.yml	*)	
 dependabot-images-take-the-dated-amazon-tags	.github/dependabot.yml	        versions: [">2023"]	        versions: []	tests/package/image-tags.test.sh
 deprecations-a-sha-that-is-not-a-sha-is-refused	scripts/quality/lint/no-deprecation-notices.sh	echo "::error::HEAD_SHA is not the sha of a commit" >&2; exit 1	echo "::error::HEAD_SHA is not the sha of a commit" >&2; exit 0	tests/quality/lint/no-deprecation-notices.test.sh
 deprecations-the-verdict-reaches-the-caller	scripts/quality/lint/no-deprecation-notices.sh	exit "$found"	exit 0	tests/quality/lint/no-deprecation-notices.test.sh
+release-publish-a-file-is-missing	.github/workflows/release.yml	|| { echo "::error::the release lacks $asset; refusing to publish."; exit 1; }	|| true	tests/workflows/release/release-publish.test.sh
+release-attest-leaves-files-out	.github/workflows/release.yml	subject-path: ${{ runner.temp }}/signed/*	subject-path: ${{ runner.temp }}/signed/podman_*.deb	tests/workflows/release/release-contract.test.sh
+release-sign-does-not-wait-for-the-rpm	.github/workflows/release.yml	needs: [plan, build-amd64, build-arm64, rpm]	needs: [plan, build-amd64, build-arm64]	tests/workflows/release/release-contract.test.sh
+release-rpm-runs-when-there-is-nothing-to-build	.github/workflows/release.yml	if: ${{ 'true' == needs.plan.outputs.build }}	if: always()	tests/workflows/release/release-contract.test.sh
+release-rpm-is-a-check	.github/workflows/release.yml	upload: ${{ true && true }}	upload: false	tests/workflows/release/release-contract.test.sh,tests/workflows/build/reusable-rpm-wiring.test.sh
+release-alert-does-not-wait-for-the-rpm	.github/workflows/release.yml	needs: [plan, build-amd64, build-arm64, rpm, sign, config-upgrade, publish, rehearsal]	needs: [plan, build-amd64, build-arm64, sign, config-upgrade, publish, rehearsal]	tests/workflows/release/release-alert.test.sh
+release-sign-the-rpm-set-is-not-checked	.github/workflows/release.yml	bash scripts/release/check-upload.sh rpm-set "$RPMSET_ID" "$RPMSET_DIGEST" "$SHA" "$list"	true	tests/workflows/release/release-artifacts.test.sh
+release-sign-the-hashes-are-not-checked	.github/workflows/release.yml	run: bash scripts/release/check-hashes.sh "$TAG" "$RUNNER_TEMP/built" "$AMD64_SHA256" "$ARM64_SHA256" "$RPM_MANIFEST"	run: "true"	tests/workflows/release/release-artifacts.test.sh
+reusable-rpm-gathers-without-the-legs	.github/workflows/reusable-rpm.yml	    needs: package	    needs: list	tests/workflows/build/reusable-rpm-wiring.test.sh
+reusable-rpm-merges-the-legs	.github/workflows/reusable-rpm.yml	merge-multiple: false	merge-multiple: true	tests/workflows/build/reusable-rpm-wiring.test.sh
+reusable-rpm-ignores-a-digest	.github/workflows/reusable-rpm.yml	digest-mismatch: error	digest-mismatch: warn	tests/workflows/build/reusable-rpm-wiring.test.sh
+reusable-package-uploads-unstaged	.github/workflows/reusable-package.yml	path: ${{ runner.temp }}/staged/*.rpm	path: ${{ runner.temp }}/out/*.rpm	tests/workflows/build/reusable-rpm-wiring.test.sh
+reusable-package-tests-by-name	.github/workflows/reusable-package.yml	artifact-ids: ${{ needs.build.outputs.artifact_id }}	name: rpm-${{ inputs.id }}-${{ inputs.arch }}	tests/workflows/build/reusable-rpm-wiring.test.sh
+package-check-gathers-as-a-release	.github/workflows/package-check.yml	upload: false	upload: true	tests/workflows/build/reusable-rpm-wiring.test.sh
+decide-package-rpm-scripts-do-not-build	scripts/ci/decide-package.sh	| scripts/release/rpm/* | scripts/release/check-upload.sh \	\	tests/ci/decide-package.test.sh

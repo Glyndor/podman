@@ -52,8 +52,41 @@ for arch in amd64 arm64; do
 	check "build-$arch runs only when the plan says there is something to build" "needs.plan.outputs.build == 'true'" "$(gate release.yml build-$arch if | sed 's/^\${{ *//; s/ *}}$//')"
 	check "build-$arch waits for the plan" "plan" "$(gate release.yml build-$arch needs)"
 done
-check "sign waits for the plan and for the build of every architecture" "build-amd64,build-arm64,plan" "$(gate release.yml sign needs)"
+check "sign waits for the plan, for the build of every architecture and for the rpm packages" "build-amd64,build-arm64,plan,rpm" "$(gate release.yml sign needs)"
+check "the rpm packages are built only when the plan says there is something to build" "'true' == needs.plan.outputs.build" "$(gate release.yml rpm if | sed 's/^\${{ *//; s/ *}}$//')"
+check "and wait for the plan" "plan" "$(gate release.yml rpm needs)"
+# The rpm job is a call: what it builds, and that it is the release's set and not a check, is in what it passes.
+rpm_call() { # [workflow dir]: the workflow the rpm job calls, whether it is a release, and what each input is fed from
+	python3 - "${1:-$HERE/.github/workflows}/release.yml" <<'PY' 2>&1 || echo "rule failed"
+import sys, yaml
+job = yaml.safe_load(open(sys.argv[1]))["jobs"]["rpm"]
+print(job.get("uses"), job.get("with", {}).get("upload"), job.get("permissions"))
+for key, value in sorted(job.get("with", {}).items()):
+    if key != "upload" and str(value) != "${{ needs.plan.outputs." + key + " }}":
+        print(f"{key} is {value}, not what the plan resolved")
+PY
+}
+check "the release builds the rpm packages with the shared workflow, as a release, from what the plan resolved, with no write" \
+	"./.github/workflows/reusable-rpm.yml \${{ true && true }} {'contents': 'read', 'actions': 'read'}" "$(rpm_call)"
+sabotage release.yml "      upload: \${{ true && true }}
+
+  # The job that holds the signing keys." "      upload: false
+
+  # The job that holds the signing keys." "$BAD" >/dev/null 2>&1
+check "packages made as a check are named" "./.github/workflows/reusable-rpm.yml False {'contents': 'read', 'actions': 'read'}" "$(rpm_call "$BAD")"
+sabotage release.yml "      aardvark_sha: \${{ needs.plan.outputs.aardvark_sha }}
+      upload: \${{ true && true }}
+
+  # The job that holds the signing keys." "      aardvark_sha: \${{ needs.plan.outputs.podman_sha }}
+      upload: \${{ true && true }}
+
+  # The job that holds the signing keys." "$BAD" >/dev/null 2>&1
+check "packages built from another commit than the plan resolved are named" \
+	"aardvark_sha is \${{ needs.plan.outputs.podman_sha }}, not what the plan resolved" "$(rpm_call "$BAD" | sed -n '2,$p')"
 check "publish waits for the plan, for the signing and for the upgrade test of the published package" "config-upgrade,plan,sign" "$(gate release.yml publish needs)"
+# A release missing a package is not published: every job that signs or publishes runs only when what it waits for
+# succeeded, so none of them carries a condition that would run it whatever the rpm packages ended as.
+check "sign runs whatever its needs ended as only if its condition says so, and it does not" "github.ref == 'refs/heads/main'" "$(gate release.yml sign if)"
 
 # --- the keys are released by an environment, not by a line of this file --------------
 check "every job that names a secret declares the environment release" "" "$(violations environment)"
@@ -131,12 +164,14 @@ fi
 check "the packages are attested between the verification of their signatures and the release" "" "$(violations attest)"
 sabotage release.yml "      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: \${{ runner.temp }}/signed/podman_*.deb
+          # Every file of the release, signatures included: the rpm channel verifies the attestation of each file it
+          # downloads. The check of the signed set above left in this directory those files and no other.
+          subject-path: \${{ runner.temp }}/signed/*
 " "" "$BAD" >/dev/null 2>&1
 check "a release without the attestation step is named" "0 steps attest the build provenance, expected 1" "$(violations attest "$BAD")"
-sabotage release.yml "subject-path: \${{ runner.temp }}/signed/podman_*.deb" "subject-path: \${{ runner.temp }}/signed/podman_*.deb.sig" "$BAD" >/dev/null 2>&1
-check "an attestation of something other than the packages is named" \
-	"the attestation subject is '\${{ runner.temp }}/signed/podman_*.deb.sig', not the .deb packages" "$(violations attest "$BAD")"
+sabotage release.yml "subject-path: \${{ runner.temp }}/signed/*" "subject-path: \${{ runner.temp }}/signed/podman_*.deb" "$BAD" >/dev/null 2>&1
+check "an attestation that leaves the rpm packages and the signatures out is named" \
+	"the attestation subject is '\${{ runner.temp }}/signed/podman_*.deb', not every file of the signed set" "$(violations attest "$BAD")"
 sabotage release.yml "      attestations: write
 " "" "$BAD" >/dev/null 2>&1
 check "a job that cannot write the attestation is named" "publish lacks attestations: write, which the attestation needs" "$(violations attest "$BAD")"

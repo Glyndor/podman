@@ -10,11 +10,14 @@
 # that list is the rule; a pattern such as podman_*.deb is not.
 #
 #   built  <tag> <in-dir> <out-dir>   <in-dir> holds exactly deb-amd64/ and deb-arm64/, each with
-#                                     its one podman_<V>_<arch>.deb: regular files, under the size
-#                                     cap, whose control file says package podman, version <V>
-#                                     and that architecture. They are copied flat into <out-dir>,
-#                                     which must be empty or absent.
-#   signed <tag> <dir> <mldsa>        <dir> holds exactly the two packages and components.txt, a
+#                                     its one podman_<V>_<arch>.deb, and rpm/ with exactly the rpm
+#                                     packages of the release (scripts/release/rpm/names.sh):
+#                                     regular files, under the size cap. The control file of each
+#                                     .deb says package podman, version <V> and that architecture,
+#                                     and each rpm starts with the lead of an rpm package. They are
+#                                     copied flat into <out-dir>, which must be empty or absent.
+#   signed <tag> <dir> <mldsa>        <dir> holds exactly the files scripts/release/signed-set.sh
+#                                     lists (the packages, components.txt and SHA256SUMS), a
 #                                     64-byte Ed25519 signature beside each, and, when <mldsa> is
 #                                     true, a 3309-byte ML-DSA-65 signature beside each; when it is
 #                                     false, none.
@@ -34,6 +37,8 @@ version="${tag#v}"
 archs=(amd64 arm64)
 max_deb=$((300 * 1024 * 1024))
 max_record=4096
+max_sums=$((64 * 1024))
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -d "$dir" ] && [ ! -L "$dir" ] || { echo "$dir is not a directory" >&2; exit 1; }
 
 # listing <dir>: every entry below it with its type, as `<path> <type>`, in a fixed order.
@@ -46,10 +51,12 @@ case "$mode" in
 	built)
 		[ "$#" -eq 4 ] || { echo "usage: check-artifacts.sh built <tag> <in-dir> <out-dir>" >&2; exit 2; }
 		out="$4"
-		want=""
+		rpms="$(bash "$here/rpm/names.sh" release "$version")" || { echo "the rpm packages of $tag cannot be named" >&2; exit 1; }
+		want="rpm d"$'\n'
 		for a in "${archs[@]}"; do
 			want+="deb-$a d"$'\n'"deb-$a/podman_${version}_$a.deb f"$'\n'
 		done
+		while IFS= read -r name; do want+="rpm/$name f"$'\n'; done <<< "$rpms"
 		want="$(printf '%s' "$want" | LC_ALL=C sort)"
 		got="$(listing "$dir")"
 		[ "$got" = "$want" ] || { printf 'the download is not exactly the expected set.\nexpected:\n%s\nfound:\n%s\n' "$want" "$got" >&2; exit 1; }
@@ -64,13 +71,19 @@ case "$mode" in
 			[ "$control" = "$(printf 'Package: podman\nVersion: %s\nArchitecture: %s' "$version" "$a")" ] \
 				|| { printf '%s says\n%s\nand not podman %s %s\n' "$deb" "$control" "$version" "$a" >&2; exit 1; }
 			install -m 0644 -- "$deb" "$out/podman_${version}_$a.deb"
-		done ;;
+		done
+		while IFS= read -r name; do
+			rpm="$dir/rpm/$name"
+			[ "$(size_of "$rpm")" -le "$max_deb" ] || { echo "the downloaded package $rpm is over the size cap of $max_deb bytes" >&2; exit 1; }
+			[ "$(head -c 4 -- "$rpm" | od -An -tx1 | tr -d ' \n')" = edabeedb ] || { echo "$rpm does not start with the lead of an rpm package" >&2; exit 1; }
+			install -m 0644 -- "$rpm" "$out/$name"
+		done <<< "$rpms" ;;
 	signed)
 		[ "$#" -eq 4 ] || { echo "usage: check-artifacts.sh signed <tag> <dir> <true|false>" >&2; exit 2; }
 		mldsa="$4"
 		case "$mldsa" in true | false) ;; *) echo "the second-signature flag is true or false, not '$mldsa'" >&2; exit 1 ;; esac
-		files=(components.txt)
-		for a in "${archs[@]}"; do files+=("podman_${version}_$a.deb"); done
+		listed="$(TAG="$tag" bash "$here/signed-set.sh" list)" || { echo "the files of $tag cannot be named" >&2; exit 1; }
+		mapfile -t files <<< "$listed"
 		want=""
 		for name in "${files[@]}"; do
 			want+="$name f"$'\n'"$name.sig f"$'\n'
@@ -80,6 +93,7 @@ case "$mode" in
 		got="$(listing "$dir")"
 		[ "$got" = "$want" ] || { printf 'the signed set is not exactly the expected one.\nexpected:\n%s\nfound:\n%s\n' "$want" "$got" >&2; exit 1; }
 		[ "$(size_of "$dir/components.txt")" -le "$max_record" ] || { echo "components.txt is over the size cap of $max_record bytes" >&2; exit 1; }
+		[ "$(size_of "$dir/SHA256SUMS")" -le "$max_sums" ] || { echo "SHA256SUMS is over the size cap of $max_sums bytes" >&2; exit 1; }
 		for name in "${files[@]}"; do
 			file="$dir/$name"
 			[ "$(size_of "$file")" -le "$max_deb" ] || { echo "the signed package $file is over the size cap of $max_deb bytes" >&2; exit 1; }

@@ -47,6 +47,11 @@ for p in \
 	check "does not build for $p" false "$(decide "$p\n")"
 done
 
+for p in scripts/release/rpm/names.sh scripts/release/rpm/collect.sh scripts/release/check-upload.sh .github/workflows/reusable-rpm.yml; do
+	check "builds for $p, which stages or gathers the packages" true "$(decide "$p\n")"
+done
+check "does not build for the rest of the release scripts" false "$(decide 'scripts/release/signed-set.sh\n')"
+
 check "one matching path among others" true "$(decide 'README.md\ndocs/x.md\nscripts/package/distros.txt\n')"
 check "matching path first" true "$(decide 'scripts/package/distros.txt\nREADME.md\n')"
 check "only paths that do not match" false "$(decide 'README.md\ndocs/x.md\ntests/ci/x.test.sh\n')"
