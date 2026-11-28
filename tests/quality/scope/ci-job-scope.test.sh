@@ -147,6 +147,52 @@ repo workflowedit; echo 'name: x' > "$R/.github/workflows/called.yml"; git -C "$
 git -C "$R" commit -qm "the workflow"; echo 'name: y' >> "$R/.github/workflows/called.yml"; merge
 check "a pull request that edits a workflow runs every suite" "$ALL" "$(decide)"
 
+# --- what every suite stands on runs every suite ---------------------------------
+#
+# None of these paths is in an entry of the map of these cases, so what runs the
+# suites is the rule of the resolver and nothing else. The control of each is
+# the resolver without that part of the rule.
+
+# shared_case <name> <path>: a pull request that adds the path runs every suite.
+shared_case() {
+	repo "$1"; mkdir -p "$R/$(dirname "$2")"; echo more >> "$R/$2"; merge
+	check "a change to $2 runs every suite" "$ALL" "$(decide)"
+}
+shared_case fixture tests/a/fixtures/key.pem
+shared_case library tests/lib/helper.sh
+shared_case catalogue tests/mutation/catalog.txt
+repo underlib; mkdir -p "$R/tests/lib"; echo y > "$R/tests/lib/helper.sh"; merge
+sabotage "$R/scripts/quality/scope/ci-job-scope.sh" \
+	'if path.startswith("tests/") and not path.endswith(".test.sh"):' 'if False:'
+check "without the rule for tests/ a helper skips every mapped suite" "tests/c/three.test.sh" "$(decide)"
+
+shared_case dependencies scripts/quality/scope/suite-dependencies.txt
+shared_case tool scripts/quality/scope/another-tool.sh
+repo folder; mkdir -p "$R/scripts/quality/scope"; echo y > "$R/scripts/quality/scope/another-tool.sh"; merge
+sabotage "$R/scripts/quality/scope/ci-job-scope.sh" '"scripts/quality/scope/**",' '"scripts/quality/scope/ci-job-scope.sh",'
+check "without the folder in the rule that tool skips every mapped suite" "tests/c/three.test.sh" "$(decide)"
+
+shared_case ownsuite tests/quality/scope/new.test.sh
+repo mechanism; mkdir -p "$R/tests/quality/scope"; echo y > "$R/tests/quality/scope/new.test.sh"; merge
+sabotage "$R/scripts/quality/scope/ci-job-scope.sh" '    "tests/quality/scope/**",
+' ''
+check "without the suites of the mechanism in the rule a suite of it skips every mapped suite" \
+	"tests/c/three.test.sh" "$(decide)"
+
+shared_case rootmodule yaml.py
+shared_case rootpackage yaml/__init__.py
+repo shadow; echo y > "$R/yaml.py"; merge
+sabotage "$R/scripts/quality/scope/ci-job-scope.sh" '    "*.py",
+' ''
+check "without the root modules in the rule one skips every mapped suite" "tests/c/three.test.sh" "$(decide)"
+repo nested; mkdir -p "$R/scripts/c"; echo y > "$R/scripts/c/tool.py"; merge
+check "a Python file that is not at the root is not an input of every suite" "tests/c/three.test.sh" "$(decide)"
+
+# A suite is not one of those files: changing one runs it, and not the others.
+repo onesuite; echo more >> "$R/tests/a/one.test.sh"; merge
+check "a change to one suite runs it and the unmapped one, not every suite" \
+	"tests/a/one.test.sh tests/c/three.test.sh" "$(decide)"
+
 # --- the decision fails open -----------------------------------------------------
 
 repo rename; git -C "$R" mv scripts/b/y.sh scripts/b/renamed.sh; merge

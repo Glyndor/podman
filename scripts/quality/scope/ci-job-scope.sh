@@ -35,15 +35,28 @@ import sys
 # own scope gets the full set instead, because the base copy is what decides.
 MAP = "scripts/quality/scope/suite-scope.txt"
 
-# The map, this script and the workflows are an input of every suite, by rule
-# rather than by an entry per suite: a change to any of them changes WHAT RUNS
-# or WHO RUNS IT, so a change to any of them runs everything. The step of
-# .github/workflows/tests.yml that runs the suites is part of the workflows.
-# Keeping the rule here means a suite added to the map later cannot forget it.
+# What is an input of every suite, by rule rather than by an entry per suite:
+# a change to any of it changes WHAT RUNS, WHO RUNS IT or what every suite
+# stands on, so it runs everything. Keeping the rule here means a suite added to
+# the map later cannot forget it.
+#
+#   * this folder (the resolver, the map and the tools) and the suites of the
+#     mechanism itself;
+#   * the workflows, whose steps run the suites;
+#   * a Python module at the root of the repository: the suites that run
+#     `python3 -` from there import from it, so a new file can shadow a module
+#     any of them loads.
+#
+# A file under tests/ that is not a suite (a helper the suites source, a fixture
+# they read, the mutation catalogue and its runner) is one too: see shared().
 GLOBAL_INPUTS = (
-    "scripts/quality/scope/ci-job-scope.sh",
-    MAP,
+    "scripts/quality/scope/**",
+    "tests/quality/scope/**",
     ".github/workflows/**",
+    "*.py",
+    "*.pyc",
+    "*.so",
+    "*/__init__.py",
 )
 
 
@@ -163,6 +176,13 @@ def affects(patterns, paths):
     return any(matches(pattern, path) for pattern in patterns for path in paths)
 
 
+def shared(path):
+    """True when a change to the path runs every suite."""
+    if path.startswith("tests/") and not path.endswith(".test.sh"):
+        return True
+    return affects(GLOBAL_INPUTS, [path])
+
+
 def normalise(path):
     """The map names a suite without the leading `./` the workflow uses."""
     return path[2:] if path.startswith("./") else path
@@ -182,7 +202,7 @@ def suites(candidates):
         # No map in the base commit: the scope cannot be established.
         return list(candidates)
     scope = parse_map(body.decode("utf-8", "replace"))
-    if scope is None:
+    if scope is None or any(shared(path) for path in paths):
         return list(candidates)
     keep = []
     for candidate in candidates:
@@ -193,7 +213,7 @@ def suites(candidates):
             continue
         # A suite that changes is a suite whose verdict can change, whether or
         # not its entry lists its own file.
-        if candidate in paths or affects(patterns, paths) or affects(GLOBAL_INPUTS, paths):
+        if candidate in paths or affects(patterns, paths):
             keep.append(candidate)
     return keep
 
