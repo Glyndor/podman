@@ -99,6 +99,8 @@ GH
 x'; do
 		release false "$bad"
 		check "the tag '$(printf '%s' "$bad" | head -n 1)' is not a version: nothing is created" "1 0 0" "$rc $(grep -c '^release create' "$R/calls") $(grep -c '^api ' "$R/calls")"
+		# The names of the assets would refuse such a tag too, after the step had gone on with it: it is refused first.
+		check "and the step itself says so, before it names an asset" 1 "$(says 'is not a version; refusing to publish')"
 	done
 	for bad in abc123 main "${SHA}0" "${SHA%?}" ""; do
 		release false v6.2.0+r2 "$bad"
