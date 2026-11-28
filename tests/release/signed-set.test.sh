@@ -54,7 +54,7 @@ printf 'arch|pacman|arch|x86_64|0|0|0|upstream|20260716||\n' > "$WORK/empty.txt"
 out="$(GLYNDOR_DISTROS_FILE="$WORK/empty.txt" bash "$SCRIPT" components "$WORK/rec" 2>&1)"; rc=$?
 check "a table with no rpm row writes no record" "1 absent 1" "$rc $([ -e "$WORK/rec" ] && echo present || echo absent) $(says 'no rpm row')"
 
-# --- what is signed and what is attached ----------------------------------------------------------
+# --- what is signed and what is attached, for the committed table ---------------------------------
 listed="$(bash "$SCRIPT" list)"
 want="$( { printf 'podman_6.2.0+r3_amd64.deb\npodman_6.2.0+r3_arm64.deb\n'; rpm_names 6.2.0+r3; printf 'components.txt\nSHA256SUMS\n'; } )"
 check "what is signed is the two .deb, every rpm package, the record and the hashes" "$want" "$listed"
@@ -89,6 +89,8 @@ for bad in "" main v6.2 'v6.2.0+r3 x'; do
 done
 
 # --- the check of the signed set ------------------------------------------------------------------
+# From here on a table of three distributions: what is verified is the set, and every file of it is signed and verified.
+small_table "$WORK/distros.txt"
 sign_file() { # <file> [seed]: signs it as the release does
 	( read -r GLYNDOR_RELEASE_ED25519_KEY < "${2:-$WORK/keys/ed25519.seed}"; export GLYNDOR_RELEASE_ED25519_KEY
 		python3 -I "$HERE/.github/scripts/release/sign.py" "$1" > /dev/null )
@@ -112,7 +114,7 @@ signed; verify
 check "a set signed with the release key verifies" 0 "$rc"
 signed "$WORK/other/ed25519.seed"; verify
 check "a set signed with another key is refused" "1 1" "$rc $(says 'does not verify')"
-check "and its hashes are the ones sha256sum checks, one for every file but itself" "0 43" \
+check "and its hashes are the ones sha256sum checks, one for every file but itself" "0 17" \
 	"$(cd "$set_dir" && sha256sum --strict -c SHA256SUMS > /dev/null 2>&1; echo "$?") $(grep -c . "$set_dir/SHA256SUMS")"
 rpm=podman-6.2.0+r3-3.glyndor.el9.aarch64.rpm
 for f in podman_6.2.0+r3_amd64.deb podman_6.2.0+r3_arm64.deb "$rpm" components.txt SHA256SUMS; do

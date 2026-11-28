@@ -24,6 +24,7 @@ check() { # <desc> <want> <got>
 . "$HERE/tests/lib/workflow-step.sh"
 # shellcheck source=tests/lib/rpm-set.sh
 . "$HERE/tests/lib/rpm-set.sh"
+small_table "$WORK/distros.txt"
 NAMES="$(signed_names 6.2.0)"
 
 S="$WORK/sign"
@@ -85,7 +86,7 @@ PY
 		if { [ "$sw" = on ] && [ "$an" = empty ]; } || { [ "$an" = keyed ] && [ -z "$se" ]; }; then
 			want="1 stopped"
 		else
-			req=0; { [ "$sw" = on ] || [ -n "$se" ]; } && req=44
+			req=0; { [ "$sw" = on ] || [ -n "$se" ]; } && req=18
 			# A refusal stops the loop at the first file.
 			rc_want=0; [ "$req" -gt 0 ] && [ "$sig" = absent ] && { rc_want=1; req=1; }
 			want="$rc_want $req"
@@ -107,12 +108,12 @@ PY
 	check "switch on, no second signature: refused by the verifier, as required" "1 1" \
 		"$rc $(says 'the hybrid release signature is required')"
 	sign on keyed a-seed present
-	check "switch on, key, secret and signature: through, and the release is told it is required" "0 44 1" \
+	check "switch on, key, secret and signature: through, and the release is told it is required" "0 18 1" \
 		"$rc $(required) $(grep -c -x require_mldsa=true "$S/out")"
 
 	# --- the switch as committed --------------------------------------------------
 	sign committed empty "" absent
-	check "the switch this repository commits requires nothing: the release of today goes through" "0 44 0 1" \
+	check "the switch this repository commits requires nothing: the release of today goes through" "0 18 0 1" \
 		"$rc $(signed) $(required) $(grep -c -x require_mldsa=false "$S/out")"
 	check "and it says so in a comment, with no line that would switch it on" 0 "$(grep -c -x 'required' "$HERE/keyring/second-signature-required")"
 	sign missing empty "" absent
@@ -133,7 +134,7 @@ PY
 	unread "a NUL in a comment" "# a comment\0# another\n" "$bytes"
 	unread "a byte past ASCII" "${head}# \200\n" "$bytes"
 	RAW="${head}\n   # an indented comment\n\nrequired" sign raw keyed a-seed present
-	check "blank lines, an indented comment and the line with no line feed after it: read as on" "0 44" "$rc $(required)"
+	check "blank lines, an indented comment and the line with no line feed after it: read as on" "0 18" "$rc $(required)"
 else
 	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the step that holds the signing key"
 fi

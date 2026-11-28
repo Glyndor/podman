@@ -20,6 +20,7 @@ check() { # <desc> <want> <got>
 
 # shellcheck source=tests/lib/rpm-set.sh
 . "$HERE/tests/lib/rpm-set.sh"
+small_table "$WORK/distros.txt"
 
 mkdeb() { # <path> <package> <version> <arch>
 	local root="$WORK/root-$$-$RANDOM"
@@ -46,7 +47,7 @@ check "the exact set passes" 0 "$rc"
 check "and every package is copied flat, by name, and nothing else" \
 	"$( { printf 'podman_6.2.0+r12_amd64.deb\npodman_6.2.0+r12_arm64.deb\n'; rpm_names 6.2.0+r12; } | LC_ALL=C sort | paste -sd' ')" \
 	"$(cd "$WORK/out" && find . -type f -printf '%P\n' | LC_ALL=C sort | paste -sd' ')"
-check "which are the two .deb and forty rpm packages" 42 "$(find "$WORK/out" -type f | wc -l)"
+check "which are the two .deb and the fourteen rpm packages of three distributions" 16 "$(find "$WORK/out" -type f | wc -l)"
 
 fresh 6.2.0
 built v6.2.0
@@ -124,11 +125,11 @@ built
 check "one rpm package missing is refused" "1 1" "$rc $(says 'not exactly the expected set')"
 check "and nothing is copied" 0 "$([ -e "$WORK/out" ] && ls -A "$WORK/out" | wc -l || echo 0)"
 fresh 6.2.0+r12
-rm "$WORK"/in/rpm/*.glyndor.tumbleweed.*
+rm "$WORK"/in/rpm/*.glyndor.fc44.*
 built
 check "a whole distribution missing is refused" "1 1" "$rc $(says 'not exactly the expected set')"
 fresh 6.2.0+r12
-rm "$WORK/in/rpm/crun-1.31-12.glyndor.amzn2023.aarch64.rpm"
+rm "$WORK/in/rpm/catatonit-0.2.1-12.glyndor.el9.aarch64.rpm"
 built
 check "a dependency packaged beside podman that is missing is refused" 1 "$rc"
 fresh 6.2.0+r12

@@ -4,6 +4,14 @@
 # tables of the repository, and each file is the lead of an rpm package followed by its own name, so two files never
 # hash alike. Sourced, never run, with HERE set by the suite.
 
+# small_table <file>: three rows of the committed table in <file>, the one every script of the release then reads
+# (GLYNDOR_DISTROS_FILE). For the suites whose subject is not the table: forty packages take seconds to hash and sign in
+# every case, and the mutation sweep runs these suites once for each guard. Sixteen signed packages say the same.
+small_table() {
+	grep -E '^(fc45|fc44|el9)\|' "$HERE/scripts/package/distros.txt" > "$1"
+	export GLYNDOR_DISTROS_FILE="$1"
+}
+
 # rpm_names <version>: the files the release of that version carries
 rpm_names() { bash "$HERE/scripts/release/rpm/names.sh" release "$1"; }
 

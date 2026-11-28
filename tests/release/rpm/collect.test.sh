@@ -18,6 +18,7 @@ check() { # <desc> <want> <got>
 }
 # shellcheck source=tests/lib/rpm-set.sh
 . "$HERE/tests/lib/rpm-set.sh"
+small_table "$WORK/distros.txt"
 
 V=6.2.0+r4
 LEGS="$(bash "$NAMES" legs)"
@@ -49,9 +50,9 @@ one=podman-6.2.0+r4-4.glyndor.el9.aarch64.rpm
 leg="$WORK/dl/rpm-el9-aarch64"
 
 fresh; gather
-check "every leg with its packages, as hashed: the forty files of the release are gathered" "0 $(bash "$NAMES" release "$V" | sort | paste -sd' ')" \
+check "every leg with its packages, as hashed: the files of the release are gathered" "0 $(bash "$NAMES" release "$V" | sort | paste -sd' ')" \
 	"$rc $(find "$WORK/set" -type f -printf '%f\n' | sort | paste -sd' ')"
-check "and every noarch package is the one of the x86_64 leg" "14 0" \
+check "and every noarch package is the one of the x86_64 leg" "6 0" \
 	"$(cat "$WORK"/set/*.noarch.rpm | grep -a -c 'built on x86_64') $(cat "$WORK"/set/*.noarch.rpm | grep -a -c 'built on aarch64')"
 check "and each architecture's own packages are its own" 1 "$(grep -a -c 'built on aarch64' "$WORK/set/$one")"
 digest() { bash "$SCRIPT" digest "$V" "$WORK/set"; }
