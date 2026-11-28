@@ -62,6 +62,7 @@ tests/quality/mutation_refusals.test.sh -
 tests/quality/scope/ci-job-scope.test.sh -
 tests/quality/scope/ci-job-scope-suites.test.sh -
 tests/quality/scope/suite-scope-map.test.sh -
+tests/quality/scope/suite-scope-reads.test.sh -
 tests/release/check-artifacts.test.sh -
 tests/release/dry-run-keys.test.sh -
 tests/release/release-signing-hybrid.test.sh -

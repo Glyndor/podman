@@ -347,7 +347,7 @@ check "a change to a script of scripts/quality runs the suites that read it" "1"
 check "and the suites that walk every script" "1" \
 	"$(has tests/quality/check-test-coverage.test.sh "$got")"
 check "and none of the suites that read neither" "1" \
-	"$(lacks tests/docs/contributing-workflows.test.sh "$got")"
+	"$(lacks tests/docs/verify-key-file.test.sh "$got")"
 
 echo
 echo "$pass passed, $fail failed"

@@ -19,9 +19,10 @@
 #     commit, not as the pull request ships them, so a pull request that rewrites
 #     the map or the resolver to narrow its own scope gets the full set instead.
 #
-#   * The map, the resolver and the step that runs the suites are an input of every
-#     suite. The rule is in ci-job-scope.sh and not in an entry per suite, so a
-#     suite added below later cannot forget it.
+#   * What every suite stands on runs every suite, by a rule of ci-job-scope.sh
+#     and not by an entry: the workflows, this folder and its suites, anything
+#     under tests/ that is not a suite, and what Python can import from the root.
+#     A suite added below later cannot forget it.
 #
 #   * The names of the suites here are the paths the step of tests.yml runs, so the
 #     step still finds every suite and tests/workflows/policy/tests-run-every-suite.test.sh
@@ -29,15 +30,14 @@
 #
 # HOW THE ENTRIES WERE DERIVED
 #
-# Each suite was read and the files it reads were noted: the ones it names and
-# the ones it walks. The sets were then widened to the folder that holds them: a
-# suite that read one file of scripts/quality/ depends on that script and on the
-# suites that exercise it, because the next change there may be the one it reads.
-# A suite that WALKS a tree (`find`, `git ls-files`) depends on the whole tree by
-# name, so its entry is `**`: the folder-size check reads every tracked file, which
-# is why no path can be skipped as documentation only. The suite that reads a
-# workflow reads the file it names, and the suites that glob the folder of the
-# workflows read all of them, so their entries name the folder and not one file.
+# Each suite was run under strace and every file of the repository it opened or
+# listed has to be covered; the sets were then widened to the folder that holds
+# them, because the next change there may be the one it reads. A suite that walks
+# the tree (`find`, `git ls-files`) depends on the whole tree by name, so its entry
+# is `**`. tests/quality/scope/suite-scope-reads.test.sh reads the text of each
+# suite and fails on a file it reaches that the entry does not cover; it also asks
+# for a path a suite only names to a script or a key, so a few entries are wider
+# than what the suite opens.
 #
 # PATTERN SYNTAX
 #
@@ -49,8 +49,8 @@
 # HOW TO EXTEND IT
 #
 # A new suite arrives without an entry, so it always runs until somebody writes
-# one. When you add an entry, measure it the way this one was measured: read the
-# suite and record the files it opens.
+# one. When you add an entry, measure it the way these were measured:
+# `strace -f -y -e trace=%file bash <suite>`.
 #
 # ---------------------------------------------------------------------------
 
@@ -75,15 +75,20 @@ tests/build/recipe-id.test.sh
 	scripts/build/**
 
 tests/ci/decide-build.test.sh
-	scripts/ci/**
+	scripts/**
+	tests/ci/**
 
 tests/ci/decide-package.test.sh
-	scripts/ci/**
+	scripts/**
+	tests/ci/**
 
 tests/docs/contributing-workflows.test.sh
 	CONTRIBUTING.md
 	.github/PULL_REQUEST_TEMPLATE.md
 	.github/workflows/**
+	scripts/**
+	tests/**
+	.github/scripts/release/**
 
 tests/docs/verify-key-file.test.sh
 	docs/verify.md
@@ -101,6 +106,7 @@ tests/monitoring/check-tool-versions.test.sh
 
 tests/monitoring/delivery-lag.test.sh
 	scripts/monitoring/**
+	scripts/upstream/**
 
 tests/monitoring/schedule-freshness.test.sh
 	scripts/monitoring/**
@@ -111,9 +117,12 @@ tests/mutation/mutation-workflow.test.sh
 
 tests/mutation/run-mutations.test.sh
 	tests/mutation/run-mutations.sh
+	tests/lib/**
+	tests/mutation/catalog.txt
 
 tests/package/build-payload.test.sh
 	scripts/package/**
+	scripts/build/**
 
 tests/package/dependabot-images.test.sh
 	.github/dependabot.yml
@@ -145,6 +154,7 @@ tests/package/rpm/check-replacement.test.sh
 tests/package/rpm/fetch-extras.test.sh
 	scripts/package/**
 	scripts/upstream/**
+	keyring/**
 
 tests/package/rpm/install-build-deps.test.sh
 	scripts/package/**
@@ -166,6 +176,7 @@ tests/package/verify/prepare-runner.test.sh
 
 tests/package/verify/rpm-test.test.sh
 	scripts/package/**
+	scripts/verify/**
 
 tests/package/verify/runtime-checks.test.sh
 	scripts/package/**
@@ -182,6 +193,7 @@ tests/quality/check-mutation-coverage.test.sh
 	.github/workflows/**
 	tests/mutation/catalog.txt
 	tests/mutation/exemptions.txt
+	.github/dependabot.yml
 
 tests/quality/check-secrets.test.sh
 	scripts/quality/**
@@ -206,8 +218,12 @@ tests/quality/scope/ci-job-scope.test.sh
 tests/quality/scope/ci-job-scope-suites.test.sh
 	scripts/quality/scope/**
 	.github/workflows/tests.yml
+	tests/**
 
 tests/quality/scope/suite-scope-map.test.sh
+	**
+
+tests/quality/scope/suite-scope-reads.test.sh
 	**
 
 tests/release/check-artifacts.test.sh
@@ -254,11 +270,14 @@ tests/upstream/latest-stable.test.sh
 tests/upstream/plan-release.test.sh
 	scripts/upstream/**
 	tests/lib/**
+	.github/scripts/release/**
+	keyring/**
 
 tests/upstream/read-released.test.sh
 	scripts/upstream/**
 	.github/scripts/**
 	tests/release/fixtures/**
+	keyring/**
 
 tests/upstream/repo.test.sh
 	scripts/upstream/**
@@ -296,6 +315,7 @@ tests/workflows/build/build-check-gate.test.sh
 	scripts/ci/**
 	scripts/upstream/**
 	tests/lib/**
+	scripts/build/**
 
 tests/workflows/build/build-check-matrix.test.sh
 	.github/workflows/build-check.yml
@@ -309,6 +329,7 @@ tests/workflows/build/package-check-gate.test.sh
 	.github/workflows/package-check.yml
 	scripts/ci/**
 	tests/lib/**
+	scripts/package/**
 
 tests/workflows/build/package-repository-metadata.test.sh
 	.github/workflows/reusable-package.yml
@@ -331,6 +352,8 @@ tests/workflows/build/reusable-build-upload-gate.test.sh
 tests/workflows/dependabot/dependabot-automerge.test.sh
 	.github/workflows/dependabot-automerge.yml
 	tests/lib/**
+	.github/scripts/release/**
+	scripts/build/**
 
 tests/workflows/dependabot/dependabot-config.test.sh
 	.github/dependabot.yml
@@ -341,10 +364,12 @@ tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh
 
 tests/workflows/keyring/keyring-watch-alarm.test.sh
 	.github/workflows/keyring-watch.yml
+	keyring/**
 
 tests/workflows/keyring/keyring-watch-copy.test.sh
 	.github/workflows/keyring-watch.yml
 	tests/lib/**
+	keyring/**
 
 tests/workflows/keyring/keyring-watch-health.test.sh
 	.github/workflows/keyring-watch.yml
@@ -376,7 +401,7 @@ tests/workflows/policy/tests-installs-mldsa-wheel.test.sh
 tests/workflows/policy/tests-run-every-suite.test.sh
 	.github/workflows/tests.yml
 	.github/workflows/mutation.yml
-	tests/lib/**
+	tests/**
 
 tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
 	.github/workflows/reusable-workflow-lint.yml
@@ -387,12 +412,16 @@ tests/workflows/policy/workflow-lint-runs-actionlint.test.sh
 
 tests/workflows/policy/workflow-policy.test.sh
 	.github/workflows/**
+	scripts/build/**
+	scripts/quality/**
 
 tests/workflows/policy/workflows-contract.test.sh
 	.github/workflows/keyring-watch.yml
 	.github/workflows/release.yml
 	.github/workflows/reusable-build.yml
 	tests/lib/**
+	scripts/release/**
+	keyring/**
 
 tests/workflows/pr-checks/commit-hygiene-range.test.sh
 	.github/workflows/commit-hygiene.yml
@@ -430,6 +459,8 @@ tests/workflows/release/release-plan.test.sh
 	.github/workflows/release.yml
 	scripts/upstream/**
 	tests/lib/**
+	.github/scripts/release/**
+	keyring/**
 
 tests/workflows/release/release-publish.test.sh
 	.github/workflows/release.yml
@@ -440,12 +471,14 @@ tests/workflows/release/release-second-signature.test.sh
 	scripts/release/**
 	keyring/**
 	tests/lib/**
+	.github/scripts/release/**
 
 tests/workflows/release/release-signing-step.test.sh
 	.github/workflows/release.yml
 	scripts/release/**
 	keyring/**
 	tests/lib/**
+	.github/scripts/release/**
 
 tests/workflows/release/release-upgrade-job.test.sh
 	.github/workflows/release.yml
@@ -455,6 +488,7 @@ tests/workflows/release/release-upgrade-job.test.sh
 tests/workflows/watchdog/watchdog-delivery-lag.test.sh
 	.github/workflows/**
 	tests/lib/**
+	scripts/build/**
 
 tests/workflows/watchdog/watchdog-freshness.test.sh
 	.github/workflows/keyring-watch.yml
