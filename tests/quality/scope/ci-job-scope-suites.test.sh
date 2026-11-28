@@ -64,6 +64,7 @@ repo() {
 	git -C "$R" init -q -b main
 	git -C "$R" config user.name t; git -C "$R" config user.email t@example.invalid; git -C "$R" config commit.gpgsign false
 	cp "$HERE/scripts/quality/scope/ci-job-scope.sh" "$R/scripts/quality/scope/ci-job-scope.sh"
+	cp "$HERE/scripts/quality/scope/decide-suites.sh" "$R/scripts/quality/scope/decide-suites.sh"
 	cp "$HERE/scripts/quality/scope/suite-scope.txt" "$R/scripts/quality/scope/suite-scope.txt"
 	cp "$HERE/scripts/quality/scope/suite-dependencies.txt" "$R/scripts/quality/scope/suite-dependencies.txt"
 	# The workflow of this repository, so a pull request that edits the step
@@ -279,6 +280,88 @@ repo wheel-new
 printf '#!/usr/bin/env bash\n' > "$R/tests/release/another-mldsa.test.sh"; merge
 decide
 check "a new suite named for the wheel installs it" "0 true" "$rc $(wheel)"
+
+# --- the resolver of the base commit decides ----------------------------------------
+
+# The resolver of the base commit decides, and the one the pull request ships does
+# not: a pull request that brings a resolver of its own to narrow the scope gets
+# the full set instead. The base here decides every suite and the pull request
+# decides one, so the scope says which of the two the step used.
+repo base-resolver
+git -C "$R" checkout -q main
+printf '#!/usr/bin/env bash\nshift\nfor s in "$@"; do echo "$s"; done\n' \
+	> "$R/scripts/quality/scope/ci-job-scope.sh"
+in_base
+printf '#!/usr/bin/env bash\necho tests/ci/decide-build.test.sh\n' \
+	> "$R/scripts/quality/scope/ci-job-scope.sh"
+echo more >> "$R/README.md"; merge
+decide
+check "the resolver of the base decides, not the one the pull request ships" "1" \
+	"$([ "$(selected)" = "$TOTAL" ] && echo 1 || echo 0)"
+
+# The script that decides is read from the base commit too, so a pull request
+# that brings one of its own decides nothing: the base decides.
+repo base-decider
+git -C "$R" checkout -q main
+printf '#!/usr/bin/env bash\nmapfile -t suites < <(find tests -name "*.test.sh" | LC_ALL=C sort)\n: > "$RUNNER_TEMP/suite-scope.list"\nfor s in "${suites[@]}"; do echo "$s" >> "$RUNNER_TEMP/suite-scope.list"; done\n' \
+	> "$R/scripts/quality/scope/decide-suites.sh"
+in_base
+printf '#!/usr/bin/env bash\necho tests/ci/decide-build.test.sh > "$RUNNER_TEMP/suite-scope.list"\n' \
+	> "$R/scripts/quality/scope/decide-suites.sh"
+echo more >> "$R/README.md"; merge
+decide
+check "the decider of the base decides, not the one the pull request ships" "1" \
+	"$([ "$(selected)" = "$TOTAL" ] && echo 1 || echo 0)"
+
+# The dependency map is read from the base commit as well: a pull request that
+# declares that its suite needs nothing does not talk the step out of the wheel.
+# The base resolver names one suite, so nothing but that map decides the wheel.
+repo base-deps
+git -C "$R" checkout -q main
+printf '#!/usr/bin/env bash\necho %s\n' "$READER" > "$R/scripts/quality/scope/ci-job-scope.sh"
+sed -i "s|^$READER -\$|$READER mldsa-wheel|" "$R/scripts/quality/scope/suite-dependencies.txt"
+in_base
+sed -i "s|^$READER mldsa-wheel\$|$READER -|" "$R/scripts/quality/scope/suite-dependencies.txt"
+merge
+decide
+check "the dependency map of the base decides the wheel, not the one the pull request ships" "0 1 true" \
+	"$rc $(selected) $(wheel)"
+
+# --- a base that decides nothing ----------------------------------------------------
+
+# nothing <name> <command...>: a base whose decider is what the command leaves,
+# and a pull request that ships a decider of its own that narrows the run and
+# says the wheel is not needed.
+nothing() {
+	repo "$1"
+	git -C "$R" checkout -q main
+	(cd "$R" && "${@:2}")
+	in_base
+	printf '#!/usr/bin/env bash\necho tests/ci/decide-build.test.sh > "$RUNNER_TEMP/suite-scope.list"\necho mldsa=false >> "$GITHUB_OUTPUT"\n' \
+		> "$R/scripts/quality/scope/decide-suites.sh"
+	echo more >> "$R/README.md"; merge
+	decide
+}
+# listed_scope: 1 when the step left a file that says which suites run.
+listed_scope() { [ -e "$R/rt/suite-scope.list" ] && echo 1 || echo 0; }
+# last_wheel: the value GitHub keeps, which is the last one written.
+last_wheel() { wheel | tail -n 1; }
+
+# This is the pull request that brings the script, whose base does not have it.
+nothing no-decider rm scripts/quality/scope/decide-suites.sh
+check "a base without the decider ends well, leaves no scope and installs the wheel" "0 0 true" \
+	"$rc $(listed_scope) $(last_wheel)"
+run_suites
+check "and the step that runs the suites then runs every one" "0 1 0" \
+	"$rc $([ "$(ran)" = "$(find "$R/tests" -name '*.test.sh' | grep -c .)" ] && echo 1 || echo 0) $(skipped)"
+nothing empty-decider truncate -s 0 scripts/quality/scope/decide-suites.sh
+check "an empty decider in the base leaves no scope and installs the wheel" "0 0 true" \
+	"$rc $(listed_scope) $(last_wheel)"
+nothing failing-decider sh -c 'printf "echo tests/ci/decide-build.test.sh > \"\$RUNNER_TEMP/suite-scope.list\"\necho mldsa=false >> \"\$GITHUB_OUTPUT\"\nexit 1\n" > scripts/quality/scope/decide-suites.sh'
+check "a decider that ends in an error leaves no scope, whatever it had written, and installs the wheel" "0 0 true" \
+	"$rc $(listed_scope) $(last_wheel)"
+check "and the step says why" "1" \
+	"$(printf '%s\n' "$out" | grep -c '^the base commit decided nothing; every suite runs\.$')"
 
 echo
 echo "$pass passed, $fail failed"

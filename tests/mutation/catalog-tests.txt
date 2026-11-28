@@ -163,10 +163,10 @@ tests-a-failed-suite-fails-the-job	.github/workflows/tests.yml	*) bash "$t" < /d
 tests-a-suite-cannot-eat-the-list	.github/workflows/tests.yml	*) bash "$t" < /dev/null ;;	*) bash "$t" ;;	tests/workflows/policy/tests-run-every-suite.test.sh
 tests-the-suites-that-ran-are-the-selected	.github/workflows/tests.yml	if [ "$(LC_ALL=C sort "$ran_file")" != "$expected" ]; then	if false; then	tests/quality/scope/ci-job-scope-suites.test.sh
 tests-an-empty-scope-file-runs-every-suite	.github/workflows/tests.yml	if [ -f "$scope_file" ] && grep -q . "$scope_file"; then	if [ -f "$scope_file" ]; then	tests/quality/scope/ci-job-scope-suites.test.sh
-tests-only-a-pull-request-has-a-scope	.github/workflows/tests.yml	if [ "$EVENT" = pull_request ] \	if true \	tests/quality/scope/ci-job-scope-suites.test.sh
-tests-a-resolver-that-fails-decides-nothing	.github/workflows/tests.yml	if ! decision="$(bash "$resolver" suites "${suites[@]}")"; then	decision="$(bash "$resolver" suites "${suites[@]}" || true)"; if false; then	tests/quality/scope/ci-job-scope-suites.test.sh
-tests-the-name-of-a-suite-installs-the-wheel	.github/workflows/tests.yml	*-mldsa.test.sh) mldsa=true ;;	*-mldsa.test.sh) ;;	tests/quality/scope/ci-job-scope-suites.test.sh
-tests-an-unsure-dependency-installs-the-wheel	.github/workflows/tests.yml	[ "$entry" = "2 -" ] || mldsa=true	[ "$entry" != "2 mldsa-wheel" ] || mldsa=true	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-only-a-pull-request-has-a-scope	scripts/quality/scope/decide-suites.sh	if [ "$EVENT" = pull_request ] \	if true \	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-a-resolver-that-fails-decides-nothing	scripts/quality/scope/decide-suites.sh	if ! decision="$(bash "$resolver" suites "${suites[@]}")"; then	decision="$(bash "$resolver" suites "${suites[@]}" || true)"; if false; then	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-the-name-of-a-suite-installs-the-wheel	scripts/quality/scope/decide-suites.sh	*-mldsa.test.sh) mldsa=true ;;	*-mldsa.test.sh) ;;	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-an-unsure-dependency-installs-the-wheel	scripts/quality/scope/decide-suites.sh	[ "$entry" = "2 -" ] || mldsa=true	[ "$entry" != "2 mldsa-wheel" ] || mldsa=true	tests/quality/scope/ci-job-scope-suites.test.sh
 ci-job-scope-a-shared-file-runs-every-suite	scripts/quality/scope/ci-job-scope.sh	if scope is None or any(shared(path, root) for path in paths):	if scope is None:	tests/quality/scope/ci-job-scope.test.sh
 ci-job-scope-a-new-name-at-the-root-runs-every-suite	scripts/quality/scope/ci-job-scope.sh	if top not in root and name.isidentifier():	if False:	tests/quality/scope/ci-job-scope.test.sh
 ci-job-scope-every-kind-of-init-runs-every-suite	scripts/quality/scope/ci-job-scope.sh	    "*/__init__.*",	    "*/__init__.py",	tests/quality/scope/ci-job-scope.test.sh
@@ -273,4 +273,10 @@ package-check-gate-decide-gave-no-answer	.github/workflows/package-check.yml	*)	
 dependabot-images-take-the-dated-amazon-tags	.github/dependabot.yml	        versions: [">2023"]	        versions: []	tests/package/image-tags.test.sh
 deprecations-a-sha-that-is-not-a-sha-is-refused	scripts/quality/lint/no-deprecation-notices.sh	echo "::error::HEAD_SHA is not the sha of a commit" >&2; exit 1	echo "::error::HEAD_SHA is not the sha of a commit" >&2; exit 0	tests/quality/lint/no-deprecation-notices.test.sh
 deprecations-the-verdict-reaches-the-caller	scripts/quality/lint/no-deprecation-notices.sh	exit "$found"	exit 0	tests/quality/lint/no-deprecation-notices.test.sh
+tests-the-resolver-comes-from-the-base	scripts/quality/scope/decide-suites.sh	git show "HEAD^1:scripts/quality/scope/ci-job-scope.sh"	git show "HEAD:scripts/quality/scope/ci-job-scope.sh"	tests/quality/scope/ci-job-scope-suites.test.sh,tests/quality/scope/decide-suites.test.sh
+tests-the-decider-comes-from-the-base	.github/workflows/tests.yml	git show "HEAD^1:scripts/quality/scope/decide-suites.sh"	git show "HEAD:scripts/quality/scope/decide-suites.sh"	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-the-dependency-map-comes-from-the-base	scripts/quality/scope/decide-suites.sh	git show "HEAD^1:scripts/quality/scope/suite-dependencies.txt"	git show "HEAD:scripts/quality/scope/suite-dependencies.txt"	tests/quality/scope/ci-job-scope-suites.test.sh,tests/quality/scope/decide-suites.test.sh
+tests-a-base-without-the-decider-installs-the-wheel	.github/workflows/tests.yml	echo "mldsa=true" >> "$GITHUB_OUTPUT"	echo "mldsa=false" >> "$GITHUB_OUTPUT"	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-a-decider-that-fails-leaves-no-scope	.github/workflows/tests.yml	rm -f "$RUNNER_TEMP/suite-scope.list"	true	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-an-empty-decider-decides-nothing	.github/workflows/tests.yml	&& [ -s "$decider" ] \	\	tests/quality/scope/ci-job-scope-suites.test.sh
 mutation-scope-a-removed-entry-runs-every-entry	scripts/quality/mutation-scope.sh	if gone:	if False:	tests/quality/mutation-scope.test.sh

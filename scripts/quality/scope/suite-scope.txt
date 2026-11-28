@@ -212,6 +212,9 @@ tests/quality/scope/ci-job-scope-suites.test.sh
 	.github/workflows/tests.yml
 	tests/**
 
+tests/quality/scope/decide-suites.test.sh
+	scripts/quality/scope/**
+
 tests/quality/scope/suite-scope-map.test.sh
 	**
 
