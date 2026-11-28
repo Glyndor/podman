@@ -33,8 +33,9 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-    # Measured in this repository's runs: 11 to 13 seconds for the job. The fifteen
-    # minutes is a ceiling, not a measurement.
+    # Measured on 2026-11-28: every suite took 4 minutes on a pull request and 2
+    # minutes 48 seconds in the full run of mutation.yml. The fifteen minutes is a
+    # ceiling, not a measurement.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -119,12 +119,13 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-    # Measured on 2026-11-21, on a workstation shared with other jobs: the whole
-    # sweep, 140 entries, in 4 minutes 13 seconds, most of it the 17 entries of
-    # build-deb.test.sh at about 9 seconds each. Not yet seen on a GitHub runner.
-    # Thirty minutes is seven times that and still bounds a hang, which would
-    # otherwise cost the six-hour default; raise it when a whole sweep passes fifteen.
-    timeout-minutes: 30
+    # Measured on 2026-11-28 on a GitHub runner: a whole sweep reached 519 of its
+    # 572 entries in the 30 minutes it had then and was cancelled, which is about
+    # 33 minutes for all of it. The slowest suites take 6 to 22 seconds each time
+    # an entry runs them. Sixty minutes is under twice that and still bounds a
+    # hang, which would otherwise cost the six-hour default; split the sweep when
+    # a whole one passes forty.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
