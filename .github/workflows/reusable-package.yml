@@ -110,9 +110,8 @@ jobs:
       amzn2023_aarch64: ${{ steps.leg.outputs.amzn2023_aarch64 }}
       leap161_x86_64: ${{ steps.leg.outputs.leap161_x86_64 }}
       leap161_aarch64: ${{ steps.leg.outputs.leap161_aarch64 }}
-    # Ceiling, not measured since the split: a Go build and two Rust builds. The probe of
-    # 2026-11-23 built the three components in 5 to 7.5 minutes per distribution; the ceiling is
-    # eight times that.
+    # Measured on 2026-11-28 over the fourteen legs of one run: at most 609 seconds, a Go build
+    # and two Rust builds. The hour is a ceiling, six times that.
     timeout-minutes: 60
     env:
       ID: ${{ inputs.id }}
@@ -187,7 +186,8 @@ jobs:
     runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
-    # Ceiling, not measured since the split: the installs and the containers of every image of the row.
+    # Measured on 2026-11-28 over the fourteen legs of one run: at most 265 seconds, the installs and
+    # the containers of every image of the row. The hour is a ceiling.
     timeout-minutes: 60
     env:
       ID: ${{ inputs.id }}

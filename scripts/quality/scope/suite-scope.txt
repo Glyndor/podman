@@ -353,6 +353,7 @@ tests/workflows/build/build-check-matrix.test.sh
 	.github/workflows/build-check.yml
 	.github/workflows/package-check.yml
 	.github/workflows/reusable-rpm.yml
+	.github/workflows/mutation.yml
 
 tests/workflows/build/build-verifies-upstream-tags.test.sh
 	.github/workflows/reusable-build.yml

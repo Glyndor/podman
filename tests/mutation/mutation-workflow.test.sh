@@ -6,7 +6,8 @@
 # succeeded, whatever its needs ended as; the decide step runs mutation-scope.sh from
 # the base commit the event names, so a pull request that rewrites the script cannot
 # narrow its own sweep, and it runs every entry on anything it cannot read; and the
-# sweep step hands the runner exactly the ids decided, or none for all of them.
+# sweep step hands the runner exactly the ids decided, or every id of the list for all of
+# them, shared between its jobs so that each entry runs in exactly one.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -41,6 +42,12 @@ for k, v in want.items():
         print(f"{k} is {env.get(k)!r}, not ${{{{ {v} }}}}")
 if str(sweep.get("if", "")).replace(" ", "") != "needs.decide.outputs.run=='true'":
     print(f"the sweep runs on {sweep.get('if')!r}, not on the decision")
+shares = ((sweep.get("strategy") or {}).get("matrix") or {}).get("share")
+if shares != list(range(1, len(shares or []) + 1)) or not shares:
+    print(f"the shares of the sweep are {shares}, not 1 to their number")
+step_env = [s.get("env") or {} for s in sweep.get("steps") or [] if s.get("name") == "Every mutation is killed by a suite"]
+if not step_env or step_env[0].get("SHARE") != "${{ matrix.share }}" or step_env[0].get("SHARES") != "${{ strategy.job-total }}":
+    print("a job of the sweep does not take its share and their number from the matrix")
 # The one run of every suite there is on main: a pull request runs only a part.
 full = jobs.get("full") or {}
 if full.get("uses") != "./.github/workflows/tests.yml":
@@ -54,6 +61,10 @@ PY
 check "the gate runs always, needs decide and the sweep, and reads their results" "" "$(wiring)"
 BAD="$WORK/bad"
 mkdir -p "$BAD"
+sed 's/^        share: \[1, 2, 3\]$/        share: [1, 3]/' "$HERE/.github/workflows/mutation.yml" > "$BAD/mutation.yml"
+check "a share left out is named" "the shares of the sweep are [1, 3], not 1 to their number" "$(wiring "$BAD")"
+sed 's/^          SHARES: \${{ strategy.job-total }}$/          SHARES: 2/' "$HERE/.github/workflows/mutation.yml" > "$BAD/mutation.yml"
+check "a number of shares that is not the matrix's is named" "a job of the sweep does not take its share and their number from the matrix" "$(wiring "$BAD")"
 sed 's/^    if: always()$/    if: success()/' "$HERE/.github/workflows/mutation.yml" > "$BAD/mutation.yml"
 check "a gate that is skipped when a need fails is named" "the gate does not run whatever its needs ended as" "$(wiring "$BAD")"
 sed 's/^      SWEEP: \${{ needs.sweep.result }}$/      SWEEP: success/' "$HERE/.github/workflows/mutation.yml" > "$BAD/mutation.yml"
@@ -142,17 +153,42 @@ else
 	fail=$((fail + 1)); echo "FAIL  mutation.yml: cannot find the decide step"
 fi
 
-# --- the sweep hands the runner what was decided -----------------------------------
+# --- the sweep hands the runner what was decided, shared between its jobs ----------
 S="$WORK/sweep"
 if step mutation.yml sweep "name=Every mutation is killed by a suite" "$S"; then
 	check "the sweep step's run block has no expression in it" 0 "$(grep -c '\${{' "$S/run.sh")"
 	mkdir -p "$S/ws/tests/mutation"
-	printf '#!/usr/bin/env bash\necho "args:$#:$*" > "$LOG"\nexit "${FAKE_RC:-0}"\n' > "$S/ws/tests/mutation/run-mutations.sh"
-	sweep() { : > "$S/log"; run_step "$S" "$S/ws" LOG="$S/log" "$@"; }
+	# The runner: --list prints $LISTED, one id per line, and anything else is written down.
+	cat > "$S/ws/tests/mutation/run-mutations.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --list ]; then printf '%b' "$LISTED"; exit "${LIST_RC:-0}"; fi
+echo "args:$#:$*" >> "$LOG"
+exit "${FAKE_RC:-0}"
+SH
+	sweep() { : > "$S/log"; run_step "$S" "$S/ws" LOG="$S/log" LISTED='a\nb\nc\nd\ne\nf\ng\n' SHARE=1 SHARES=1 "$@"; }
 	sweep IDS=all
-	check "all: the runner is given no id, which runs every entry" "0 args:0:" "$rc $(cat "$S/log")"
+	check "all, one job: the runner is given every entry of the list" "0 args:7:a b c d e f g" "$rc $(cat "$S/log")"
 	sweep IDS="one-entry two-entry"
 	check "two ids: the runner is given exactly those" "0 args:2:one-entry two-entry" "$rc $(cat "$S/log")"
+	shares=""
+	for share in 1 2 3; do
+		sweep IDS=all SHARE="$share" SHARES=3
+		shares+="$rc $(cat "$S/log")|"
+	done
+	check "three jobs: every third entry from its own, each entry in exactly one" \
+		"0 args:3:a d g|0 args:2:b e|0 args:2:c f|" "$shares"
+	sweep IDS="one-entry two-entry" SHARE=2 SHARES=3
+	check "decided ids are shared the same way" "0 args:1:two-entry" "$rc $(cat "$S/log")"
+	sweep IDS="one-entry two-entry" SHARE=3 SHARES=3
+	check "a share with no entry runs nothing, and not every entry" "0  1" "$rc $(cat "$S/log") $(says 'no entry falls to share 3 of 3')"
+	for bad in "SHARE=0" "SHARE=4" "SHARE=" "SHARE=x" "SHARES=0" "SHARES="; do
+		sweep IDS=all SHARES=3 "$bad"
+		check "'$bad' is not a share: nothing runs" "1  1" "$rc $(cat "$S/log") $(says 'is not a share of the sweep')"
+	done
+	sweep IDS=all LISTED=''
+	check "an empty list is not an answer: nothing runs" "1  1" "$rc $(cat "$S/log") $(says 'there is no entry to share')"
+	sweep IDS=all LIST_RC=3
+	check "a list that cannot be read stops the step" "3 " "$rc $(cat "$S/log")"
 	sweep IDS=all FAKE_RC=1
 	check "a survivor in the sweep fails the step" 1 "$rc"
 else

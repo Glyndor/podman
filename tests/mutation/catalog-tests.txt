@@ -278,3 +278,7 @@ reusable-package-uploads-unstaged	.github/workflows/reusable-package.yml	path: $
 reusable-package-tests-by-name	.github/workflows/reusable-package.yml	artifact-ids: ${{ needs.build.outputs.artifact_id }}	name: rpm-${{ inputs.id }}-${{ inputs.arch }}	tests/workflows/build/reusable-rpm-wiring.test.sh
 package-check-gathers-as-a-release	.github/workflows/package-check.yml	upload: false	upload: true	tests/workflows/build/reusable-rpm-wiring.test.sh
 decide-package-rpm-scripts-do-not-build	scripts/ci/decide-package.sh	| scripts/release/rpm/* | scripts/release/check-upload.sh \	\	tests/ci/decide-package.test.sh
+mutation-sweep-not-a-share	.github/workflows/mutation.yml	|| { echo "::error::share '$SHARE' of '$SHARES' is not a share of the sweep"; exit 1; }	|| true	tests/mutation/mutation-workflow.test.sh
+mutation-sweep-nothing-to-share	.github/workflows/mutation.yml	[ -n "$listed" ] || { echo "::error::there is no entry to share"; exit 1; }	true	tests/mutation/mutation-workflow.test.sh
+mutation-sweep-an-empty-share-runs-everything	.github/workflows/mutation.yml	if [ "${#selected[@]}" -eq 0 ]; then echo "no entry falls to share $SHARE of $SHARES"; exit 0; fi	:	tests/mutation/mutation-workflow.test.sh
+mutation-sweep-every-job-runs-the-same-share	.github/workflows/mutation.yml	if [ $((i % SHARES)) -eq $((SHARE - 1)) ]; then	if [ $((i % SHARES)) -eq 0 ]; then	tests/mutation/mutation-workflow.test.sh

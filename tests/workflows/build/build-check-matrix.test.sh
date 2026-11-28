@@ -55,6 +55,9 @@ check "the matrix of the build stops at the first row that fails, and says why" 
 check "the matrix of the native packages stops at the first row that fails, and says why" "" \
 	"$(violations "$HERE/.github/workflows/reusable-rpm.yml" package)"
 
+check "the matrix of the mutation sweep stops at the first share that fails, and says why" "" \
+	"$(violations "$HERE/.github/workflows/mutation.yml" sweep)"
+
 BAD="$WORK/bad"
 mkdir -p "$BAD"
 sed 's/^      fail-fast: true$/      fail-fast: false/' "$HERE/.github/workflows/build-check.yml" > "$BAD/build-check.yml"
