@@ -21,7 +21,7 @@ close_agents() {
 		gpgconf --homedir "$dir" --remove-socketdir > /dev/null 2>&1 || true
 	done
 }
-trap 'close_agents; rm -rf "$WORK"' EXIT
+trap 'kill "${endless:-}" "${drip:-}" 2>/dev/null || true; close_agents; rm -rf "$WORK"' EXIT
 pass=0; fail=0
 
 check() { # <desc> <want> <got>
