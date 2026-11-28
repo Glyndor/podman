@@ -35,7 +35,10 @@ import re
 import subprocess
 import sys
 
-CATALOG = "tests/mutation/catalog.txt"
+# The catalogue is two files: the entries of an area live in the file that names
+# it, and the two are one catalogue with one set of ids. A commit that has only
+# the first of them is read with the first alone.
+CATALOGS = ("tests/mutation/catalog.txt", "tests/mutation/catalog-tests.txt")
 # Read by the coverage check, not by the sweep.
 EXEMPTIONS = "tests/mutation/exemptions.txt"
 GLOBAL_INPUTS = {
@@ -65,13 +68,22 @@ def changed_paths(base, head):
 
 def catalogue(ref):
     entries = {}
-    for raw in git("show", f"{ref}:{CATALOG}").split("\n"):
-        if not raw.strip() or raw.lstrip().startswith("#"):
+    for name in CATALOGS:
+        try:
+            body = git("show", f"{ref}:{name}")
+        except subprocess.CalledProcessError:
+            # The first file is the catalogue; a commit that has only it is read
+            # with it alone.
+            if name == CATALOGS[0]:
+                raise Undecided(f"the catalogue of {ref} cannot be read")
             continue
-        fields = raw.split("\t")
-        if len(fields) != 5 or not ID.match(fields[0]) or fields[0] in entries:
-            raise Undecided(f"a line of the catalogue of {ref} cannot be read")
-        entries[fields[0]] = (raw, fields[1], [t for t in fields[4].split(",") if t])
+        for raw in body.split("\n"):
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            fields = raw.split("\t")
+            if len(fields) != 5 or not ID.match(fields[0]) or fields[0] in entries:
+                raise Undecided(f"a line of the catalogue of {ref} cannot be read")
+            entries[fields[0]] = (raw, fields[1], [t for t in fields[4].split(",") if t])
     if not entries:
         raise Undecided(f"the catalogue of {ref} has no entries")
     return entries
@@ -86,7 +98,7 @@ def select():
     paths = changed_paths(base, head)
     if paths & GLOBAL_INPUTS:
         raise Undecided("the sweep itself changed")
-    for path in paths - {CATALOG, EXEMPTIONS}:
+    for path in paths - set(CATALOGS) - {EXEMPTIONS}:
         if path.startswith("tests/") and not path.endswith(".test.sh"):
             raise Undecided(f"{path} is read by suites and is not one")
     new, old = catalogue(head), catalogue(base)

@@ -2,8 +2,9 @@
 # Fail when a refusal in a script or a workflow of this repository has neither an
 # entry in the mutation catalogue nor a written exemption.
 #
-# The catalogue in tests/mutation/catalog.txt is what the mutation sweep runs, and
-# the sweep only ever measures the guards it was told about. A guard nobody
+# The catalogue (tests/mutation/catalog.txt and tests/mutation/catalog-tests.txt)
+# is what the mutation sweep runs, and the sweep only ever measures the guards it
+# was told about. A guard nobody
 # catalogued is invisible to the one instrument that would say whether a suite
 # notices it gone, and before the catalogue existed, measuring by hand found about
 # a dozen at a time that could be deleted with every suite green. This check closes the set
@@ -59,7 +60,13 @@ sys.path.insert(0, sys.argv[2])
 from mutation_refusals import refusals, shell_of
 
 root = sys.argv[1]
-CATALOG = "tests/mutation/catalog.txt"
+# The catalogue is two files: tests/mutation/catalog.txt and, when it is there,
+# tests/mutation/catalog-tests.txt. The entries of an area live in the file that
+# names it, and the two are one catalogue with one set of ids: an id in both of
+# them is refused, as one repeated inside a file is. The second file is optional
+# here: a catalogue that goes missing is caught by the rule below, which asks
+# every refusal of the scripts for an entry.
+CATALOGS = ("tests/mutation/catalog.txt", "tests/mutation/catalog-tests.txt")
 EXEMPTIONS = "tests/mutation/exemptions.txt"
 WATCHED_DIRS = ("scripts", ".github/scripts")
 # The workflow that has to be there: the one that signs and publishes.
@@ -130,35 +137,46 @@ def span_of(text, needle):
 
 def entries():
     found = {}
-    try:
-        body = read(CATALOG)
-    except OSError as exc:
-        errors.append(f"cannot read {CATALOG}: {exc}")
-        return found
-    for raw in body.splitlines():
-        if not raw.strip() or raw.lstrip().startswith("#"):
+    ids = {}
+    for catalogue in CATALOGS:
+        try:
+            body = read(catalogue)
+        except OSError as exc:
+            # The first file is the catalogue; the second is read when it is
+            # there, and a catalogue that is not is caught by the refusals it
+            # left without an entry.
+            if catalogue == CATALOGS[0]:
+                errors.append(f"cannot read {catalogue}: {exc}")
             continue
-        fields = raw.split("\t")
-        if len(fields) != 5:
-            errors.append(f"{CATALOG}: a line does not hold five fields: {raw}")
-            continue
-        found.setdefault(fields[1], []).append((fields[0], fields[2]))
-        applies(*fields[:4])
+        for raw in body.splitlines():
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            fields = raw.split("\t")
+            if len(fields) != 5:
+                errors.append(f"{catalogue}: a line does not hold five fields: {raw}")
+                continue
+            if fields[0] in ids:
+                errors.append(f"{catalogue}: {fields[0]}: the id is already an entry of {ids[fields[0]]}, "
+                              "so the sweep refuses the catalogue")
+                continue
+            ids[fields[0]] = catalogue
+            found.setdefault(fields[1], []).append((fields[0], fields[2]))
+            applies(catalogue, *fields[:4])
     return found
 
 
-def applies(ident, rel, old, new):
+def applies(catalogue, ident, rel, old, new):
     """The runner's own conditions for applying an entry, checked without running it."""
     try:
         count = read(rel).count(old)
     except OSError:
-        errors.append(f"{CATALOG}: {ident}: {rel} cannot be read, so the sweep cannot apply the entry")
+        errors.append(f"{catalogue}: {ident}: {rel} cannot be read, so the sweep cannot apply the entry")
         return
     if count != 1:
-        errors.append(f"{CATALOG}: {ident}: its text is in {rel} {count} time(s), not once, "
+        errors.append(f"{catalogue}: {ident}: its text is in {rel} {count} time(s), not once, "
                       "so the sweep cannot apply the entry")
     elif old == new:
-        errors.append(f"{CATALOG}: {ident}: it replaces its text with itself, so the sweep cannot apply the entry")
+        errors.append(f"{catalogue}: {ident}: it replaces its text with itself, so the sweep cannot apply the entry")
 
 
 def exemptions():
@@ -231,7 +249,7 @@ for number, rel, needle, _ in exempt:
 if not total:
     errors.append("no refusal found in any script, so this check would pass having looked at nothing")
 for rel, (first, last), line in uncovered:
-    errors.append(f"{rel}:{first + 1}-{last + 1}: a refusal with no entry in {CATALOG} "
+    errors.append(f"{rel}:{first + 1}-{last + 1}: a refusal with no entry in the catalogue "
                   f"and no exemption in {EXEMPTIONS}: {line}")
 for message in errors:
     print(f"::error::{message}")

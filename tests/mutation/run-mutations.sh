@@ -10,7 +10,11 @@
 #
 # Options:
 #   --repo <path>      the repository to copy and mutate (default: this repository)
-#   --catalog <path>   the catalogue to read (default: <repo>/tests/mutation/catalog.txt)
+#   --catalog <path>   the one catalogue file to read. Without it the catalogue is
+#                      <repo>/tests/mutation/catalog.txt and, when it is there,
+#                      <repo>/tests/mutation/catalog-tests.txt after it. The two
+#                      share one set of ids: an id in both of them is refused, as
+#                      one repeated inside a file is.
 #
 # THE COPY CARRIES NO GIT METADATA
 #
@@ -92,11 +96,24 @@ REPO="$(cd "$REPO" 2>/dev/null && pwd)" || {
 	echo "run-mutations.sh: no repository at $REPO" >&2
 	exit 2
 }
-[ -n "$CATALOG" ] || CATALOG="$REPO/tests/mutation/catalog.txt"
-[ -f "$CATALOG" ] || {
-	echo "run-mutations.sh: no catalogue at $CATALOG" >&2
-	exit 2
-}
+# The catalogue is two files: the entries of an area live in the file that names
+# it. A file can be named with --catalog, and then only that one is read; without
+# it the two of them are read, in that order, and they are one catalogue.
+CATALOGS=()
+if [ -n "$CATALOG" ]; then
+	CATALOGS=("$CATALOG")
+else
+	CATALOGS=("$REPO/tests/mutation/catalog.txt")
+	if [ -f "$REPO/tests/mutation/catalog-tests.txt" ]; then
+		CATALOGS+=("$REPO/tests/mutation/catalog-tests.txt")
+	fi
+fi
+for part in "${CATALOGS[@]}"; do
+	[ -f "$part" ] || {
+		echo "run-mutations.sh: no catalogue at $part" >&2
+		exit 2
+	}
+done
 
 # --- the catalogue ---------------------------------------------------------------
 # One entry per line, five fields separated by tabs: the id, the file to mutate,
@@ -136,7 +153,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 	OLDS+=("$f3")
 	NEWS+=("$f4")
 	TESTS+=("$f5")
-done < "$CATALOG"
+done < <(awk 1 "${CATALOGS[@]}")
 
 # The catalogue has to hold something, and every id has to be its own: an empty one reads
 # as a green run of nothing, and a repeated id lets a selection skip the second entry.

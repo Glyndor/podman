@@ -96,7 +96,7 @@ do the same. Run without that environment first on `PATH`, the suite fails and s
 is missing; it does not skip.
 
 Every refusal of a script or a workflow (an `exit` with a status, a `fail`, a
-`sys.exit` with a message) has an entry in `tests/mutation/catalog.txt`: the text that
+`sys.exit` with a message) has an entry in `tests/mutation/catalog.txt` or `catalog-tests.txt`: the text that
 removes it, and the suites that must go red when it is gone. `check-mutation-coverage.sh`
 names a refusal that has none, and one that cannot have one goes in
 `tests/mutation/exemptions.txt` with what was measured. `bash tests/mutation/run-mutations.sh <id>`
@@ -132,7 +132,7 @@ reason it names. Assert which failure fired, never that some failure did.
 | `reusable-package.yml` | the build of the rpm of one distribution and one architecture in the container of that distribution, then its installation with the package manager of the distribution on a clean image and over the distribution's own Podman, containers with and without root, and its removal; `package-check.yml` calls it once for every row of `scripts/package/distros.txt` |
 | `package-check.yml` | `packages build`: a pull request that touches `scripts/package/`, `scripts/upstream/`, `scripts/verify/package-state.sh`, `scripts/build/install-common-config.sh`, `keyring/podman/`, the package workflows or `scripts/ci/decide-package.sh` builds the native packages for every distribution; any other pull request skips the build and passes |
 | `watchdog.yml` | the newest release is missing something upstream, or a change to the build recipe, that has waited more than a day; opens an issue when the scheduled run finds it; also fails when `keyring-watch.yml` has not finished a scheduled run in two days, or `mutation.yml` in nine, and opens an issue for each; its job `tool-versions` fails when `shellcheck` or `actionlint`, which the workflows pin, have had a newer release for more than thirty days, and opens an issue (`type:deps`) |
-| `mutation.yml` | `every catalogued guard is noticed`: each entry of `tests/mutation/catalog.txt` breaks one refusal of a script or workflow, and a suite it names has to go red. Weekly and on demand every entry; on a pull request only the entries the change can affect, decided from the base commit. Weekly and on demand it also runs every suite (`full suite`, which nothing requires) |
+| `mutation.yml` | `every catalogued guard is noticed`: each entry of `tests/mutation/catalog.txt` and `catalog-tests.txt` breaks one refusal of a script or workflow, and a suite it names has to go red. Weekly and on demand every entry; on a pull request only the entries the change can affect, decided from the base commit. Weekly and on demand it also runs every suite (`full suite`, which nothing requires) |
 | `deprecations.yml` | a job of any run a pull request started carries a warning that something it uses is deprecated or is going away; it waits for the other runs of the commit to finish, holding a runner meanwhile, and fails when one cannot be read or does not finish in 90 minutes |
 | `dependabot-automerge.yml` | arms auto-merge on Dependabot's pull requests, which then merge when the required checks pass, and asks Dependabot to rebase the ones that fall behind |
 | `keyring-watch.yml` | the keys that sign Podman upstream are no longer the ones in `keyring/podman/`: it prepares a branch with the change and opens an issue, and it also opens one when fewer than two keys can still sign for the next sixty days |

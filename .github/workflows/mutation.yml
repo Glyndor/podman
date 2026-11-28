@@ -2,7 +2,7 @@ name: mutation
 
 # Breaks every catalogued guard on purpose and requires a suite to notice. A guard no
 # suite notices is decoration, and reading the suites cannot tell which ones are: the
-# catalogue in tests/mutation/catalog.txt names, for each refusal of the scripts and
+# catalogue in tests/mutation/catalog.txt and catalog-tests.txt names, for each refusal of the scripts and
 # workflows, the text that removes it and the suites that must go red, and
 # tests/mutation/run-mutations.sh applies each entry to a copy of the tree made with
 # `git archive HEAD` and runs those suites. That every refusal has an entry or a
