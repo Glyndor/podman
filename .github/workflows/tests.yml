@@ -1,16 +1,15 @@
 name: tests
 
 on:
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["main"]
 
 permissions: {}
 
-# A newer push to a pull request makes the run for the older one pointless, so it
-# is cancelled. A push to main is never cancelled: its group is the run id, so
-# each one has a group of its own and nothing supersedes it.
+# The workflow runs on a pull request and on nothing else. A newer push to that
+# pull request makes the run for the older commit pointless, so it is cancelled.
+# A merge is judged by the pull request that produced it, so no run happens again
+# on main: the same tree would be run twice for one change.
 concurrency:
   group: tests-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
