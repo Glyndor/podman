@@ -50,6 +50,12 @@ if step tests.yml test name=suites "$R"; then
 		"$(grep -c "release-signing-mldsa.test.sh first-on-path=$R/rt/mldsa-venv/bin\$" "$R/log") $(grep -c "plain.test.sh first-on-path=$R/rt/mldsa-venv/bin\$" "$R/log")"
 	suites
 	check "no suite at all fails the step instead of passing it" "1 1" "$rc $(says 'no suite found under tests/')"
+	rm -rf "$R/ws" "$R/rt"; mkdir -p "$R/ws" "$R/rt"; : > "$R/log"
+	suite tests/a/one.test.sh 0; suite tests/b/two.test.sh 0
+	printf '#!/bin/bash\ncat > /dev/null\necho "$0 first-on-path=x" >> "$LOG"\n' > "$R/ws/tests/a/one.test.sh"
+	run_step "$R" "$R/ws" LOG="$R/log" RUNNER_TEMP="$R/rt"
+	check "a suite that reads stdin does not swallow the name of the next one" \
+		"0 tests/a/one.test.sh tests/b/two.test.sh" "$rc $(ran)"
 else
 	fail=$((fail + 1)); echo "FAIL  tests.yml: cannot find the step that runs the suites"
 fi
