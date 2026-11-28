@@ -1,16 +1,15 @@
 name: tests
 
 on:
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["main"]
 
 permissions: {}
 
-# A newer push to a pull request makes the run for the older one pointless, so it
-# is cancelled. A push to main is never cancelled: its group is the run id, so
-# each one has a group of its own and nothing supersedes it.
+# The workflow runs on a pull request and on nothing else. A newer push to that
+# pull request makes the run for the older commit pointless, so it is cancelled.
+# A merge is judged by the pull request that produced it, so no run happens again
+# on main: the same tree would be run twice for one change.
 concurrency:
   group: tests-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -83,11 +82,14 @@ jobs:
           "$venv/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r .github/scripts/release/sign-requirements.txt
       - name: suites
         run: |
-          status=0
+          set -euo pipefail
           count=0
           # Every file named *.test.sh under tests/, at any depth: a suite in a new
           # subfolder runs without anyone editing this step, and one that is named
           # otherwise is refused by tests/workflows/policy/tests-run-every-suite.test.sh.
+          # A suite that fails ends the step, and the job with it: what is behind a
+          # failure is a verdict nobody needs, and the cheap suites go first. The step
+          # ends with the failure, as the shell of the workflow ends with it.
           while IFS= read -r t; do
             echo "== $t"
             count=$((count + 1))
@@ -95,10 +97,9 @@ jobs:
               # The environment comes first on PATH for the suite and for the
               # scripts it runs. Without it the suite fails and says what is
               # missing; it is never skipped.
-              *-mldsa.test.sh) PATH="$RUNNER_TEMP/mldsa-venv/bin:$PATH" bash "$t" || status=1 ;;
-              *) bash "$t" || status=1 ;;
+              *-mldsa.test.sh) PATH="$RUNNER_TEMP/mldsa-venv/bin:$PATH" bash "$t" ;;
+              *) bash "$t" ;;
             esac
           done < <(find tests -name '*.test.sh' | LC_ALL=C sort)
           echo "$count suites ran"
           [ "$count" -gt 0 ] || { echo "::error::no suite found under tests/"; exit 1; }
-          exit "$status"

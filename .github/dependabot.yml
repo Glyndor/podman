@@ -24,6 +24,7 @@ updates:
       interval: "daily"
     labels:
       - "type:deps"
+      - "type:security"
       - "area:release"
     open-pull-requests-limit: 5
     groups:
@@ -48,6 +49,11 @@ updates:
       - "type:ci"
       - "area:build"
     open-pull-requests-limit: 5
+    # One pull request for every image that moved that day, a digest included: no
+    # update type is named, so nothing falls outside the group.
+    groups:
+      build-images:
+        patterns: ["*"]
   # The images the native packages are built and proved in. Each distribution is pinned to its
   # own release on purpose (Fedora 45 and 44, AlmaLinux 9 and 10, and so on): a package for
   # one release is not meant to move to the next, so only the digest and patch updates of the

@@ -40,11 +40,11 @@ if step tests.yml test name=suites "$R"; then
 	suites tests/a/one.test.sh tests/b/c/two.test.sh tests/d/e/f/three.test.sh tests/g.test.sh
 	check "suites at every depth run, in order, and the run says how many" "0 tests/a/one.test.sh tests/b/c/two.test.sh tests/d/e/f/three.test.sh tests/g.test.sh 1" \
 		"$rc $(ran) $(says '4 suites ran')"
-	suites tests/a/one.test.sh tests/b/two.test.sh
-	suite tests/c/d/broken.test.sh 1
+	suites tests/a/one.test.sh tests/c/two.test.sh
+	suite tests/b/broken.test.sh 1
 	: > "$R/log"
 	run_step "$R" "$R/ws" LOG="$R/log" RUNNER_TEMP="$R/rt"
-	check "a suite that fails fails the step, and the suites after it still run" "1 tests/a/one.test.sh tests/b/two.test.sh tests/c/d/broken.test.sh" "$rc $(ran)"
+	check "a suite that fails fails the step, and the suites after it do not run" "1 tests/a/one.test.sh tests/b/broken.test.sh" "$rc $(ran)"
 	suites tests/a/plain.test.sh tests/a/release-signing-mldsa.test.sh
 	check "the ML-DSA suite runs with the virtual environment first on PATH" "1 0" \
 		"$(grep -c "release-signing-mldsa.test.sh first-on-path=$R/rt/mldsa-venv/bin\$" "$R/log") $(grep -c "plain.test.sh first-on-path=$R/rt/mldsa-venv/bin\$" "$R/log")"

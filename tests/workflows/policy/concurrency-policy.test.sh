@@ -9,6 +9,7 @@
 # holds the other rules over the same files; this one is a suite of its own so
 # neither grows past the soft limit of line-limit.yml. Each rule prints the offending
 # file and job, and each is run against copies that break it one way each.
+# shellcheck disable=SC2016 # the greps read the text of a workflow, $ included
 set -u
 
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -202,7 +203,11 @@ check "and the rebase job is held to the same" \
 check "nothing that can run on a push, a schedule or a call cancels whatever the event" "" "$(violations cancel-outside-pr)"
 cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
 sed -i "s/^  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\$/  cancel-in-progress: true/" "$BAD/reusable-workflow-lint.yml"
+# The caller is given a push: a workflow of a pull request runs on a pull request
+# alone, so without a push that reaches the reusable the rule has nothing to say.
+sed -i 's/^  pull_request:$/  push:\n    branches: ["main"]\n  pull_request:/' "$BAD/workflow-lint.yml"
 check "the fixture did go back to cancelling always" "1" "$(grep -c '^  cancel-in-progress: true$' "$BAD/reusable-workflow-lint.yml")"
+check "and gave the caller a push" "1" "$(grep -c '^  push:$' "$BAD/workflow-lint.yml")"
 check "a reusable that its push caller can reach, cancelling always, is named" \
 	"reusable-workflow-lint.yml: workflow cancels a run whatever the event, and the workflow also runs on push" "$(violations cancel-outside-pr "$BAD")"
 cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
@@ -232,8 +237,12 @@ check "a job that stopped naming a pull request event, in a workflow that has a 
 # --- a push run is never cancelled by the next push --------------------------------
 check "every group a push can reach is the run's own" "" "$(violations push-group)"
 cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
-sed -i "s/^  group: tests-\${{ github.event_name == 'pull_request' \&\& github.ref || github.run_id }}\$/  group: tests-\${{ github.ref }}/" "$BAD/tests.yml"
+sed -i "s/^  group: tests-\${{ github.event_name == 'pull_request' && github.ref || github.run_id }}\$/  group: tests-\${{ github.ref }}/" "$BAD/tests.yml"
+# The workflow is given a push: it runs on a pull request alone, so without a push
+# that can reach it the rule has nothing to say about its group.
+sed -i 's/^  pull_request:$/  push:\n    branches: ["main"]\n  pull_request:/' "$BAD/tests.yml"
 check "the fixture did group the push runs of tests.yml by ref" 1 "$(grep -c '^  group: tests-\${{ github.ref }}$' "$BAD/tests.yml")"
+check "and gave the workflow a push" 1 "$(grep -c '^  push:$' "$BAD/tests.yml")"
 check "a push group built on the ref is named" \
 	"tests.yml: workflow groups push runs by 'tests-\${{ github.ref }}', so a push can cancel the one queued before it" "$(violations push-group "$BAD")"
 cp "$HERE"/.github/workflows/*.y*ml "$BAD/"

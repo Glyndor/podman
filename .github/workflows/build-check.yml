@@ -133,7 +133,9 @@ jobs:
     permissions:
       contents: read
     strategy:
-      fail-fast: false
+      # The matrix stops at the first row that fails: the runners are few, and a row that passes says it enters while the
+      # failure that cuts the run says which does not.
+      fail-fast: true
       matrix:
         include:
           - { arch: amd64, runner: ubuntu-26.04 }
