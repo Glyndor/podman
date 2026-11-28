@@ -11,8 +11,22 @@ them, which publish no signature: what is trusted there is the commit a reviewer
 Today the rows of the table are Fedora 45 and 44, Enterprise Linux 9 and 10 (built on AlmaLinux and also proved on Rocky and on Red Hat's UBI image), Amazon Linux 2023 and openSUSE Leap 16.1 and Tumbleweed. `package-check.yml` builds them on a pull request that
 changes how they are built, and each package is installed with the package manager of its
 distribution (`dnf`, or `zypper` on openSUSE) on a clean image and over the distribution's own Podman,
-runs containers with and without root, and is removed. Release runs do not publish
-them yet.
+runs containers with and without root, and is removed.
+
+## In a release
+
+`release.yml` builds and proves them with the same workflow (`reusable-rpm.yml`) and attaches them to the release
+beside the `.deb`: every package of every distribution and architecture of the table, with its detached Ed25519
+signature `<name>.sig` (and `<name>.mldsa65.sig` when the second signature is required), listed in `SHA256SUMS`,
+which is signed too, and covered by the provenance attestation, signatures included. The `noarch` packages are those
+of the x86_64 build. The names a release has to carry come from the table and `scripts/package/extras.txt`
+(`scripts/release/rpm/names.sh`), forty packages today.
+
+A release carries all of them or is not published: a distribution that fails stops the `.deb` as well. `components.txt`
+names the distributions on its line `ids` and the packaging recipe on its line `recipe-package`, which the planner does
+not compare, so a change under `scripts/package/` ships with the next release rather than starting one.
+
+No release up to `6.2.1+r5` carries them, and no repository serves them yet.
 
 ## What a package says
 

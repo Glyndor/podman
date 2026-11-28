@@ -289,7 +289,7 @@ rpm-run-the-distributions-commonpackage-ships-no-000shortnamesc	scripts/package/
 package-payload-unknown-family	scripts/package/build-payload.sh	*) echo "unknown family: $family" >&2; exit 2 ;;	*) selinux=1 ;;	tests/package/build-payload.test.sh
 package-payload-links-a-library-it-should-not	scripts/package/build-payload.sh	*gpgme* | *assuan* | *subid* | *sqlite*)	__never__)	tests/package/build-payload.test.sh
 package-distros-unknown-architectures	scripts/package/distros.sh	case "$2" in all | x86_64 | aarch64) ;; *) echo "unknown architectures: $2" >&2; exit 2 ;; esac	case "$2" in *) ;; esac	tests/package/distros.test.sh
-package-distros-no-usage	scripts/package/distros.sh	echo "usage: distros.sh field <id> <column> | ids <format> | matrix <format> <arches|all>" >&2	true	tests/package/distros.test.sh
+package-distros-no-usage	scripts/package/distros.sh	echo "usage: distros.sh field <id> <column> | ids <format> | rows <format> | matrix <format> <arches|all>" >&2	true	tests/package/distros.test.sh
 rpm-deps-unknown-family	scripts/package/rpm/install-build-deps.sh	*) echo "no build dependencies are known for the family: $family" >&2; exit 2 ;;	*) true ;;	tests/package/rpm/install-build-deps.test.sh
 rpm-check-replacement-something-uncovered	scripts/package/rpm/check-replacement.sh	if [ -n "$bad" ]; then	if false; then	tests/package/rpm/check-replacement.test.sh
 rpm-check-replacement-requirers-unreadable	scripts/package/rpm/check-replacement.sh	|| { echo "cannot ask the repositories what requires podman" >&2; exit 1; }	|| true	tests/package/rpm/check-replacement.test.sh
@@ -346,7 +346,7 @@ check-artifacts-record-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size
 check-artifacts-signed-package-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size_of "$file")" -le "$max_deb" ] ||	true ||	tests/release/check-artifacts.test.sh
 check-artifacts-ed25519-size	scripts/release/check-artifacts.sh	[ "$(size_of "$file.sig")" -eq 64 ] ||	true ||	tests/release/check-artifacts.test.sh
 check-artifacts-mldsa-size	scripts/release/check-artifacts.sh	[ "$(size_of "$file.mldsa65.sig")" -eq 3309 ] ||	true ||	tests/release/check-artifacts.test.sh
-signed-set-usage	scripts/release/signed-set.sh	usage() { echo "usage: signed-set.sh components <out> | verify <dir> <ed25519.b64> <mldsa65.b64> <true|false> <venv>" >&2; exit 2; }	usage() { :; }	tests/release/signed-set.test.sh
+signed-set-usage	scripts/release/signed-set.sh	usage() { echo "usage: signed-set.sh components <out> | sums <dir> | list | assets <true|false> | verify <dir> <ed25519.b64> <mldsa65.b64> <true|false> <venv>" >&2; exit 2; }	usage() { :; }	tests/release/signed-set.test.sh
 signed-set-tag-is-a-version	scripts/release/signed-set.sh	[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] ||	true ||	tests/release/signed-set.test.sh
 signed-set-component-is-a-value	scripts/release/signed-set.sh	[[ "$value" =~ ^[A-Za-z0-9.+_-]+$ ]] ||	true ||	tests/release/signed-set.test.sh
 signed-set-flag-is-true-or-false	scripts/release/signed-set.sh	case "$require" in true | false) ;; *)	case "$require" in *) ;; zz)	tests/release/signed-set.test.sh
@@ -359,3 +359,69 @@ read-released-record-names-its-release	scripts/upstream/read-released.sh	if [ "$
 read-released-signing-library	scripts/upstream/read-released.sh	echo "the signing library could not be installed to verify components.txt" >&2	echo x >&2	tests/upstream/read-released.test.sh
 read-released-verifies-downloaded-mldsa	scripts/upstream/read-released.sh	args+=(--mldsa-sig "$record.mldsa65.sig" --mldsa-keys "$anchor" --require-mldsa)	:	tests/upstream/read-released.test.sh
 read-released-signature-is-there	scripts/upstream/read-released.sh	|| { echo "release $latest carries no readable signature of its components.txt" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
+check-artifacts-rpm-names	scripts/release/check-artifacts.sh	|| { echo "the rpm packages of $tag cannot be named" >&2; exit 1; }	|| true	tests/release/check-artifacts.test.sh
+check-artifacts-rpm-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size_of "$rpm")" -le "$max_deb" ] ||	true ||	tests/release/check-artifacts.test.sh
+check-artifacts-rpm-without-the-lead	scripts/release/check-artifacts.sh	[ "$(head -c 4 -- "$rpm" | od -An -tx1 | tr -d ' \n')" = edabeedb ] ||	true ||	tests/release/check-artifacts.test.sh
+check-artifacts-signed-names	scripts/release/check-artifacts.sh	|| { echo "the files of $tag cannot be named" >&2; exit 1; }	|| true	tests/release/check-artifacts.test.sh
+check-artifacts-sums-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size_of "$dir/SHA256SUMS")" -le "$max_sums" ] ||	true ||	tests/release/check-artifacts.test.sh
+check-hashes-usage	scripts/release/check-hashes.sh	[ "$#" -eq 5 ] ||	true ||	tests/release/check-hashes.test.sh
+check-hashes-refusal	scripts/release/check-hashes.sh	die() { echo "::error::$*; refusing to sign." >&2; exit 1; }	die() { :; }	tests/release/check-hashes.test.sh
+check-hashes-tag	scripts/release/check-hashes.sh	[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+r[0-9]+)?$ ]] ||	true ||	tests/release/check-hashes.test.sh
+check-hashes-reported-hash	scripts/release/check-hashes.sh	[[ "${want[$arch]}" =~ ^[0-9a-f]{64}$ ]] ||	true ||	tests/release/check-hashes.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-hashes-regular-file	scripts/release/check-hashes.sh	[ "$(stat -c %F "$file" 2> /dev/null)" = "regular file" ] ||	true ||	tests/release/check-hashes.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-hashes-deb-differs	scripts/release/check-hashes.sh	[ "${sum%% *}" = "${want[$arch]}" ] ||	true ||	tests/release/check-hashes.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-hashes-manifest-format	scripts/release/check-hashes.sh	[[ "$manifest" =~ ^[0-9a-f]{64}$ ]] ||	true ||	tests/release/check-hashes.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-hashes-rpm-differs	scripts/release/check-hashes.sh	[ "$got" = "$manifest" ] ||	true ||	tests/release/check-hashes.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-upload-usage	scripts/release/check-upload.sh	[ "$#" -eq 5 ] ||	true ||	tests/release/check-upload.test.sh
+check-upload-refusal	scripts/release/check-upload.sh	die() { echo "::error::$*; refusing to take it." >&2; exit 1; }	die() { :; }	tests/release/check-upload.test.sh
+check-upload-id-is-a-number	scripts/release/check-upload.sh	[[ "$id" =~ ^[0-9]+$ ]] ||	true ||	tests/release/check-upload.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-upload-digest-is-a-sha256	scripts/release/check-upload.sh	[[ "$digest" =~ ^[0-9a-f]{64}$ ]] ||	true ||	tests/release/check-upload.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-upload-commit-is-full	scripts/release/check-upload.sh	[[ "$commit" =~ ^[0-9a-f]{40}$ ]] ||	true ||	tests/release/check-upload.test.sh
+check-upload-list-is-there	scripts/release/check-upload.sh	[ -f "$list" ] ||	true ||	tests/release/check-upload.test.sh
+check-upload-listed-once	scripts/release/check-upload.sh	[ "$(grep -c . <<< "$rows")" = 1 ] ||	true ||	tests/release/check-upload.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-upload-name	scripts/release/check-upload.sh	[ "$listed" = "$name" ] ||	true ||	tests/release/check-upload.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-upload-expired	scripts/release/check-upload.sh	[ "$expired" = false ] ||	true ||	tests/release/check-upload.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-upload-commit	scripts/release/check-upload.sh	[ "$head" = "$commit" ] ||	true ||	tests/release/check-upload.test.sh,tests/workflows/release/release-artifacts.test.sh
+check-upload-digest-differs	scripts/release/check-upload.sh	[ "${listed_digest#sha256:}" = "$digest" ] ||	true ||	tests/release/check-upload.test.sh,tests/workflows/release/release-artifacts.test.sh
+signed-set-rpm-names	scripts/release/signed-set.sh	|| { echo "the rpm packages of $tag cannot be named" >&2; return 1; }	|| true	tests/release/signed-set.test.sh
+signed-set-ids-unreadable	scripts/release/signed-set.sh	|| { echo "the rpm rows of distros.txt cannot be read" >&2; return 1; }	|| true	tests/release/signed-set.test.sh
+signed-set-no-rpm-row	scripts/release/signed-set.sh	[ -n "$ids" ] ||	true ||	tests/release/signed-set.test.sh
+signed-set-hashes-a-link	scripts/release/signed-set.sh	[ -f "$1/$name" ] && [ ! -L "$1/$name" ] ||	true ||	tests/release/signed-set.test.sh
+signed-set-hashes-an-unreadable-file	scripts/release/signed-set.sh	|| { echo "$name cannot be hashed" >&2; return 1; }	|| true	tests/release/signed-set.test.sh
+signed-set-record-without-ids	scripts/release/signed-set.sh	record_ids="$(ids_line)" || exit 1	record_ids="$(ids_line)" || true	tests/release/signed-set.test.sh
+signed-set-record-without-recipe	scripts/release/signed-set.sh	|| { echo "the recipe of scripts/package cannot be read: no record is written" >&2; exit 1; }	|| true	tests/release/signed-set.test.sh
+signed-set-sums-of-an-incomplete-set	scripts/release/signed-set.sh	|| { echo "SHA256SUMS is not written without every file of the release" >&2; exit 1; }	|| true	tests/release/signed-set.test.sh
+signed-set-assets-flag	scripts/release/signed-set.sh	*) echo "the second-signature flag is true or false, not '$2'" >&2; exit 1 ;; esac	*) ;; esac	tests/release/signed-set.test.sh
+signed-set-assets-unnamed	scripts/release/signed-set.sh	files="$(signed_files)" || exit 1	files="$(signed_files)" || true	tests/release/signed-set.test.sh
+signed-set-record-names-its-distributions	scripts/release/signed-set.sh	if [ "$(grep -c "^ids " "$dir/components.txt")" != 1 ] || ! grep -qxF "$want_ids" "$dir/components.txt"; then	if false; then	tests/release/signed-set.test.sh
+signed-set-hashes-agree	scripts/release/signed-set.sh	|| { echo "SHA256SUMS is not the hashes of the files of the release" >&2; exit 1; }	|| true	tests/release/signed-set.test.sh
+rpm-collect-usage	scripts/release/rpm/collect.sh	usage() { echo "usage: collect.sh gather <version> <prefix> <legs-json> <legs-dir> <set-dir> | digest <version> <set-dir>" >&2; exit 2; }	usage() { :; }	tests/release/rpm/collect.test.sh
+rpm-collect-refusal	scripts/release/rpm/collect.sh	die() { echo "::error::$*; refusing the rpm packages." >&2; exit 1; }	die() { :; }	tests/release/rpm/collect.test.sh
+rpm-collect-prefix	scripts/release/rpm/collect.sh	case "$prefix" in rpm | rpmcheck) ;; *) die "the artifacts are called rpm- or rpmcheck-, not '$prefix-'" ;; esac	:	tests/release/rpm/collect.test.sh
+rpm-collect-download-exact	scripts/release/rpm/collect.sh	[ "$got" = "$want" ] || { printf 'the download is not exactly the packages of the legs.	true || { printf 'the download is not exactly the packages of the legs.	tests/release/rpm/collect.test.sh
+rpm-collect-report-complete	scripts/release/rpm/collect.sh	[ "$reported" = "$files" ] ||	true ||	tests/release/rpm/collect.test.sh
+rpm-collect-hash-format	scripts/release/rpm/collect.sh	[[ "$want_sum" =~ ^[0-9a-f]{64}$ ]] ||	true ||	tests/release/rpm/collect.test.sh
+rpm-collect-over-the-cap	scripts/release/rpm/collect.sh	[ "$(stat -c %s -- "$dir/$leg/$name")" -le "$max_rpm" ] ||	true ||	tests/release/rpm/collect.test.sh
+rpm-collect-hash-differs	scripts/release/rpm/collect.sh	[ "$got_sum" = "$want_sum" ] ||	true ||	tests/release/rpm/collect.test.sh
+rpm-collect-set-not-empty	scripts/release/rpm/collect.sh	[ -d "$set" ] && [ ! -L "$set" ] && [ -z "$(ls -A "$set")" ] ||	true ||	tests/release/rpm/collect.test.sh
+rpm-collect-digest-set-exact	scripts/release/rpm/collect.sh	[ "$got" = "$want" ] || { printf 'the set is not exactly the packages of the release.	true || { printf 'the set is not exactly the packages of the release.	tests/release/rpm/collect.test.sh
+rpm-legs-usage	scripts/release/rpm/legs.sh	[ "$#" -eq 4 ] ||	true ||	tests/release/rpm/legs.test.sh
+rpm-legs-refusal	scripts/release/rpm/legs.sh	die() { echo "::error::$*; refusing the rpm packages." >&2; exit 1; }	die() { :; }	tests/release/rpm/legs.test.sh
+rpm-legs-prefix	scripts/release/rpm/legs.sh	case "$prefix" in rpm | rpmcheck) ;; *) die "the artifacts are called rpm- or rpmcheck-, not '$prefix-'" ;; esac	:	tests/release/rpm/legs.test.sh
+rpm-legs-every-leg	scripts/release/rpm/legs.sh	[ "$got" = "$want" ] ||	true ||	tests/release/rpm/legs.test.sh
+rpm-legs-report-without-hashes	scripts/release/rpm/legs.sh	[ -n "${files:-}" ] ||	true ||	tests/release/rpm/legs.test.sh
+rpm-legs-artifact-not-the-reported	scripts/release/rpm/legs.sh	>&2 || exit 1	>&2 || true	tests/release/rpm/legs.test.sh
+rpm-names-usage	scripts/release/rpm/names.sh	usage() { echo "usage: names.sh legs | leg <version> <id> <arch> | release <version>" >&2; exit 2; }	usage() { :; }	tests/release/rpm/names.test.sh
+rpm-names-refusal	scripts/release/rpm/names.sh	die() { echo "$*" >&2; exit 1; }	die() { echo "$*" >&2; }	tests/release/rpm/names.test.sh
+rpm-names-no-rpm-row	scripts/release/rpm/names.sh	[ -n "$table" ] ||	true ||	tests/release/rpm/names.test.sh
+rpm-names-format	scripts/release/rpm/names.sh	[ -n "$row" ] ||	true ||	tests/release/rpm/names.test.sh
+rpm-names-arch	scripts/release/rpm/names.sh	case ",$arches," in *",$4,"*) ;; *) die "$3 is not built for $4" ;; esac	:	tests/release/rpm/names.test.sh
+rpm-names-noarch-leg	scripts/release/rpm/names.sh	case ",$arches," in *,x86_64,*) ;; *) die "$id is not built for x86_64, the leg the noarch packages come from" ;; esac	:	tests/release/rpm/names.test.sh
+rpm-names-extra-pinned-once	scripts/release/rpm/names.sh	[ "${#found[@]}" -eq 1 ] && [[ "$v" =~ ^[0-9][0-9A-Za-z.]*$ ]] ||	true ||	tests/release/rpm/names.test.sh
+rpm-stage-usage	scripts/release/rpm/stage-built.sh	[ "$#" -eq 5 ] ||	true ||	tests/release/rpm/stage-built.test.sh
+rpm-stage-names	scripts/release/rpm/stage-built.sh	|| { echo "the packages of $id $arch cannot be named" >&2; exit 1; }	|| true	tests/release/rpm/stage-built.test.sh
+rpm-stage-built-is-a-directory	scripts/release/rpm/stage-built.sh	[ -d "$built" ] && [ ! -L "$built" ] ||	true ||	tests/release/rpm/stage-built.test.sh
+rpm-stage-set-exact	scripts/release/rpm/stage-built.sh	[ "$got" = "$want" ] ||	true ||	tests/release/rpm/stage-built.test.sh
+rpm-stage-destination-empty	scripts/release/rpm/stage-built.sh	[ -d "$stage" ] && [ ! -L "$stage" ] && [ -z "$(ls -A "$stage")" ] ||	true ||	tests/release/rpm/stage-built.test.sh
+rpm-stage-over-the-cap	scripts/release/rpm/stage-built.sh	[ "$(stat -c %s -- "$built/$name")" -le "$max_rpm" ] ||	true ||	tests/release/rpm/stage-built.test.sh
+distros-rows-usage	scripts/package/distros.sh	[ "$#" -eq 1 ] || { echo "usage: distros.sh rows <format>" >&2; exit 2; }	true	tests/package/distros.test.sh

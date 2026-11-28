@@ -150,7 +150,8 @@ check "the build job, which runs third-party code, given contents: write is name
 	"reusable-build.yml: build holds contents: write, which no entry of the list allows" "$(violations permissions "$BAD")"
 fixture release.yml '/^  build-amd64:$/,/^  sign:$/s/^      contents: read$/      contents: write/'
 check "so are the jobs that call it" "release.yml: build-amd64 holds contents: write, which no entry of the list allows
-release.yml: build-arm64 holds contents: write, which no entry of the list allows" "$(violations permissions "$BAD")"
+release.yml: build-arm64 holds contents: write, which no entry of the list allows
+release.yml: rpm holds contents: write, which no entry of the list allows" "$(violations permissions "$BAD")"
 fixture dco.yml 's/^  contents: read$/  contents: write/'
 check "a write granted to a whole workflow is named" "dco.yml: the workflow grants contents: write to every job
 dco.yml: dco holds contents: write, which no entry of the list allows" "$(violations permissions "$BAD")"

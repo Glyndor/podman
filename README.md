@@ -28,7 +28,7 @@ Once it is installed, use `podman` as usual, or add [podup](https://github.com/G
 
 ## Verify a package
 
-`apt` verifies the archive signature by itself. To check a package you downloaded, each release carries one `.deb` and one detached `.sig` per architecture, made with the Glyndor Ed25519 release key, and a build provenance attestation. [docs/verify.md](docs/verify.md) shows how to check the signature with OpenSSL and the attestation with `gh`.
+`apt` verifies the archive signature by itself. To check a package you downloaded, each release carries one `.deb` and one detached `.sig` per architecture, made with the Glyndor Ed25519 release key, and a build provenance attestation. Releases after `6.2.1+r5` also attach the [rpm packages](docs/packages.md) and a signed `SHA256SUMS`; no rpm repository serves them yet. [docs/verify.md](docs/verify.md) shows how to check the signature with OpenSSL and the attestation with `gh`.
 
 A second, post-quantum release signature (ML-DSA-65) is supported beside the Ed25519 one and never replaces it. The second signature is not required yet.
 
@@ -53,12 +53,14 @@ flowchart LR
   A[Upstream stable tags] --> B[Verify tag signatures]
   B --> C[Build on Debian 13]
   C --> D[Install and run on clean Debian 13, Ubuntu 24.04 and 26.04]
-  D --> E[Sign the package]
+  B --> R[Build, install and run each rpm]
+  D --> E[Sign every package]
+  R --> E
   E --> F[GitHub release]
   F --> G[apt.glyndor.net]
 ```
 
-A scheduled workflow checks every six hours for a new stable tag of Podman, netavark or aardvark-dns, and a tag must carry a signature from a known upstream key. The package is installed and run on clean Debian 13, Ubuntu 24.04 and 26.04 before it is signed. If any step fails nothing is published, and the previous release remains the latest. [docs/release-process.md](docs/release-process.md) lists every step.
+A scheduled workflow checks every six hours for a new stable tag of Podman, netavark or aardvark-dns, and a tag must carry a signature from a known upstream key. The `.deb` is installed and run on clean Debian 13, Ubuntu 24.04 and 26.04, and each rpm on its distribution, before anything is signed. If any step fails nothing is published, and the previous release remains the latest. [docs/release-process.md](docs/release-process.md) lists every step.
 
 ---
 

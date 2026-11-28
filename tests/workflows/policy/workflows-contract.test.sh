@@ -31,7 +31,10 @@ if step release.yml sign secret=GLYNDOR_RELEASE_ED25519_KEY "$S"; then
 	check "the signing step's run block has no expression in it" 0 "$(grep -c '\${{' "$S/run.sh")"
 	mkdir -p "$S/bin"
 	# The step writes the record of the release into the stage before it signs, from the components the plan names.
-	mkdir -p "$S/rt/signvenv/bin" "$S/rt/stage"
+	mkdir -p "$S/rt/signvenv/bin"
+	# shellcheck source=tests/lib/rpm-set.sh
+	. "$HERE/tests/lib/rpm-set.sh"
+	sign_stage "$S/ws" "$S/rt/stage" 6.2.0
 	printf '#!/bin/sh\necho "signing would start: $*"\nexit 42\n' > "$S/rt/signvenv/bin/python"
 	chmod +x "$S/rt/signvenv/bin/python"
 	others=()

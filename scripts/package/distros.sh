@@ -4,6 +4,7 @@
 #
 # Usage: distros.sh field <id> <column>      one value of the row of <id>
 #        distros.sh ids <format>             the ids of that format, one per line
+#        distros.sh rows <format>            "<id>|<arches>|<extras>" for each row of that format, from one reading
 #        distros.sh matrix <format> <arches> the rows (of every format when <format> is any) as a JSON list for a workflow matrix, one
 #                                            entry per id and architecture; <arches> is "all" or
 #                                            one architecture, and an id that does not build
@@ -54,6 +55,9 @@ case "$cmd" in
 	ids)
 		[ "$#" -eq 1 ] || { echo "usage: distros.sh ids <format>" >&2; exit 2; }
 		rows | awk -F'|' -v f="$1" '$2 == f {print $1}' ;;
+	rows)
+		[ "$#" -eq 1 ] || { echo "usage: distros.sh rows <format>" >&2; exit 2; }
+		rows | awk -F'|' -v f="$1" '$2 == f {print $1 "|" $4 "|" $11}' ;;
 	matrix)
 		[ "$#" -eq 2 ] || { echo "usage: distros.sh matrix <format> <arches|all>" >&2; exit 2; }
 		case "$2" in all | x86_64 | aarch64) ;; *) echo "unknown architectures: $2" >&2; exit 2 ;; esac
@@ -69,6 +73,6 @@ case "$cmd" in
 			}
 			END { print "[" out "]" }' ;;
 	*)
-		echo "usage: distros.sh field <id> <column> | ids <format> | matrix <format> <arches|all>" >&2
+		echo "usage: distros.sh field <id> <column> | ids <format> | rows <format> | matrix <format> <arches|all>" >&2
 		exit 2 ;;
 esac

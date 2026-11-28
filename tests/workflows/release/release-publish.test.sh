@@ -19,6 +19,8 @@ check() { # <desc> <want> <got>
 . "$HERE/tests/lib/workflow-step.sh"
 # shellcheck source=tests/lib/release-workflow.sh
 . "$HERE/tests/lib/release-workflow.sh"
+# shellcheck source=tests/lib/rpm-set.sh
+. "$HERE/tests/lib/rpm-set.sh"
 
 # --- release.yml, publish: the step that creates the release ---------------------
 R="$WORK/create"
@@ -41,19 +43,21 @@ esac
 GH
 	chmod +x "$R/bin/gh"
 	SHA=0123456789abcdef0123456789abcdef01234567
-	release() { # <REQUIRE_MLDSA, may be empty> [TAG] [SHA]
+	NAMES="$(signed_names 6.2.0+r2)"
+	release() { # <REQUIRE_MLDSA, may be empty> [TAG] [SHA]; $LACKS names one file the signed set does not have
 		rm -rf "$R/art" "$R/calls" "$R/rt" "$R/tags"; mkdir "$R/art" "$R/rt"; : > "$R/calls"
 		printf '%s' "${PRE_TAGS-}" > "$R/tags"
-		local a
-		for a in amd64 arm64; do : > "$R/art/podman_6.2.0+r2_$a.deb"; : > "$R/art/podman_6.2.0+r2_$a.deb.sig"; done
-		: > "$R/art/components.txt"; : > "$R/art/components.txt.sig"
+		local name
+		while IFS= read -r name; do : > "$R/art/$name"; : > "$R/art/$name.sig"; : > "$R/art/$name.mldsa65.sig"; done <<< "$NAMES"
+		[ -z "${LACKS-}" ] || rm "$R/art/$LACKS"
 		run_step "$R" "$R/art" PATH="$R/bin:$PATH" CALLS="$R/calls" TAGS="$R/tags" RUNNER_TEMP="$R/rt" TAG="${2-v6.2.0+r2}" SHA="${3-$SHA}" \
 			PODMAN=v6.2.0 NETAVARK=v2.1.0 AARDVARK=v2.1.3 RECIPE=r1 REQUIRE_MLDSA="$1" \
-			GH_TOKEN=a-token GH_REPO=owner/repo
+			GITHUB_WORKSPACE="$HERE" GH_TOKEN=a-token GH_REPO=owner/repo
 	}
 	assets() { grep "^release create v6.2.0+r2 --verify-tag " "$R/calls" | sed 's/.*before signing\. //; s#'"$R"'/rt/##'; }
-	base="podman_6.2.0+r2_amd64.deb podman_6.2.0+r2_amd64.deb.sig podman_6.2.0+r2_arm64.deb podman_6.2.0+r2_arm64.deb.sig components.txt components.txt.sig"
-	mldsa="podman_6.2.0+r2_amd64.deb podman_6.2.0+r2_amd64.deb.sig podman_6.2.0+r2_amd64.deb.mldsa65.sig podman_6.2.0+r2_arm64.deb podman_6.2.0+r2_arm64.deb.sig podman_6.2.0+r2_arm64.deb.mldsa65.sig components.txt components.txt.sig components.txt.mldsa65.sig"
+	# Written out from the names: each signed file and its signature, and the second one when it is required.
+	base="$(while IFS= read -r n; do printf '%s %s.sig ' "$n" "$n"; done <<< "$NAMES" | sed 's/ $//')"
+	mldsa="$(while IFS= read -r n; do printf '%s %s.sig %s.mldsa65.sig ' "$n" "$n" "$n"; done <<< "$NAMES" | sed 's/ $//')"
 
 	release true
 	check "a required second signature: the release is created on the commit the plan fixed, from the exact names" "0 1 $mldsa" \
@@ -75,14 +79,28 @@ GH
 	check "a tag that exists on the very commit is refused as well: this run did not make it" "1 0" "$rc $(grep -c '^release create' "$R/calls")"
 	PRE_TAGS=""
 	release false
-	check "none required: the release carries the packages, their record and the first signature of each" "0 $base" "$rc $(assets)"
+	check "none required: the release carries the packages, their record, the hashes and the first signature of each" "0 $base" "$rc $(assets)"
+	check "which are the two .deb and the forty rpm packages among them" "2 40" "$(tr ' ' '\n' <<< "$base" | grep -c '\.deb$') $(tr ' ' '\n' <<< "$base" | grep -c '\.rpm$')"
 	check "and writes no record of its own: the one it publishes is the signed one" 0 "$(find "$R/rt" -name 'components.txt' | wc -l)"
 	release ""
 	check "a step output that is empty requires nothing" "0 $base" "$rc $(assets)"
+	# A release lacking a package, a signature or the list of hashes is not published, and no tag is made for it.
+	one=podman-6.2.0+r2-2.glyndor.leap161.aarch64.rpm
+	for gone in "$one" "$one.sig" podman_6.2.0+r2_arm64.deb SHA256SUMS SHA256SUMS.sig components.txt; do
+		LACKS="$gone" release false
+		check "without $gone nothing is created, no tag either" "1 0 0 1" \
+			"$rc $(grep -c '^release create' "$R/calls") $(grep -c '^api ' "$R/calls") $(says "the release lacks $gone")"
+	done
+	LACKS="$one.mldsa65.sig" release true
+	check "a required second signature missing from one rpm package: nothing is created" "1 0 0" "$rc $(grep -c '^release create' "$R/calls") $(grep -c '^api ' "$R/calls")"
+	release maybe
+	check "a requirement that is neither true nor false: nothing is created" "1 0 0" "$rc $(grep -c '^release create' "$R/calls") $(grep -c '^api ' "$R/calls")"
 	for bad in main v6.2 'v6.2.0+r2; touch x' 'v6.2.0+r2
 x'; do
 		release false "$bad"
 		check "the tag '$(printf '%s' "$bad" | head -n 1)' is not a version: nothing is created" "1 0 0" "$rc $(grep -c '^release create' "$R/calls") $(grep -c '^api ' "$R/calls")"
+		# The names of the assets would refuse such a tag too, after the step had gone on with it: it is refused first.
+		check "and the step itself says so, before it names an asset" 1 "$(says 'is not a version; refusing to publish')"
 	done
 	for bad in abc123 main "${SHA}0" "${SHA%?}" ""; do
 		release false v6.2.0+r2 "$bad"

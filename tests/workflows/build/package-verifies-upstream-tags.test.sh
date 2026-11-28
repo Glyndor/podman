@@ -26,7 +26,7 @@ check() { # <desc> <want> <got>
 . "$HERE/tests/lib/workflow-step.sh"
 
 S="$WORK/step"
-if ! step reusable-package.yml package "name=Fetch the upstream tags and verify their signatures" "$S"; then
+if ! step reusable-package.yml build "name=Fetch the upstream tags and verify their signatures" "$S"; then
 	fail=$((fail + 1)); echo "FAIL  reusable-package.yml: cannot find the step that fetches the upstream tags"
 	echo "$pass passed, $fail failed"; exit 1
 fi

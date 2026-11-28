@@ -119,13 +119,19 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-    # Measured on 2026-11-28 on a GitHub runner: a whole sweep reached 519 of its
-    # 572 entries in the 30 minutes it had then and was cancelled, which is about
-    # 33 minutes for all of it. The slowest suites take 6 to 22 seconds each time
-    # an entry runs them. Sixty minutes is under twice that and still bounds a
-    # hang, which would otherwise cost the six-hour default; split the sweep when
-    # a whole one passes forty.
+    # The sweep is shared between three jobs. Measured on 2026-11-28 on a GitHub
+    # runner: on one job, a whole sweep took about 33 minutes with 572 entries, and
+    # one of 642 entries, some of whose suites signed a whole release, had reached
+    # 302 when it was cancelled after 49 minutes. Each share is bounded at sixty
+    # minutes, which still bounds a hang, that would otherwise cost the six-hour
+    # default; add a share when one passes forty.
     timeout-minutes: 60
+    strategy:
+      # The matrix stops at the first row that fails: a survivor in one share is the
+      # answer, and the runners the others hold are few.
+      fail-fast: true
+      matrix:
+        share: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,11 +139,27 @@ jobs:
       - name: Every mutation is killed by a suite
         env:
           IDS: ${{ needs.decide.outputs.ids }}
+          SHARE: ${{ matrix.share }}
+          SHARES: ${{ strategy.job-total }}
         run: |
-          selected=()
-          if [ "$IDS" != all ]; then
-            read -r -a selected <<< "$IDS"
+          # Each job runs every SHARES-th entry from the SHARE-th on, so the entries of
+          # one suite, which are next to each other in the catalogue, are spread over
+          # the jobs and each entry runs in exactly one of them.
+          [[ "$SHARE" =~ ^[1-9][0-9]*$ && "$SHARES" =~ ^[1-9][0-9]*$ && "$SHARE" -le "$SHARES" ]] \
+            || { echo "::error::share '$SHARE' of '$SHARES' is not a share of the sweep"; exit 1; }
+          if [ "$IDS" = all ]; then
+            listed="$(bash tests/mutation/run-mutations.sh --list)"
+          else
+            listed="$(tr ' ' '\n' <<< "$IDS")"
           fi
+          [ -n "$listed" ] || { echo "::error::there is no entry to share"; exit 1; }
+          mapfile -t entries <<< "$listed"
+          selected=()
+          for i in "${!entries[@]}"; do
+            if [ $((i % SHARES)) -eq $((SHARE - 1)) ]; then selected+=("${entries[$i]}"); fi
+          done
+          # The runner given no id runs every entry, so a share with none ends here.
+          if [ "${#selected[@]}" -eq 0 ]; then echo "no entry falls to share $SHARE of $SHARES"; exit 0; fi
           bash tests/mutation/run-mutations.sh "${selected[@]}"
 
   full:

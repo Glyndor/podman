@@ -220,6 +220,20 @@ tests/quality/scope/suite-scope-reads.test.sh
 
 tests/release/check-artifacts.test.sh
 	scripts/release/**
+	tests/lib/**
+	.github/scripts/release/**
+	scripts/package/**
+	scripts/build/**
+
+tests/release/check-hashes.test.sh
+	tests/lib/**
+	.github/scripts/release/**
+	scripts/release/**
+	scripts/package/**
+	scripts/build/**
+
+tests/release/check-upload.test.sh
+	scripts/release/**
 
 tests/release/dry-run-keys.test.sh
 	.github/scripts/**
@@ -233,6 +247,28 @@ tests/release/release-signing-mldsa.test.sh
 	.github/scripts/**
 	tests/release/fixtures/**
 
+tests/release/rpm/collect.test.sh
+	scripts/release/**
+	scripts/package/**
+	tests/lib/**
+	scripts/build/**
+	.github/scripts/release/**
+
+tests/release/rpm/legs.test.sh
+	scripts/release/**
+	scripts/package/**
+
+tests/release/rpm/names.test.sh
+	scripts/release/**
+	scripts/package/**
+
+tests/release/rpm/stage-built.test.sh
+	scripts/release/**
+	scripts/package/**
+	tests/lib/**
+	scripts/build/**
+	.github/scripts/release/**
+
 tests/release/release-signing.test.sh
 	.github/scripts/**
 
@@ -242,6 +278,10 @@ tests/release/sign-requirements.test.sh
 tests/release/signed-set.test.sh
 	scripts/release/**
 	.github/scripts/**
+	tests/lib/**
+	.github/scripts/release/**
+	scripts/package/**
+	scripts/build/**
 
 tests/release/verify-sig-key-bytes.test.sh
 	.github/scripts/**
@@ -312,6 +352,8 @@ tests/workflows/build/build-check-gate.test.sh
 tests/workflows/build/build-check-matrix.test.sh
 	.github/workflows/build-check.yml
 	.github/workflows/package-check.yml
+	.github/workflows/reusable-rpm.yml
+	.github/workflows/mutation.yml
 
 tests/workflows/build/build-verifies-upstream-tags.test.sh
 	.github/workflows/reusable-build.yml
@@ -340,6 +382,11 @@ tests/workflows/build/reusable-build-rootless-steps.test.sh
 
 tests/workflows/build/reusable-build-upload-gate.test.sh
 	.github/workflows/**
+
+tests/workflows/build/reusable-rpm-wiring.test.sh
+	.github/workflows/**
+	scripts/release/**
+	scripts/package/**
 
 tests/workflows/dependabot/dependabot-automerge.test.sh
 	.github/workflows/dependabot-automerge.yml
@@ -417,6 +464,8 @@ tests/workflows/policy/workflows-contract.test.sh
 	scripts/release/**
 	keyring/**
 	.github/scripts/release/**
+	scripts/package/**
+	scripts/build/**
 
 tests/workflows/pr-checks/commit-hygiene-range.test.sh
 	.github/workflows/commit-hygiene.yml
@@ -441,6 +490,9 @@ tests/workflows/release/release-artifacts.test.sh
 	.github/workflows/release.yml
 	scripts/release/**
 	tests/lib/**
+	.github/scripts/release/**
+	scripts/package/**
+	scripts/build/**
 
 tests/workflows/release/release-checkout.test.sh
 	.github/workflows/**
@@ -460,6 +512,20 @@ tests/workflows/release/release-plan.test.sh
 tests/workflows/release/release-publish.test.sh
 	.github/workflows/release.yml
 	tests/lib/**
+	.github/scripts/release/**
+	scripts/release/**
+	scripts/package/**
+	scripts/build/**
+
+tests/workflows/release/release-rpm-chain.test.sh
+	.github/workflows/release.yml
+	.github/workflows/reusable-package.yml
+	.github/workflows/reusable-rpm.yml
+	tests/lib/**
+	.github/scripts/release/**
+	scripts/release/**
+	scripts/package/**
+	scripts/build/**
 
 tests/workflows/release/release-second-signature.test.sh
 	.github/workflows/release.yml
@@ -467,6 +533,8 @@ tests/workflows/release/release-second-signature.test.sh
 	keyring/**
 	tests/lib/**
 	.github/scripts/release/**
+	scripts/package/**
+	scripts/build/**
 
 tests/workflows/release/release-signing-step.test.sh
 	.github/workflows/release.yml
@@ -474,6 +542,8 @@ tests/workflows/release/release-signing-step.test.sh
 	keyring/**
 	tests/lib/**
 	.github/scripts/release/**
+	scripts/package/**
+	scripts/build/**
 
 tests/workflows/release/release-upgrade-job.test.sh
 	.github/workflows/release.yml

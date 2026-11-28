@@ -87,8 +87,8 @@ elif rule == "attest":
     else:
         i = hits[0]
         subject = str((steps[i].get("with") or {}).get("subject-path", ""))
-        if not subject.endswith("/signed/podman_*.deb"):
-            print(f"the attestation subject is {subject!r}, not the .deb packages")
+        if subject != "${{ runner.temp }}/signed/*":
+            print(f"the attestation subject is {subject!r}, not every file of the signed set")
         verify = [n for n, s in enumerate(steps) if s.get("name") == "Verify every signature against the published keys"]
         create = [n for n, s in enumerate(steps) if s.get("name") == "Create the release"]
         if not verify or not create or not (verify[0] < i < create[0]):
@@ -142,7 +142,7 @@ elif rule == "isolation":
                 # pattern, a list of ids or a name for the signer would take whatever matched.
                 ids = str(with_.get("artifact-ids", ""))
                 if name == "sign":
-                    if not re.fullmatch(r"\$\{\{ needs\.build-(amd64|arm64)\.outputs\.artifact_id \}\}", ids):
+                    if not re.fullmatch(r"\$\{\{ needs\.(build-amd64|build-arm64|rpm)\.outputs\.artifact_id \}\}", ids):
                         print(f"{name}: a download takes no artifact by the id a build job reported")
                     if with_.get("name") or with_.get("pattern"):
                         print(f"{name}: a download takes artifacts by name or pattern")

@@ -11,8 +11,11 @@ name: package-check
 # own gate, whether any of them can change a package. It fails open: a list it cannot read,
 # a base without the script, or any error builds.
 #
-# What it builds. Every distribution and architecture of scripts/package/distros.txt, in
-# parallel, and the first one to fail cancels the rest: one broken recipe is one answer.
+# What it builds. reusable-rpm.yml, the same workflow release.yml calls: every distribution
+# and architecture of scripts/package/distros.txt, in parallel, where the first one to fail
+# cancels the rest (one broken recipe is one answer), and then the gathering of what they
+# built into the set a release would sign. Its artifacts are called rpmcheck-, and nothing
+# here signs or publishes.
 #
 # Concurrency. One run per pull request ref; a new push cancels the run for the commit that no
 # longer exists. This workflow only runs on pull_request.
@@ -47,7 +50,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       build: ${{ steps.d.outputs.build }}
-      matrix: ${{ steps.m.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,11 +72,6 @@ jobs:
             || decision=true
           printf 'changed paths:\n%s\n' "${paths:-<none or unreadable>}"
           echo "build=$decision" >> "$GITHUB_OUTPUT"
-      - name: List the distributions and architectures to build
-        id: m
-        run: |
-          # The rpm rows of the table, one entry for every distribution and architecture.
-          echo "matrix=$(bash scripts/package/distros.sh matrix rpm all)" >> "$GITHUB_OUTPUT"
 
   plan:
     name: plan
@@ -111,22 +108,15 @@ jobs:
           done
 
   package:
-    name: ${{ matrix.id }} ${{ matrix.arch }}
+    name: rpm
     needs: [decide, plan]
     if: needs.decide.outputs.build == 'true'
     permissions:
       contents: read
-    strategy:
-      # The matrix stops at the first row that fails: the runners are few, and a row that passes says it enters while the
-      # failure that cuts the run says which does not.
-      fail-fast: true
-      matrix:
-        include: ${{ fromJSON(needs.decide.outputs.matrix) }}
-    uses: ./.github/workflows/reusable-package.yml
+      # reusable-rpm.yml lists the artifacts of this run to gather them.
+      actions: read
+    uses: ./.github/workflows/reusable-rpm.yml
     with:
-      id: ${{ matrix.id }}
-      arch: ${{ matrix.arch }}
-      runner: ${{ matrix.runner }}
       version: ${{ needs.plan.outputs.version }}
       podman: ${{ needs.plan.outputs.podman }}
       netavark: ${{ needs.plan.outputs.netavark }}

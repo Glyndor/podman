@@ -78,22 +78,30 @@ PY
 
 # --- release.yml, sign: the packages are the artifacts the build jobs reported ----------------------
 # gh answers with the artifacts of the run, one "<name> <id> <expired> <commit> <digest>" per line, tab separated. The
-# build jobs reported an id and a digest each; the signer refuses when the list does not show that id with that digest,
-# made for the commit the plan fixed, under the name deb-<arch>, and unexpired.
+# build jobs reported an id and a digest each, for the two .deb and the rpm set; the signer refuses when the list does not
+# show that id with that digest, made for the commit the plan fixed, under that name, and unexpired. The step runs the
+# real scripts/release/check-upload.sh of the checkout.
 I="$WORK/ids"
 if step release.yml sign "name=Check the artifact of each package is the one the build uploaded" "$I"; then
+	check "the id check step's run block has no expression in it" 0 "$(grep -c '\${{' "$I/run.sh")"
 	mkdir -p "$I/bin"
 	printf '#!/bin/sh\n[ -z "$FAKE_GH_FAILS" ] || exit 1\nprintf "%%b" "$ROWS"\n' > "$I/bin/gh"; chmod +x "$I/bin/gh"
 	SHA=0123456789abcdef0123456789abcdef01234567
-	H1="$(printf 'a%.0s' $(seq 1 64))"; H2="$(printf 'b%.0s' $(seq 1 64))"
-	good="deb-amd64\t11\tfalse\t$SHA\tsha256:$H1\ndeb-arm64\t12\tfalse\t$SHA\tsha256:$H2\nsigned\t13\tfalse\t$SHA\tsha256:$H2\n"
-	ids() { # <rows> [VAR=value]...: runs the step as the build jobs reported 11/H1 and 12/H2; sets $rc and $out
-		local rows="$1"; shift
-		run_step "$I" "$WORK" PATH="$I/bin:$PATH" ROWS="$rows" GH_TOKEN=a-token GH_REPO=owner/repo RUN_ID=77 SHA="$SHA" \
-			AMD64_ID=11 AMD64_DIGEST="sha256:$H1" ARM64_ID=12 ARM64_DIGEST="$H2" "$@"
+	H1="$(printf 'a%.0s' $(seq 1 64))"; H2="$(printf 'b%.0s' $(seq 1 64))"; H3="$(printf 'c%.0s' $(seq 1 64))"
+	rows() { # <amd64 expired> <arm64 commit> <rpm-set name>: the three artifacts of a run
+		printf 'deb-amd64\\t11\\t%s\\t%s\\tsha256:%s\\ndeb-arm64\\t12\\tfalse\\t%s\\tsha256:%s\\n%s\\t14\\tfalse\\t%s\\tsha256:%s\\nsigned\\t13\\tfalse\\t%s\\tsha256:%s\\n' \
+			"$1" "$SHA" "$H1" "$2" "$H2" "$3" "$SHA" "$H3" "$SHA" "$H2"
+	}
+	good="$(rows false "$SHA" rpm-set)"
+	ids() { # <rows> [VAR=value]...: runs the step as the build jobs reported 11/H1, 12/H2 and 14/H3; sets $rc and $out
+		local r="$1"; shift
+		rm -rf "$I/rt"; mkdir "$I/rt"
+		run_step "$I" "$HERE" PATH="$I/bin:$PATH" ROWS="$r" RUNNER_TEMP="$I/rt" GH_TOKEN=a-token GH_REPO=owner/repo RUN_ID=77 SHA="$SHA" \
+			AMD64_ID=11 AMD64_DIGEST="sha256:$H1" ARM64_ID=12 ARM64_DIGEST="$H2" RPMSET_ID=14 RPMSET_DIGEST="$H3" "$@"
 	}
 	ids "$good"
-	check "ids and digests the build jobs reported, in the list of this run, for the commit, unexpired: it goes on" "0 1" "$rc $(says 'deb-arm64 is artifact 12')"
+	check "ids and digests the build jobs reported, in the list of this run, for the commit, unexpired: it goes on" "0 1 1" \
+		"$rc $(says 'deb-arm64 is artifact 12') $(says 'rpm-set is artifact 14')"
 	ids "$good" AMD64_ID=13
 	check "an id that is another artifact of the run (signed, by the name) is refused" "1 1" "$rc $(says 'the artifact 13 is called signed, not deb-amd64')"
 	ids "$good" ARM64_ID=99
@@ -106,9 +114,15 @@ if step release.yml sign "name=Check the artifact of each package is the one the
 	check "a digest that differs from the one the build reported is refused" "1 1" "$rc $(says "gives deb-amd64 the digest 'sha256:$H1'")"
 	ids "$good" ARM64_DIGEST=not-a-digest
 	check "a digest the build reported that is no sha256 is refused" "1 1" "$rc $(says 'not a sha256')"
-	ids "deb-amd64\t11\ttrue\t$SHA\tsha256:$H1\ndeb-arm64\t12\tfalse\t$SHA\tsha256:$H2\n"
+	ids "$good" RPMSET_ID=
+	check "no rpm set reported by the packaging is refused" "1 1" "$rc $(says "the build of rpm-set reported the artifact id ''")"
+	ids "$good" RPMSET_DIGEST="$H1"
+	check "a digest of the rpm set that differs is refused" "1 1" "$rc $(says "gives rpm-set the digest 'sha256:$H3'")"
+	ids "$(rows false "$SHA" rpmcheck-set)"
+	check "the set of a check run in place of the release's is refused" "1 1" "$rc $(says 'the artifact 14 is called rpmcheck-set, not rpm-set')"
+	ids "$(rows true "$SHA" rpm-set)"
 	check "an artifact that has expired is refused" "1 1" "$rc $(says 'deb-amd64 has expired')"
-	ids "deb-amd64\t11\tfalse\t$SHA\tsha256:$H1\ndeb-arm64\t12\tfalse\tfeedfacefeedfacefeedfacefeedfacefeedface\tsha256:$H2\n"
+	ids "$(rows false feedfacefeedfacefeedfacefeedfacefeedface rpm-set)"
 	check "an artifact made for another commit is refused" "1 1" "$rc $(says 'deb-arm64 was made for feedface')"
 	ids "$good$good"
 	check "two artifacts with the id are refused" "1 1" "$rc $(says 'does not list exactly one artifact with the id 11')"
@@ -118,23 +132,37 @@ else
 	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the step that checks the artifacts against what the build reported"
 fi
 
-# The file inside the artifact is the one the build hashed before any test ran it.
+# The files inside the artifacts are the ones hashed before any test ran them.
 Q="$WORK/hash"
+# shellcheck source=tests/lib/rpm-set.sh
+. "$HERE/tests/lib/rpm-set.sh"
 if step release.yml sign "name=Check each package is the file the build hashed before it ran" "$Q"; then
-	built() { # <amd64 content> <arm64 content>: a directory of downloads, and the hash of what the build saw
+	check "the hash check step's run block has no expression in it" 0 "$(grep -c '\${{' "$Q/run.sh")"
+	built() { # <amd64 content> <arm64 content>: a directory of downloads, and the hashes of what the build jobs saw
 		rm -rf "$Q/rt"; mkdir -p "$Q/rt/built/deb-amd64" "$Q/rt/built/deb-arm64"
 		printf '%s' "$1" > "$Q/rt/built/deb-amd64/podman_6.2.0_amd64.deb"; printf '%s' "$2" > "$Q/rt/built/deb-arm64/podman_6.2.0_arm64.deb"
+		fake_rpms "$Q/rt/built/rpm" 6.2.0
 		A_SUM="$(printf '%s' amd | sha256sum | cut -d' ' -f1)"; R_SUM="$(printf '%s' arm | sha256sum | cut -d' ' -f1)"
+		M_SUM="$(bash "$HERE/scripts/release/rpm/collect.sh" digest 6.2.0 "$Q/rt/built/rpm")"
 	}
-	hashed() { run_step "$Q" "$WORK" RUNNER_TEMP="$Q/rt" TAG=v6.2.0 AMD64_SHA256="$A_SUM" ARM64_SHA256="$R_SUM" "$@"; }
+	hashed() { run_step "$Q" "$HERE" RUNNER_TEMP="$Q/rt" TAG=v6.2.0 AMD64_SHA256="$A_SUM" ARM64_SHA256="$R_SUM" RPM_MANIFEST="$M_SUM" "$@"; }
+	one=podman-6.2.0+r1-1.glyndor.fc45.x86_64.rpm
 	built amd arm; hashed
-	check "packages that are the files the build hashed go on" "0" "$rc"
+	check "packages that are the files the builds hashed go on" "0" "$rc"
 	built amd other; hashed
 	check "a package that is not the file that was hashed is refused, and which one" "1 1" "$rc $(says 'podman_6.2.0_arm64.deb is')"
 	built amd arm; hashed AMD64_SHA256=
 	check "a build that reported no hash is refused" "1 1" "$rc $(says "reported the sha256 ''")"
 	built amd arm; rm "$Q/rt/built/deb-amd64/podman_6.2.0_amd64.deb"; ln -s "$Q/rt/built/deb-arm64/podman_6.2.0_arm64.deb" "$Q/rt/built/deb-amd64/podman_6.2.0_amd64.deb"; hashed
 	check "a package that is a link is refused" "1 1" "$rc $(says 'is not a regular file')"
+	built amd arm; hashed RPM_MANIFEST=
+	check "a packaging that reported no hash of the rpm packages is refused" "1 1" "$rc $(says "reported the hash '' of the rpm packages")"
+	built amd arm; fake_rpm "$Q/rt/built/rpm/$one" changed; hashed
+	check "an rpm package changed after it was gathered is refused" "1 1" "$rc $(says 'and the packaging gathered')"
+	built amd arm; rm "$Q/rt/built/rpm/$one"; hashed
+	check "an rpm package missing from the download is refused" "1 1" "$rc $(says 'not exactly the packages of the release')"
+	built amd arm; rm -r "$Q/rt/built/rpm"; hashed
+	check "no rpm packages at all is refused" 1 "$rc"
 else
 	fail=$((fail + 1)); echo "FAIL  release.yml: cannot find the step that compares each package with the hash of the build"
 fi

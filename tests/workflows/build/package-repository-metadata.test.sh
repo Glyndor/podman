@@ -3,7 +3,7 @@
 # The repository the proof of a package installs from is made once, before the proof, in the container the package was
 # built in, because the images the proof also runs on do not all have createrepo_c (Red Hat's UBI has neither it nor
 # EPEL). Read from reusable-package.yml:
-#   - the step that makes it comes after the build and before the proof;
+#   - it is made in the job that tests, after the packages are downloaded and before the proof;
 #   - it runs make-repo.sh in the image of the distribution, reading the packages read-only and writing only the metadata;
 #   - the metadata is put beside the packages the proof mounts, so every image reads the same repository;
 #   - the proof does not make a repository of its own with a tool from the repositories of its image.
@@ -21,19 +21,22 @@ rules() { # <workflow file>: one line per violation
 	python3 - "$1" 2>&1 <<'PY' || echo "rule failed"
 import sys, yaml
 doc = yaml.safe_load(open(sys.argv[1]))
-steps = next(iter(doc["jobs"].values()))["steps"]
+steps = doc["jobs"]["test"]["steps"]
 names = [s.get("name", "") for s in steps]
 def find(prefix):
     hits = [i for i, n in enumerate(names) if n.startswith(prefix)]
     return hits[0] if len(hits) == 1 else None
-build = find("Build the package in the container")
+download = [i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith("actions/download-artifact@")]
+download = download[0] if len(download) == 1 else None
 make = find("Make the repository the package manager will read")
 proof = find("Install it with the package manager")
-if None in (build, make, proof):
-    print(f"steps not found: build={build} make={make} proof={proof}")
+if None in (download, make, proof):
+    print(f"steps not found: download={download} make={make} proof={proof}")
     sys.exit()
-if not build < make < proof:
-    print("the steps are not in the order build, make the repository, proof")
+if not download < make < proof:
+    print("the steps are not in the order download, make the repository, proof")
+if str((steps[download].get("with") or {}).get("path", "")) != "${{ runner.temp }}/rpms":
+    print("the packages are not downloaded into the directory that is read")
 run = steps[make]["run"]
 if 'bash /scripts/package/rpm/make-repo.sh /rpms /repo' not in run:
     print("the step does not run make-repo.sh on /rpms and /repo")

@@ -23,6 +23,10 @@ check "the family of fc44" fedora "$(bash "$SCRIPT" field fc44 family)"
 check "an id the table does not have is refused" "unknown distribution: nope" "$(bash "$SCRIPT" field nope epoch 2>&1)"
 check "a column it does not have is refused" "unknown column: colour" "$(bash "$SCRIPT" field fc45 colour 2>&1)"
 check "a row with no images to test on has an empty value, not an error" "0 " "$(bash "$SCRIPT" field fc45 tests > "$WORK/v" 2>&1; echo "$? $(cat "$WORK/v")")"
+check "the rows of a format come from one reading: id, architectures and the dependencies beside podman" \
+	"$(for id in $(bash "$SCRIPT" ids rpm); do printf '%s|%s|%s\n' "$id" "$(bash "$SCRIPT" field "$id" arches)" "$(bash "$SCRIPT" field "$id" extras)"; done)" "$(bash "$SCRIPT" rows rpm)"
+check "a format with no row has no rows" "0 " "$(bash "$SCRIPT" rows deb > "$WORK/v" 2>&1; echo "$? $(cat "$WORK/v")")"
+check "rows without a format is a usage error" "2" "$(bash "$SCRIPT" rows > /dev/null 2>&1; echo "$?")"
 check "every id is a format of the contract" "" "$(for id in $(bash "$SCRIPT" ids rpm) $(bash "$SCRIPT" ids pacman); do bash "$SCRIPT" field "$id" format | grep -v -x -e rpm -e pacman; done)"
 
 # Every id has the image it is built in, every image is pinned to a digest except the three whose registry drops the

@@ -3,7 +3,8 @@
 # Tests for scripts/release/check-artifacts.sh: the set a release job downloaded has to be
 # exactly the one the verified tag names, and whatever else comes with it, or whatever is
 # not what it says, is refused before a key is read. Real .deb files are built here, tiny
-# ones, so the control file the script reads is a real one.
+# ones, so the control file the script reads is a real one, and the rpm packages are fakes
+# that start as an rpm does, one for every name of scripts/release/rpm/names.sh.
 set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -16,6 +17,10 @@ check() { # <desc> <want> <got>
 	if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "ok    $1"
 	else fail=$((fail + 1)); echo "FAIL  $1 (want '$2', got '$3')"; fi
 }
+
+# shellcheck source=tests/lib/rpm-set.sh
+. "$HERE/tests/lib/rpm-set.sh"
+small_table "$WORK/distros.txt"
 
 mkdeb() { # <path> <package> <version> <arch>
 	local root="$WORK/root-$$-$RANDOM"
@@ -31,6 +36,7 @@ fresh() {
 	mkdir -p "$WORK/in/deb-amd64" "$WORK/in/deb-arm64"
 	mkdeb "$WORK/in/deb-amd64/podman_$1_amd64.deb" podman "$1" amd64
 	mkdeb "$WORK/in/deb-arm64/podman_$1_arm64.deb" podman "$1" arm64
+	fake_rpms "$WORK/in/rpm" "$1"
 }
 built() { out="$(bash "$SCRIPT" built "${1:-v6.2.0+r12}" "$WORK/in" "$WORK/out" 2>&1)"; rc=$?; }
 says() { printf '%s\n' "$out" | grep -c -F -- "$1"; }
@@ -38,7 +44,10 @@ says() { printf '%s\n' "$out" | grep -c -F -- "$1"; }
 fresh 6.2.0+r12
 built
 check "the exact set passes" 0 "$rc"
-check "and both packages are copied flat, by name, and nothing else" "podman_6.2.0+r12_amd64.deb podman_6.2.0+r12_arm64.deb" "$(ls "$WORK/out" | paste -sd' ')"
+check "and every package is copied flat, by name, and nothing else" \
+	"$( { printf 'podman_6.2.0+r12_amd64.deb\npodman_6.2.0+r12_arm64.deb\n'; rpm_names 6.2.0+r12; } | LC_ALL=C sort | paste -sd' ')" \
+	"$(cd "$WORK/out" && find . -type f -printf '%P\n' | LC_ALL=C sort | paste -sd' ')"
+check "which are the two .deb and the fourteen rpm packages of three distributions" 16 "$(find "$WORK/out" -type f | wc -l)"
 
 fresh 6.2.0
 built v6.2.0
@@ -108,6 +117,49 @@ echo not-a-deb > "$WORK/in/deb-amd64/podman_6.2.0+r12_amd64.deb"
 built
 check "a file that is not a package is refused" "1 1" "$rc $(says 'has no readable control file')"
 
+# --- the rpm packages ----------------------------------------------------------------
+one=podman-6.2.0+r12-12.glyndor.fc45.x86_64.rpm
+fresh 6.2.0+r12
+rm "$WORK/in/rpm/$one"
+built
+check "one rpm package missing is refused" "1 1" "$rc $(says 'not exactly the expected set')"
+check "and nothing is copied" 0 "$([ -e "$WORK/out" ] && ls -A "$WORK/out" | wc -l || echo 0)"
+fresh 6.2.0+r12
+rm "$WORK"/in/rpm/*.glyndor.fc44.*
+built
+check "a whole distribution missing is refused" "1 1" "$rc $(says 'not exactly the expected set')"
+fresh 6.2.0+r12
+rm "$WORK/in/rpm/catatonit-0.2.1-12.glyndor.el9.aarch64.rpm"
+built
+check "a dependency packaged beside podman that is missing is refused" 1 "$rc"
+fresh 6.2.0+r12
+rm -r "$WORK/in/rpm"
+built
+check "no rpm packages at all is refused" 1 "$rc"
+fresh 6.2.0+r12
+fake_rpm "$WORK/in/rpm/podman-6.2.0+r12-12.glyndor.fc43.x86_64.rpm"
+built
+check "a package of more is refused" "1 1" "$rc $(says 'not exactly the expected set')"
+fresh 6.2.0+r12
+mv "$WORK/in/rpm/$one" "$WORK/in/rpm/podman-6.2.0+r11-11.glyndor.fc45.x86_64.rpm"
+built
+check "a package of another revision in place of one is refused" 1 "$rc"
+fresh 6.2.0+r12
+printf 'not an rpm\n' > "$WORK/in/rpm/$one"
+built
+check "a file that does not start as an rpm package is refused" "1 1" "$rc $(says 'does not start with the lead of an rpm package')"
+fresh 6.2.0+r12
+rm "$WORK/in/rpm/$one"; ln -s "$WORK/in/rpm/podman-6.2.0+r12-12.glyndor.fc44.x86_64.rpm" "$WORK/in/rpm/$one"
+built
+check "a link where an rpm package should be is refused" 1 "$rc"
+fresh 6.2.0+r12
+truncate -s 301M "$WORK/in/rpm/$one"
+built
+check "an rpm package over the cap is refused" "1 1" "$rc $(says 'over the size cap')"
+fresh 6.2.0+r12
+GLYNDOR_DISTROS_FILE="$WORK/absent" bash "$SCRIPT" built v6.2.0+r12 "$WORK/in" "$WORK/out" > "$WORK/log" 2>&1; rc=$?
+check "packages that cannot be named are refused" "1 1" "$rc $(grep -c 'cannot be named' "$WORK/log")"
+
 # --- links and other types -----------------------------------------------------------
 fresh 6.2.0+r12
 rm "$WORK/in/deb-amd64/podman_6.2.0+r12_amd64.deb"
@@ -157,9 +209,14 @@ signed_dir() { # <mldsa true|false>
 		head -c 64 /dev/zero > "$WORK/sg/podman_6.2.0+r12_$a.deb.sig"
 		[ "$1" != true ] || head -c 3309 /dev/zero > "$WORK/sg/podman_6.2.0+r12_$a.deb.mldsa65.sig"
 	done
+	fake_rpms "$WORK/sg" 6.2.0+r12
 	printf 'release v6.2.0+r12\n' > "$WORK/sg/components.txt"
-	head -c 64 /dev/zero > "$WORK/sg/components.txt.sig"
-	[ "$1" != true ] || head -c 3309 /dev/zero > "$WORK/sg/components.txt.mldsa65.sig"
+	printf 'sums\n' > "$WORK/sg/SHA256SUMS"
+	local name
+	while IFS= read -r name; do
+		head -c 64 /dev/zero > "$WORK/sg/$name.sig"
+		[ "$1" != true ] || head -c 3309 /dev/zero > "$WORK/sg/$name.mldsa65.sig"
+	done <<< "$( { rpm_names 6.2.0+r12; printf 'components.txt\nSHA256SUMS\n'; } )"
 }
 signed() { out="$(bash "$SCRIPT" signed v6.2.0+r12 "$WORK/sg" "$1" 2>&1)"; rc=$?; }
 signed_dir false; signed false
@@ -187,6 +244,23 @@ out="$(bash "$SCRIPT" signed v6.2.0+r12 "$WORK/sg" maybe 2>&1)"; rc=$?
 check "a second-signature flag that is neither true nor false is refused" "1 1" "$rc $(says 'is true or false')"
 out="$(bash "$SCRIPT" signed v6.2.0+r11 "$WORK/sg" false 2>&1)"; rc=$?
 check "a signed set of another version is refused" "1" "$rc"
+for gone in "$one" "$one.sig" SHA256SUMS SHA256SUMS.sig; do
+	signed_dir false; rm "$WORK/sg/$gone"; signed false
+	check "a signed set without $gone is refused" "1 1" "$rc $(says 'not exactly the expected one')"
+done
+signed_dir true; rm "$WORK/sg/$one.mldsa65.sig"; signed true
+check "a required second signature missing from one rpm package is refused" "1 1" "$rc $(says 'not exactly the expected one')"
+signed_dir true; rm "$WORK/sg/SHA256SUMS.mldsa65.sig"; signed true
+check "and from the list of hashes" 1 "$rc"
+signed_dir false; head -c 63 /dev/zero > "$WORK/sg/$one.sig"; signed false
+check "a signature of an rpm package of the wrong size is refused" "1 1" "$rc $(says 'is not 64 bytes')"
+signed_dir false; truncate -s 301M "$WORK/sg/$one"; signed false
+check "a signed rpm package over the cap is refused" "1 1" "$rc $(says 'over the size cap')"
+signed_dir false; head -c 65537 /dev/zero > "$WORK/sg/SHA256SUMS"; signed false
+check "a SHA256SUMS over the cap is refused" "1 1" "$rc $(says 'SHA256SUMS is over the size cap')"
+signed_dir false
+out="$(GLYNDOR_DISTROS_FILE="$WORK/absent" bash "$SCRIPT" signed v6.2.0+r12 "$WORK/sg" false 2>&1)"; rc=$?
+check "a signed set whose files cannot be named is refused" "1 1" "$rc $(says 'the files of v6.2.0+r12 cannot be named')"
 signed_dir false; rm "$WORK/sg/components.txt"; signed false
 check "a signed set without components.txt is refused" "1 1" "$rc $(says 'not exactly the expected one')"
 signed_dir false; rm "$WORK/sg/components.txt.sig"; signed false

@@ -74,6 +74,8 @@ test	tests.yml	yes
 workflow-lint / workflow-lint	workflow-lint.yml	yes
 decide	build-check.yml,mutation.yml,package-check.yml	no
 plan	build-check.yml,package-check.yml	no
+rpm / list	package-check.yml	no
+rpm / gather	package-check.yml	no
 sweep	mutation.yml	no"
 
 printf '%s\n' "$EVENTS" > "$WORK/events.tsv"

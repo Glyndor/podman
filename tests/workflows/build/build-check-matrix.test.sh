@@ -53,7 +53,10 @@ PY
 check "the matrix of the build stops at the first row that fails, and says why" "" \
 	"$(violations "$HERE/.github/workflows/build-check.yml" build)"
 check "the matrix of the native packages stops at the first row that fails, and says why" "" \
-	"$(violations "$HERE/.github/workflows/package-check.yml" package)"
+	"$(violations "$HERE/.github/workflows/reusable-rpm.yml" package)"
+
+check "the matrix of the mutation sweep stops at the first share that fails, and says why" "" \
+	"$(violations "$HERE/.github/workflows/mutation.yml" sweep)"
 
 BAD="$WORK/bad"
 mkdir -p "$BAD"
