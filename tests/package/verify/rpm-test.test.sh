@@ -56,7 +56,7 @@ check "the checks that need a machine of the distribution name themselves in the
 
 # --- the repository: its metadata is made before, in the build container, and read by every image ---
 WORKM="$(mktemp -d)"
-trap 'rm -rf "$WORKM"' EXIT
+trap 'rm -rf "$WORK" "$WORKM"' EXIT
 sed -n '/^pm_make_metadata() {/,/^}/p' "$SCRIPT" > "$WORKM/pm_make_metadata.sh"
 check "the function that makes the metadata when there is none is found" 1 "$(grep -c '^pm_make_metadata() {' "$WORKM/pm_make_metadata.sh")"
 mkdir -p "$WORKM/bin" "$WORKM/withmeta/repodata" "$WORKM/without"
