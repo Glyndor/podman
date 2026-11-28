@@ -62,7 +62,7 @@ workflow-lint.yml	pull_request"
 # of the gate, and a name that three of them use cannot stand in for a check, so
 # they are written here with the three that produce them.
 NAMES="commit identity	commit-hygiene.yml	yes
-deprecations	deprecations.yml	no
+deprecations	deprecations.yml	yes
 dco / Signed-off-by present on every commit	dco.yml	yes
 every catalogued guard is noticed	mutation.yml	yes
 full suite / test	mutation.yml	no
