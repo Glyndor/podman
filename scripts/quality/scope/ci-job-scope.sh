@@ -43,20 +43,24 @@ MAP = "scripts/quality/scope/suite-scope.txt"
 #   * this folder (the resolver, the map and the tools) and the suites of the
 #     mechanism itself;
 #   * the workflows, whose steps run the suites;
-#   * a Python module at the root of the repository: the suites that run
-#     `python3 -` from there import from it, so a new file can shadow a module
-#     any of them loads.
+#   * what Python can import from the root of the repository: the suites that
+#     run `python3 -` from there look in it first, so a file there can stand in
+#     for a module any of them loads. A module or a compiled module at the
+#     root, and the `__init__` of any kind that makes a root folder a package.
 #
 # A file under tests/ that is not a suite (a helper the suites source, a fixture
-# they read, the mutation catalogue and its runner) is one too: see shared().
+# they read, the mutation catalogue and its runner) is one too, and so is any
+# file or folder that is new at the root under a name Python can import: see
+# shared().
 GLOBAL_INPUTS = (
     "scripts/quality/scope/**",
     "tests/quality/scope/**",
     ".github/workflows/**",
     "*.py",
     "*.pyc",
+    "*.pyd",
     "*.so",
-    "*/__init__.py",
+    "*/__init__.*",
 )
 
 
@@ -176,9 +180,16 @@ def affects(patterns, paths):
     return any(matches(pattern, path) for pattern in patterns for path in paths)
 
 
-def shared(path):
-    """True when a change to the path runs every suite."""
+def shared(path, root):
+    """True when a change to the path runs every suite. `root` holds the names
+    the BASE commit has at the root of the repository."""
     if path.startswith("tests/") and not path.endswith(".test.sh"):
+        return True
+    # A name Python can import that the root did not have: a folder, or a file
+    # named up to its first dot, whatever follows it.
+    top, below, _ = path.partition("/")
+    name = top if below else top.split(".")[0]
+    if top not in root and name.isidentifier():
         return True
     return affects(GLOBAL_INPUTS, [path])
 
@@ -198,11 +209,13 @@ def suites(candidates):
         return list(candidates)
     try:
         body = git("show", "HEAD^1:" + MAP)
+        listing = git("ls-tree", "-z", "--name-only", "HEAD^1")
     except (OSError, subprocess.CalledProcessError):
         # No map in the base commit: the scope cannot be established.
         return list(candidates)
     scope = parse_map(body.decode("utf-8", "replace"))
-    if scope is None or any(shared(path) for path in paths):
+    root = {os.fsdecode(name) for name in listing.split(b"\0") if name}
+    if scope is None or any(shared(path, root) for path in paths):
         return list(candidates)
     keep = []
     for candidate in candidates:

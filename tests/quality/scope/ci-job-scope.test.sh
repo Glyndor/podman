@@ -179,14 +179,45 @@ sabotage "$R/scripts/quality/scope/ci-job-scope.sh" '    "tests/quality/scope/**
 check "without the suites of the mechanism in the rule a suite of it skips every mapped suite" \
 	"tests/c/three.test.sh" "$(decide)"
 
+# --- what Python can import from the root runs every suite -----------------------
+
+NEW_ROOT='if top not in root and name.isidentifier():'
 shared_case rootmodule yaml.py
+shared_case rootcompiled yaml.cpython-314-x86_64-linux-gnu.so
 shared_case rootpackage yaml/__init__.py
-repo shadow; echo y > "$R/yaml.py"; merge
+shared_case rootcompiledpackage yaml/__init__.cpython-314-x86_64-linux-gnu.so
+shared_case namespace yaml/loader.py
+shared_case newsuffix yaml.pyw
+repo shadow; mkdir -p "$R/yaml"; echo y > "$R/yaml/loader.py"; merge
+sabotage "$R/scripts/quality/scope/ci-job-scope.sh" "$NEW_ROOT" 'if False:'
+check "without the rule for a new name at the root a new folder skips every mapped suite" \
+	"tests/c/three.test.sh" "$(decide)"
+# A folder the root already has becomes a package with an `__init__` of any kind.
+# The map is the base's, so the folder is made there first.
+packaged() { # <name> <file>: a base with scripts/, and a pull request that adds the file
+	repo "$1"; echo more >> "$R/$2"; merge
+}
+packaged oldfolder scripts/__init__.abi3.so
+check "an __init__ of another kind in a folder the root has runs every suite" "$ALL" "$(decide)"
+sabotage "$R/scripts/quality/scope/ci-job-scope.sh" '    "*/__init__.*",' '    "*/__init__.py",'
+check "without every kind of __init__ in the rule that one skips every mapped suite" \
+	"tests/c/three.test.sh" "$(decide)"
+# A module the base already has at the root keeps running every suite when it
+# changes: it is not new.
+repo oldmodule
+git -C "$R" checkout -q main; echo y > "$R/yaml.py"; git -C "$R" add -A; git -C "$R" commit -qm "a module"
+git -C "$R" branch -D pr -q; git -C "$R" checkout -q -b pr
+echo more >> "$R/yaml.py"; merge
+check "a change to a module the root already has runs every suite" "$ALL" "$(decide)"
 sabotage "$R/scripts/quality/scope/ci-job-scope.sh" '    "*.py",
 ' ''
-check "without the root modules in the rule one skips every mapped suite" "tests/c/three.test.sh" "$(decide)"
+check "without the root modules in the rule it skips every mapped suite" "tests/c/three.test.sh" "$(decide)"
 repo nested; mkdir -p "$R/scripts/c"; echo y > "$R/scripts/c/tool.py"; merge
-check "a Python file that is not at the root is not an input of every suite" "tests/c/three.test.sh" "$(decide)"
+check "a Python file in a folder the root already has is not an input of every suite" \
+	"tests/c/three.test.sh" "$(decide)"
+repo unimportable; echo y > "$R/release-notes.md"; echo y > "$R/.notes"; merge
+check "a new file at the root under a name Python cannot import is not one either" \
+	"tests/c/three.test.sh" "$(decide)"
 
 # A suite is not one of those files: changing one runs it, and not the others.
 repo onesuite; echo more >> "$R/tests/a/one.test.sh"; merge
@@ -250,6 +281,9 @@ check "a pull request with two renames runs every suite" "$ALL" "$(decide)"
 sabotage "$R/scripts/quality/scope/ci-job-scope.sh" \
 	$'if status not in {b"A", b"M", b"D"} or not path_bytes:\n            return None' \
 	$'if False:\n            return None'
+# Read that way, a status stands where a path belongs, and the rule for a new
+# name at the root would take it for one: it is out of the way for this control.
+sabotage "$R/scripts/quality/scope/ci-job-scope.sh" 'if top not in root and name.isidentifier():' 'if False:'
 check "without the rename status the suite of the second rename is skipped" \
 	"tests/a/one.test.sh tests/c/three.test.sh" "$(decide)"
 
