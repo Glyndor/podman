@@ -62,7 +62,7 @@ mkdir -m 700 "$WORK/gh-x509"
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$WORK/x.pem" -out "$WORK/x.crt" -subj "/CN=attacker" -days 2 2> /dev/null
 openssl pkcs12 -export -inkey "$WORK/x.pem" -in "$WORK/x.crt" -out "$WORK/x.p12" -passout pass: 2> /dev/null
 printf 'allow-loopback-pinentry\n' > "$WORK/gh-x509/gpg-agent.conf"; printf 'disable-crl-checks\n' > "$WORK/gh-x509/gpgsm.conf"
-timeout 20 env GNUPGHOME="$WORK/gh-x509" gpgsm --batch --pinentry-mode loopback --passphrase '' --import "$WORK/x.p12" > /dev/null 2>&1
+timeout 20 env GNUPGHOME="$WORK/gh-x509" gpgsm --batch --pinentry-mode loopback --passphrase '' --import "$WORK/x.p12" < /dev/null > /dev/null 2>&1
 xfpr="$(timeout 20 env GNUPGHOME="$WORK/gh-x509" gpgsm --batch --list-keys --with-colons 2> /dev/null | awk -F: '/^fpr/ {print $10; exit}')"
 printf '%s S\n' "$xfpr" > "$WORK/gh-x509/trustlist.txt"
 timeout 20 env GNUPGHOME="$WORK/gh-x509" git -c user.name=t -c user.email=t@x -C "$repo" -c gpg.format=x509 -c gpg.x509.program=gpgsm -c "user.signingkey=$xfpr" tag -s -m x509 v5 > /dev/null 2>&1

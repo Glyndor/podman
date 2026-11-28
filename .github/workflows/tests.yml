@@ -84,6 +84,8 @@ jobs:
         run: |
           set -euo pipefail
           count=0
+          # A suite reads /dev/null: one that read the list on stdin would swallow the
+          # name of the next suite, which would then never run while the job passed.
           # Every file named *.test.sh under tests/, at any depth: a suite in a new
           # subfolder runs without anyone editing this step, and one that is named
           # otherwise is refused by tests/workflows/policy/tests-run-every-suite.test.sh.
@@ -97,8 +99,8 @@ jobs:
               # The environment comes first on PATH for the suite and for the
               # scripts it runs. Without it the suite fails and says what is
               # missing; it is never skipped.
-              *-mldsa.test.sh) PATH="$RUNNER_TEMP/mldsa-venv/bin:$PATH" bash "$t" ;;
-              *) bash "$t" ;;
+              *-mldsa.test.sh) PATH="$RUNNER_TEMP/mldsa-venv/bin:$PATH" bash "$t" < /dev/null ;;
+              *) bash "$t" < /dev/null ;;
             esac
           done < <(find tests -name '*.test.sh' | LC_ALL=C sort)
           echo "$count suites ran"
