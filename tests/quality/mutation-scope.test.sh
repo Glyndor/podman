@@ -41,6 +41,8 @@ entry() { printf '%s\t%s\t%s\t%s\t%s\n' "$@"; }
 cp "$SCRIPT" "$R/scripts/area/mutation-scope.sh"
 g init -q; g add -A; g commit -q -m base
 base="$(g rev-parse HEAD)"
+# The base of the cases of the split catalogue, which need one of their own.
+base0="$base"
 
 pr() { # <message> <command...>: a pull request on top of the base, checked out; sets $head
 	g checkout -q -B pr "$base"
@@ -101,6 +103,42 @@ check "and says it could not narrow the sweep" 1 "$(grep -c 'Cannot narrow the m
 base="$head"
 decide
 check "an empty diff runs every entry" "0 all" "$rc $out"
+
+# --- the catalogue is two files ----------------------------------------------------------
+#
+# The entries of an area live in the file that names it, and the two are one
+# catalogue with one set of ids.
+
+# A new entry in the second file of the catalogue is an entry of the catalogue.
+base="$base0"
+pr "a new entry in the second catalogue" sh -c 'printf "four-missing\tscripts/area/four.sh\told\tnew\ttests/area/four.test.sh\n" > tests/mutation/catalog-tests.txt'
+decide
+check "a new entry in the second catalogue decides that entry" "0 four-missing" "$rc $out"
+
+# An id in both files is an id twice, and the catalogue cannot be read.
+pr "an id in both catalogues" sh -c 'printf "one-empty\tscripts/area/one.sh\told\tnew\ttests/area/one.test.sh\n" > tests/mutation/catalog-tests.txt'
+decide
+check "an id in both catalogues runs every entry" "0 all" "$rc $out"
+check "and says a line of the catalogue cannot be read" 1 "$(grep -c 'a line of the catalogue' "$WORK/err")"
+
+# An entry that moves from one file to the other is still in the catalogue.
+pr "an entry that moves" sh -c "grep '^three-missing' tests/mutation/catalog.txt > tests/mutation/catalog-tests.txt; sed -i '/^three-missing/d' tests/mutation/catalog.txt"
+decide
+check "an entry that moves between the files affects no entry" "0 " "$rc $out"
+
+# A pull request that takes an entry away decides nothing: the entry it removes
+# selects nothing, and the sweep would be skipped as if that had been decided.
+pr "an entry and its exemption" sh -c 'sed -i "/^three-missing/d" tests/mutation/catalog.txt; printf "scripts/area/three.sh\t*\ta reason\n" > tests/mutation/exemptions.txt'
+decide
+check "a pull request that takes an entry away runs every entry" "0 all" "$rc $out"
+check "and names the entry" 1 "$(grep -c 'takes an entry of the catalogue away: three-missing$' "$WORK/err")"
+
+# The same when what goes is a whole file of the catalogue.
+pr "the second catalogue" sh -c 'printf "four-missing\tscripts/area/four.sh\told\tnew\ttests/area/four.test.sh\n" > tests/mutation/catalog-tests.txt'
+base="$(g rev-parse HEAD)"
+pr "the second catalogue is gone" sh -c 'rm tests/mutation/catalog-tests.txt'
+decide
+check "a pull request that deletes a file of the catalogue runs every entry" "0 all" "$rc $out"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

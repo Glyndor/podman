@@ -212,6 +212,9 @@ tests/quality/scope/ci-job-scope-suites.test.sh
 	.github/workflows/tests.yml
 	tests/**
 
+tests/quality/scope/decide-suites.test.sh
+	scripts/quality/scope/**
+
 tests/quality/scope/suite-scope-map.test.sh
 	**
 
@@ -438,7 +441,7 @@ tests/workflows/release/release-alert.test.sh
 	tests/lib/**
 
 tests/workflows/release/release-artifacts.test.sh
-	.github/workflows/release.yml
+	.github/workflows/**
 	scripts/release/**
 	tests/lib/**
 
@@ -458,7 +461,7 @@ tests/workflows/release/release-plan.test.sh
 	keyring/**
 
 tests/workflows/release/release-publish.test.sh
-	.github/workflows/release.yml
+	.github/workflows/**
 	tests/lib/**
 
 tests/workflows/release/release-second-signature.test.sh
@@ -469,7 +472,7 @@ tests/workflows/release/release-second-signature.test.sh
 	.github/scripts/release/**
 
 tests/workflows/release/release-signing-step.test.sh
-	.github/workflows/release.yml
+	.github/workflows/**
 	scripts/release/**
 	keyring/**
 	tests/lib/**

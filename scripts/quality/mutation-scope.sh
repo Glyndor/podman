@@ -18,9 +18,10 @@
 # the decision to hide its own guards gets the decision as the base makes it.
 #
 # Everything fails open. Any event but a pull request, a diff or a catalogue that
-# cannot be read, an empty diff, and a change to the runner, to this script, to the
-# workflow that runs them or to anything under tests/ that is not a suite or the
-# catalogue (a helper the suites source, a fixture they read): each prints `all`.
+# cannot be read, a pull request that takes an entry of the catalogue away, an empty
+# diff, and a change to the runner, to this script, to the workflow that runs them
+# or to anything under tests/ that is not a suite or the catalogue (a helper the
+# suites source, a fixture they read): each prints `all`.
 # A wrong skip lets a dead guard merge; a wrong run costs minutes.
 #
 # What it cannot see: a suite that reads a file it does not name by its file name. The
@@ -102,6 +103,11 @@ def select():
         if path.startswith("tests/") and not path.endswith(".test.sh"):
             raise Undecided(f"{path} is read by suites and is not one")
     new, old = catalogue(head), catalogue(base)
+    # An entry that is gone selects nothing by itself, so a pull request that only
+    # removes entries would skip the sweep as if it had been decided on its merits.
+    gone = sorted(set(old) - set(new))
+    if gone:
+        raise Undecided("the pull request takes an entry of the catalogue away: " + ", ".join(gone))
     names = {os.path.basename(p) for p in paths if p.startswith(("scripts/", ".github/"))}
     texts = {}
 

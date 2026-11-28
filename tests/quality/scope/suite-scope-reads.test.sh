@@ -70,8 +70,9 @@ STEP = re.compile(r'\bstep ([\w.-]+\.yml) ([\w-]+) (?:"((?:name|secret)=[^"]*)"|
 AT_ROOT = re.compile(r'\brun_step "\$\{?(\w+)\}?"'
                      r'(?: "\$\{?HERE\}?"|[^\n]*?\bGITHUB_WORKSPACE="?\$\{?HERE\}?"?(?=[\s;]|$))', re.M)
 # The check this suite runs on the repository reads every file the catalogue names.
+# The catalogue is two files: the entries of an area live in the file that names it.
 CATALOGUE_READER = "tests/quality/check-mutation-coverage.test.sh"
-CATALOGUE = "tests/mutation/catalog.txt"
+CATALOGUES = ("tests/mutation/catalog.txt", "tests/mutation/catalog-tests.txt")
 
 
 def reached(rel, kind):
@@ -182,12 +183,15 @@ def reads(suite):
                     and path.startswith(("scripts/", ".github/scripts/", "tests/"))
                     and os.path.isfile(os.path.join(root, path))):
                 queue.append((path, "library" if path.startswith("tests/lib/") else "script"))
-    catalogue = os.path.join(root, CATALOGUE)
-    if suite == CATALOGUE_READER and os.path.isfile(catalogue):
-        for line in open(catalogue, encoding="utf-8"):
-            fields = line.split("\t")
-            if len(fields) == 5 and not line.startswith("#") and not fields[1].startswith(".github/workflows/"):
-                seen.setdefault(fields[1], CATALOGUE)
+    if suite == CATALOGUE_READER:
+        for catalogue in CATALOGUES:
+            path = os.path.join(root, catalogue)
+            if not os.path.isfile(path):
+                continue
+            for line in open(path, encoding="utf-8"):
+                fields = line.split("\t")
+                if len(fields) == 5 and not line.startswith("#") and not fields[1].startswith(".github/workflows/"):
+                    seen.setdefault(fields[1], catalogue)
     return seen
 
 
@@ -333,6 +337,15 @@ printf 'tests/quality/check-mutation-coverage.test.sh\n\tscripts/a/**\n' > "$D/s
 printf 'id\t.github/scripts/sign.py\told\tnew\ttests/a/two.test.sh\n' > "$D/tests/mutation/catalog.txt"
 check "a file the catalogue names is a read of the suite of the coverage check" \
 	"read not covered: .github/scripts/sign.py (tests/quality/check-mutation-coverage.test.sh, through tests/mutation/catalog.txt)" \
+	"$(problems "$D")"
+
+tree catalogue-tests 'true'
+mv "$D/tests/a/one.test.sh" "$D/tests/a/two.test.sh"
+mkdir -p "$D/tests/quality" "$D/tests/mutation"; printf 'true\n' > "$D/tests/quality/check-mutation-coverage.test.sh"
+printf 'tests/quality/check-mutation-coverage.test.sh\n\tscripts/a/**\n' > "$D/scripts/quality/scope/suite-scope.txt"
+printf 'id\t.github/scripts/sign.py\told\tnew\ttests/a/two.test.sh\n' > "$D/tests/mutation/catalog-tests.txt"
+check "a file the second catalogue names is a read of the suite of the coverage check" \
+	"read not covered: .github/scripts/sign.py (tests/quality/check-mutation-coverage.test.sh, through tests/mutation/catalog-tests.txt)" \
 	"$(problems "$D")"
 
 # --- the map of this repository ------------------------------------------------
