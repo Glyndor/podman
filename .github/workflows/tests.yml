@@ -78,6 +78,8 @@ jobs:
         run: bash scripts/quality/check-mutation-coverage.sh
       - name: decide which suites this change can affect
         id: scope
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
           # The suites this change can affect are decided by the resolver and the
@@ -87,17 +89,24 @@ jobs:
           # from the base commit, never from the checkout of the pull request it
           # is judging.
           #
-          # Everything fails open. A diff that cannot be read, a rename, a
-          # resolver that cannot be read from the base commit, a map that cannot
-          # be parsed: all of them run every suite. A wrong skip lets a change
-          # merge untested; a wrong run costs seconds.
+          # Everything fails open. Any event but a pull request, a diff that
+          # cannot be read, a rename, a resolver that cannot be read from the
+          # base commit or that ends in an error, a map that cannot be parsed:
+          # all of them run every suite. A wrong skip lets a change merge
+          # untested; a wrong run costs seconds.
           mapfile -t suites < <(find tests -name '*.test.sh' | LC_ALL=C sort)
           total=${#suites[@]}
           resolver="$RUNNER_TEMP/ci-job-scope.sh"
           scope_file="$RUNNER_TEMP/suite-scope.list"
           decision=""
-          if git show "HEAD^1:scripts/quality/scope/ci-job-scope.sh" > "$resolver" 2>/dev/null; then
-            decision="$(bash "$resolver" suites "${suites[@]}" 2>/dev/null || true)"
+          if [ "$EVENT" = pull_request ] \
+            && git show "HEAD^1:scripts/quality/scope/ci-job-scope.sh" > "$resolver" 2>/dev/null; then
+            # A resolver that ends in an error decided nothing, whatever it had
+            # printed by then.
+            if ! decision="$(bash "$resolver" suites "${suites[@]}")"; then
+              echo "the resolver of the base commit ended in an error; every suite runs."
+              decision=""
+            fi
           fi
           # A decision is only a decision when every name in it is a suite this
           # job was given. Anything else means the scope could not be
@@ -124,28 +133,22 @@ jobs:
             fi
           done
           echo "scope: ${#selected[@]} of $total suites can be affected by this change; the rest cannot."
-          # The wheel of the ML-DSA-65 suite is installed only when a suite that
-          # needs it is among the ones that run. The map of the dependencies is
-          # read from the base commit, and a base that does not have it installs
-          # the wheel: the decision that could not be established is the one
-          # that runs everything, and everything needs the wheel.
-          mldsa=true
+          # The wheel of the ML-DSA-65 suite is installed unless it is certain
+          # that no suite that runs needs it: each of them is named otherwise
+          # than *-mldsa.test.sh, the pattern the step below runs on the wheel,
+          # and the dependency map of the base commit says once that it needs
+          # nothing. A suite the map does not know, a line it cannot be read
+          # from and a base without the map all install it.
+          mldsa=false
           deps="$(git show "HEAD^1:scripts/quality/scope/suite-dependencies.txt" 2>/dev/null || true)"
-          if [ -n "$deps" ]; then
-            mldsa=false
-            while IFS= read -r line; do
-              case "$line" in '' | \#*) continue ;; esac
-              suite="${line%% *}"
-              tools="${line#* }"
-              case " $tools " in
-                *" mldsa-wheel "*) ;;
-                *) continue ;;
-              esac
-              case " ${selected[*]} " in
-                *" $suite "*) mldsa=true ;;
-              esac
-            done <<< "$deps"
-          fi
+          for name in "${selected[@]}"; do
+            [ -n "$name" ] || continue
+            case "$name" in
+              *-mldsa.test.sh) mldsa=true ;;
+            esac
+            entry="$(awk -v suite="$name" '$1 == suite { print NF, $2 }' <<< "$deps")"
+            [ "$entry" = "2 -" ] || mldsa=true
+          done
           echo "mldsa=$mldsa" >> "$GITHUB_OUTPUT"
       - name: Install the pinned cryptography wheel for the ML-DSA-65 suite
         # The wheel is only worth installing when a suite that needs it runs.
@@ -174,17 +177,27 @@ jobs:
           # ends with the failure, as the shell of the workflow ends with it.
           #
           # A suite this change cannot affect does not run: the step above wrote
-          # the ones it can into a file, and a step that finds no file runs all
-          # of them.
+          # the ones it can into a file, and a step that finds no file, or one
+          # that names nothing, runs all of them. The step ends by requiring the
+          # suites that ran to be those, by name.
           scope_file="$RUNNER_TEMP/suite-scope.list"
+          if [ -f "$scope_file" ] && grep -q . "$scope_file"; then
+            scoped=true
+            expected="$(grep . "$scope_file" | LC_ALL=C sort -u)"
+          else
+            scoped=false
+          fi
+          ran_file="$RUNNER_TEMP/suites-ran.list"
+          : > "$ran_file"
           while IFS= read -r t; do
             count=$((count + 1))
-            if [ -f "$scope_file" ] && ! grep -qxF -- "$t" "$scope_file"; then
+            if [ "$scoped" = true ] && ! grep -qxF -- "$t" "$scope_file"; then
               echo "skip  $t (this change cannot alter its verdict)"
               continue
             fi
             echo "== $t"
             ran=$((ran + 1))
+            printf '%s\n' "$t" >> "$ran_file"
             case "$t" in
               # The environment comes first on PATH for the suite and for the
               # scripts it runs. Without it the suite fails and says what is
@@ -195,3 +208,10 @@ jobs:
           done < <(find tests -name '*.test.sh' | LC_ALL=C sort)
           echo "$ran suites ran"
           [ "$count" -gt 0 ] || { echo "::error::no suite found under tests/"; exit 1; }
+          # Without a scope every suite there is was selected.
+          [ "$scoped" = true ] || expected="$(find tests -name '*.test.sh' | LC_ALL=C sort)"
+          if [ "$(LC_ALL=C sort "$ran_file")" != "$expected" ]; then
+            echo "::error::the suites that ran are not the suites selected"
+            diff <(printf '%s\n' "$expected") <(LC_ALL=C sort "$ran_file") || true
+            exit 1
+          fi

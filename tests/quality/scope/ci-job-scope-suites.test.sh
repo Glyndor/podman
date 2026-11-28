@@ -85,9 +85,21 @@ merge() {
 	git -C "$R" checkout -q main
 	git -C "$R" merge -q --no-ff pr -m merge
 }
-# decide: run the step that decides, and set $rc and $out.
+# decide [<event>]: run the step that decides, on a pull request unless another
+# event is named, and set $rc and $out.
 decide() {
-	run_step "$DECIDE" "$R" RUNNER_TEMP="$R/rt" GITHUB_OUTPUT="$R/output"
+	: > "$R/output"
+	run_step "$DECIDE" "$R" RUNNER_TEMP="$R/rt" GITHUB_OUTPUT="$R/output" EVENT="${1:-pull_request}"
+}
+# wheel: what the step said about the wheel.
+wheel() { sed -n 's/^mldsa=//p' "$R/output"; }
+# all: 1 when the step selected every suite of the repository it judged.
+all() { [ "$(selected)" = "$(find "$R/tests" -name '*.test.sh' | grep -c .)" ] && echo 1 || echo 0; }
+# in_base: commit what is pending on the base branch and start the pull request
+# from there.
+in_base() {
+	git -C "$R" add -A; git -C "$R" commit -qm "base change"
+	git -C "$R" branch -D pr -q; git -C "$R" checkout -q -b pr
 }
 # run_suites: run the step that runs the suites, and set $rc and $out.
 run_suites() {
@@ -167,14 +179,106 @@ check "the step that runs the suites ends well without the scope" "0" "$rc"
 check "and it runs every suite" "1" "$([ "$(ran)" = "$TOTAL" ] && echo 1 || echo 0)"
 check "and it skips none" "1" "$([ "$(skipped)" = 0 ] && echo 1 || echo 0)"
 
-# --- the wheel is installed only when a suite that needs it runs --------------------
+# Only a pull request has a scope. Any other event runs every suite, whatever
+# the commit looks like: the full run of the schedule is this step on a merge
+# commit as much as on any other.
+for event in schedule workflow_dispatch push merge_group; do
+	repo "event-$event"; echo more >> "$R/README.md"; merge
+	decide "$event"
+	check "the event $event runs every suite, with the wheel" "0 1 true" "$rc $(all) $(wheel)"
+done
+
+# resolver <name> <exit status>: a base whose resolver names one suite and ends
+# with that status.
+resolver() {
+	repo "$1"
+	git -C "$R" checkout -q main
+	printf '#!/usr/bin/env bash\necho tests/ci/decide-build.test.sh\nexit %s\n' "$2" > "$R/scripts/quality/scope/ci-job-scope.sh"
+	in_base
+	echo more >> "$R/README.md"; merge
+	decide
+}
+resolver resolver-fails 1
+check "a resolver that ends in an error runs every suite, whatever it had printed" "0 1" "$rc $(all)"
+check "and the step says why" "1" \
+	"$(printf '%s\n' "$out" | grep -c '^the resolver of the base commit ended in an error; every suite runs\.$')"
+resolver resolver-ends-well 0
+check "control: the same answer from one that ends well is the scope" "0 1" "$rc $(selected)"
+
+# --- the step that runs the suites checks what it ran ------------------------------
+
+# listed <name> <lines of the scope file>: the run step with that scope file.
+listed() {
+	repo "$1"; echo more >> "$R/README.md"; merge
+	printf '%b' "$2" > "$R/rt/suite-scope.list"
+	run_suites
+}
+listed empty-list ''
+check "an empty scope file runs every suite" "0 $TOTAL 0" "$rc $(ran) $(skipped)"
+listed blank-list '\n\n'
+check "and so does one that names nothing" "0 $TOTAL 0" "$rc $(ran) $(skipped)"
+listed one-suite 'tests/ci/decide-build.test.sh\n'
+check "control: a scope file that names one suite runs that one and passes" "0 1" "$rc $(ran)"
+listed unknown-suite 'tests/ci/decide-build.test.sh\ntests/ci/no-such.test.sh\n'
+check "a selected suite that did not run fails the step" "1 1" \
+	"$rc $(printf '%s\n' "$out" | grep -c '^::error::the suites that ran are not the suites selected$')"
+check "and the step names it" "1" "$(printf '%s\n' "$out" | grep -cxF '< tests/ci/no-such.test.sh')"
+repo cut-list; echo more >> "$R/README.md"; merge
+printf 'tests/ci/decide-build.test.sh\ntests/ci/decide-package.test.sh\n' > "$R/rt/suite-scope.list"
+# The first suite rewrites the file the step selects from: what ran is then not
+# what was selected when the step began.
+printf '#!/usr/bin/env bash\necho tests/ci/decide-build.test.sh > "%s"\n' "$R/rt/suite-scope.list" > "$R/tests/ci/decide-build.test.sh"
+run_suites
+check "a scope file cut while the suites run fails the step" "1 1" \
+	"$rc $(printf '%s\n' "$out" | grep -c '^::error::the suites that ran are not the suites selected$')"
+
+# --- the wheel is installed unless it is certain no suite needs it ------------------
 
 repo wheelsuite; echo more >> "$R/tests/release/release-signing-mldsa.test.sh"; merge
 decide
-check "the wheel is installed when the suite that needs it runs" "1" \
-	"$(grep -c '^mldsa=true$' "$R/output")"
+check "the wheel is installed when the suite that needs it runs" "true" "$(wheel)"
 check "and the suite that needs it is among the ones that run" "1" \
 	"$(grep -c '^tests/release/release-signing-mldsa.test.sh$' "$R/rt/suite-scope.list")"
+
+# deps <name> <sed script>: a base whose dependency map is changed that way, and
+# a pull request that changes the README, which runs the suite that reads it.
+READER=tests/docs/verify-second-signature.test.sh
+deps() {
+	repo "$1"
+	git -C "$R" checkout -q main
+	sed -i "$2" "$R/scripts/quality/scope/suite-dependencies.txt"
+	in_base
+	echo more >> "$R/README.md"; merge
+	decide
+}
+deps deps-as-it-is 's/^$//'
+check "control: a selection that needs nothing installs no wheel" "0 false" "$rc $(wheel)"
+deps deps-wheel "s|^$READER -\$|$READER mldsa-wheel|"
+check "a selected suite that declares the wheel installs it" "0 true" "$rc $(wheel)"
+deps deps-missing "\|^$READER -\$|d"
+check "a selected suite the dependency map does not know installs it" "0 true" "$rc $(wheel)"
+deps deps-malformed "s|^$READER -\$|$READER - extra|"
+check "a selected suite with a line that cannot be read installs it" "0 true" "$rc $(wheel)"
+deps deps-twice "s|^$READER -\$|$READER -\\n$READER -|"
+check "a selected suite listed twice installs it" "0 true" "$rc $(wheel)"
+repo deps-gone
+git -C "$R" checkout -q main; git -C "$R" rm -q scripts/quality/scope/suite-dependencies.txt; in_base
+echo more >> "$R/README.md"; merge
+decide
+check "a base without the dependency map installs it" "0 true" "$rc $(wheel)"
+# The name alone installs it: the step below runs it on the wheel whatever the
+# map of the base says.
+repo wheel-by-name
+git -C "$R" checkout -q main
+sed -i 's|^\(tests/release/release-signing-mldsa.test.sh\) .*$|\1 -|' "$R/scripts/quality/scope/suite-dependencies.txt"
+in_base
+echo more >> "$R/tests/release/release-signing-mldsa.test.sh"; merge
+decide
+check "a suite named for the wheel installs it when the map says it needs nothing" "0 true" "$rc $(wheel)"
+repo wheel-new
+printf '#!/usr/bin/env bash\n' > "$R/tests/release/another-mldsa.test.sh"; merge
+decide
+check "a new suite named for the wheel installs it" "0 true" "$rc $(wheel)"
 
 echo
 echo "$pass passed, $fail failed"
