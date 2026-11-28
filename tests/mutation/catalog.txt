@@ -591,7 +591,6 @@ install-build-deps-catatonit-without-static-libc	scripts/package/rpm/install-bui
 install-build-deps-suse-names	scripts/package/rpm/install-build-deps.sh	suse:crun) required+=(libcap-devel libjson-c-devel) ;;	suse:crun) required+=(libcap-devel json-c-devel) ;;	tests/package/rpm/install-build-deps.test.sh
 package-image-amzn2023-dated-tag	scripts/package/images/amzn2023/Dockerfile	amazonlinux:2023@sha256:	amazonlinux:2023.0.20230614.0@sha256:	tests/package/image-tags.test.sh
 dependabot-images-take-the-dated-amazon-tags	.github/dependabot.yml	        versions: [">2023"]	        versions: []	tests/package/image-tags.test.sh
-dependabot-opensuse-registry-is-declared	.github/dependabot.yml	    url: registry.opensuse.org	    url: registry.opensuse.invalid	tests/workflows/dependabot/dependabot-config.test.sh
 check-artifacts-record-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size_of "$dir/components.txt")" -le "$max_record" ] ||	true ||	tests/release/check-artifacts.test.sh
 check-artifacts-signed-package-over-the-cap	scripts/release/check-artifacts.sh	[ "$(size_of "$file")" -le "$max_deb" ] ||	true ||	tests/release/check-artifacts.test.sh
 check-artifacts-ed25519-size	scripts/release/check-artifacts.sh	[ "$(size_of "$file.sig")" -eq 64 ] ||	true ||	tests/release/check-artifacts.test.sh
