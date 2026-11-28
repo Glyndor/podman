@@ -1,0 +1,463 @@
+# suite-scope.txt -- which paths can change each suite's verdict.
+#
+# A pull request that touches none of the paths listed for a suite cannot change
+# what that suite concludes, so the suite does not have to run to learn what it
+# already knows. The decision is made by scripts/quality/scope/ci-job-scope.sh, in
+# its `suites` mode, and the job and its required check `test` report exactly as
+# before.
+#
+# WHY IT IS SAFE
+#
+#   * It fails open, in every direction. A suite with no entry here always runs. A
+#     suite whose entry has no pattern is refused. A diff that cannot be read, a
+#     rename, a copy, a type change, a checkout that is not the merge commit and a
+#     map that cannot be parsed run every suite. A wrong skip lets a change merge
+#     untested; a wrong run costs seconds, and the asymmetry decides every
+#     borderline case in favour of running.
+#
+#   * The decision is taken with the resolver and this map as they are in the BASE
+#     commit, not as the pull request ships them, so a pull request that rewrites
+#     the map or the resolver to narrow its own scope gets the full set instead.
+#
+#   * The map, the resolver and the step that runs the suites are an input of every
+#     suite. The rule is in ci-job-scope.sh and not in an entry per suite, so a
+#     suite added below later cannot forget it.
+#
+#   * The names of the suites here are the paths the step of tests.yml runs, so the
+#     step still finds every suite and tests/workflows/policy/tests-run-every-suite.test.sh
+#     still sees a complete list. Only the decision to EXECUTE a suite changes.
+#
+# HOW THE ENTRIES WERE DERIVED
+#
+# Each suite was read and the files it reads were noted: the ones it names and
+# the ones it walks. The sets were then widened to the folder that holds them: a
+# suite that read one file of scripts/quality/ depends on that script and on the
+# suites that exercise it, because the next change there may be the one it reads.
+# A suite that WALKS a tree (`find`, `git ls-files`) depends on the whole tree by
+# name, so its entry is `**`: the folder-size check reads every tracked file, which
+# is why no path can be skipped as documentation only. The suite that reads a
+# workflow reads the file it names, and the suites that glob the folder of the
+# workflows read all of them, so their entries name the folder and not one file.
+#
+# PATTERN SYNTAX
+#
+#   *   matches within one path segment.
+#   ?   matches one character within one path segment.
+#   **  matches any number of segments, including none.
+#   A bare path matches that path exactly.
+#
+# HOW TO EXTEND IT
+#
+# A new suite arrives without an entry, so it always runs until somebody writes
+# one. When you add an entry, measure it the way this one was measured: read the
+# suite and record the files it opens.
+#
+# ---------------------------------------------------------------------------
+
+tests/build/build-deb-pasta-profile.test.sh
+	scripts/build/**
+
+tests/build/build-deb.test.sh
+	scripts/build/**
+	tests/build/fixtures/**
+
+tests/build/dockerfile-base-images.test.sh
+	scripts/build/**
+
+tests/build/dockerfile-sources.test.sh
+	scripts/build/**
+
+tests/build/install-common-config.test.sh
+	scripts/build/**
+	scripts/verify/**
+
+tests/build/recipe-id.test.sh
+	scripts/build/**
+
+tests/ci/decide-build.test.sh
+	scripts/ci/**
+
+tests/ci/decide-package.test.sh
+	scripts/ci/**
+
+tests/docs/contributing-workflows.test.sh
+	CONTRIBUTING.md
+	.github/PULL_REQUEST_TEMPLATE.md
+	.github/workflows/**
+
+tests/docs/verify-key-file.test.sh
+	docs/verify.md
+	keyring/**
+
+tests/docs/verify-second-signature.test.sh
+	CONTRIBUTING.md
+	README.md
+	docs/**
+	keyring/**
+
+tests/monitoring/check-tool-versions.test.sh
+	scripts/monitoring/**
+	.github/workflows/**
+
+tests/monitoring/delivery-lag.test.sh
+	scripts/monitoring/**
+
+tests/monitoring/schedule-freshness.test.sh
+	scripts/monitoring/**
+
+tests/mutation/mutation-workflow.test.sh
+	.github/workflows/mutation.yml
+	tests/lib/**
+
+tests/mutation/run-mutations.test.sh
+	tests/mutation/run-mutations.sh
+
+tests/package/build-payload.test.sh
+	scripts/package/**
+
+tests/package/dependabot-images.test.sh
+	.github/dependabot.yml
+	scripts/package/images/**
+
+tests/package/distros.test.sh
+	scripts/package/**
+	keyring/**
+
+tests/package/image-tags.test.sh
+	.github/dependabot.yml
+	scripts/package/images/**
+
+tests/package/package-version.test.sh
+	scripts/package/**
+
+tests/package/require-tools.test.sh
+	scripts/package/**
+
+tests/package/rpm/build-extras.test.sh
+	scripts/package/**
+
+tests/package/rpm/build-rpm.test.sh
+	scripts/package/**
+
+tests/package/rpm/check-replacement.test.sh
+	scripts/package/**
+
+tests/package/rpm/fetch-extras.test.sh
+	scripts/package/**
+	scripts/upstream/**
+
+tests/package/rpm/install-build-deps.test.sh
+	scripts/package/**
+
+tests/package/rpm/make-repo.test.sh
+	scripts/package/**
+
+tests/package/rpm/run-build.test.sh
+	scripts/package/**
+
+tests/package/rpm/spec-scriptlets.test.sh
+	scripts/package/**
+
+tests/package/verify/engine-files.test.sh
+	scripts/package/**
+
+tests/package/verify/prepare-runner.test.sh
+	scripts/package/**
+
+tests/package/verify/rpm-test.test.sh
+	scripts/package/**
+
+tests/package/verify/runtime-checks.test.sh
+	scripts/package/**
+
+tests/quality/check-commit-identity.test.sh
+	scripts/quality/**
+
+tests/quality/check-folder-size.test.sh
+	**
+
+tests/quality/check-mutation-coverage.test.sh
+	scripts/**
+	.github/scripts/**
+	.github/workflows/**
+	tests/mutation/catalog.txt
+	tests/mutation/exemptions.txt
+
+tests/quality/check-secrets.test.sh
+	scripts/quality/**
+
+tests/quality/check-test-coverage.test.sh
+	scripts/**
+	tests/**
+
+tests/quality/lint/no-deprecation-notices.test.sh
+	scripts/quality/**
+	.github/workflows/**
+
+tests/quality/mutation-scope.test.sh
+	scripts/quality/**
+
+tests/quality/mutation_refusals.test.sh
+	scripts/quality/**
+
+tests/quality/scope/ci-job-scope.test.sh
+	scripts/quality/scope/**
+
+tests/quality/scope/ci-job-scope-suites.test.sh
+	scripts/quality/scope/**
+	.github/workflows/tests.yml
+
+tests/quality/scope/suite-scope-map.test.sh
+	**
+
+tests/release/check-artifacts.test.sh
+	scripts/release/**
+
+tests/release/dry-run-keys.test.sh
+	.github/scripts/**
+	keyring/**
+
+tests/release/release-signing-hybrid.test.sh
+	.github/scripts/**
+	keyring/**
+
+tests/release/release-signing-mldsa.test.sh
+	.github/scripts/**
+	tests/release/fixtures/**
+
+tests/release/release-signing.test.sh
+	.github/scripts/**
+
+tests/release/sign-requirements.test.sh
+	.github/scripts/**
+
+tests/release/signed-set.test.sh
+	scripts/release/**
+	.github/scripts/**
+
+tests/release/verify-sig-key-bytes.test.sh
+	.github/scripts/**
+	keyring/**
+
+tests/upstream/gpg-verdict.test.sh
+	scripts/upstream/**
+
+tests/upstream/keyring-diff.test.sh
+	scripts/upstream/**
+
+tests/upstream/keyring-health.test.sh
+	scripts/upstream/**
+
+tests/upstream/latest-stable.test.sh
+	scripts/upstream/**
+
+tests/upstream/plan-release.test.sh
+	scripts/upstream/**
+	tests/lib/**
+
+tests/upstream/read-released.test.sh
+	scripts/upstream/**
+	.github/scripts/**
+	tests/release/fixtures/**
+
+tests/upstream/repo.test.sh
+	scripts/upstream/**
+
+tests/upstream/verify-tag-formats.test.sh
+	scripts/upstream/**
+
+tests/upstream/verify-tag.test.sh
+	scripts/upstream/**
+
+tests/verify/config-upgrade-test.test.sh
+	scripts/verify/**
+	scripts/build/**
+
+tests/verify/package-state-contents.test.sh
+	scripts/verify/**
+
+tests/verify/package-state.test.sh
+	scripts/verify/**
+
+tests/verify/refuse-test.test.sh
+	scripts/verify/**
+
+tests/verify/rootless-stop-test.test.sh
+	scripts/verify/**
+
+tests/verify/rootless-test.test.sh
+	scripts/verify/**
+
+tests/verify/smoke-test.test.sh
+	scripts/verify/**
+
+tests/workflows/build/build-check-gate.test.sh
+	.github/workflows/build-check.yml
+	scripts/ci/**
+	scripts/upstream/**
+	tests/lib/**
+
+tests/workflows/build/build-check-matrix.test.sh
+	.github/workflows/build-check.yml
+	.github/workflows/package-check.yml
+
+tests/workflows/build/build-verifies-upstream-tags.test.sh
+	.github/workflows/reusable-build.yml
+	tests/lib/**
+
+tests/workflows/build/package-check-gate.test.sh
+	.github/workflows/package-check.yml
+	scripts/ci/**
+	tests/lib/**
+
+tests/workflows/build/package-repository-metadata.test.sh
+	.github/workflows/reusable-package.yml
+
+tests/workflows/build/package-verifies-upstream-tags.test.sh
+	.github/workflows/reusable-package.yml
+	tests/lib/**
+
+tests/workflows/build/reusable-build-hash.test.sh
+	.github/workflows/reusable-build.yml
+	tests/lib/**
+
+tests/workflows/build/reusable-build-rootless-steps.test.sh
+	.github/workflows/reusable-build.yml
+	scripts/verify/**
+
+tests/workflows/build/reusable-build-upload-gate.test.sh
+	.github/workflows/**
+
+tests/workflows/dependabot/dependabot-automerge.test.sh
+	.github/workflows/dependabot-automerge.yml
+	tests/lib/**
+
+tests/workflows/dependabot/dependabot-config.test.sh
+	.github/dependabot.yml
+
+tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh
+	.github/workflows/dependabot-automerge.yml
+	tests/lib/**
+
+tests/workflows/keyring/keyring-watch-alarm.test.sh
+	.github/workflows/keyring-watch.yml
+
+tests/workflows/keyring/keyring-watch-copy.test.sh
+	.github/workflows/keyring-watch.yml
+	tests/lib/**
+
+tests/workflows/keyring/keyring-watch-health.test.sh
+	.github/workflows/keyring-watch.yml
+	scripts/upstream/**
+	tests/lib/**
+
+tests/workflows/mounts/verification-scripts-read-only.test.sh
+	.github/workflows/**
+	scripts/verify/**
+
+tests/workflows/pins/tool-pins-agree.test.sh
+	.github/workflows/**
+	.github/PULL_REQUEST_TEMPLATE.md
+	CONTRIBUTING.md
+
+tests/workflows/policy/concurrency-policy.test.sh
+	.github/workflows/**
+
+tests/workflows/policy/default-shell.test.sh
+	.github/workflows/**
+
+tests/workflows/policy/least-privilege.test.sh
+	.github/workflows/**
+
+tests/workflows/policy/tests-installs-mldsa-wheel.test.sh
+	.github/workflows/tests.yml
+	.github/scripts/release/sign-requirements.txt
+
+tests/workflows/policy/tests-run-every-suite.test.sh
+	.github/workflows/tests.yml
+	.github/workflows/mutation.yml
+	tests/lib/**
+
+tests/workflows/policy/workflow-lint-pins-actionlint.test.sh
+	.github/workflows/reusable-workflow-lint.yml
+	tests/lib/**
+
+tests/workflows/policy/workflow-lint-runs-actionlint.test.sh
+	.github/workflows/reusable-workflow-lint.yml
+
+tests/workflows/policy/workflow-policy.test.sh
+	.github/workflows/**
+
+tests/workflows/policy/workflows-contract.test.sh
+	.github/workflows/keyring-watch.yml
+	.github/workflows/release.yml
+	.github/workflows/reusable-build.yml
+	tests/lib/**
+
+tests/workflows/pr-checks/commit-hygiene-range.test.sh
+	.github/workflows/commit-hygiene.yml
+	scripts/quality/**
+	tests/lib/**
+
+tests/workflows/pr-checks/dco-contract.test.sh
+	.github/workflows/reusable-dco.yml
+	tests/lib/**
+
+tests/workflows/pr-checks/line-limit-measures-workflows.test.sh
+	.github/workflows/reusable-line-limit.yml
+
+tests/workflows/pr-checks/required-check-names.test.sh
+	.github/workflows/**
+
+tests/workflows/release/release-alert.test.sh
+	.github/workflows/**
+	tests/lib/**
+
+tests/workflows/release/release-artifacts.test.sh
+	.github/workflows/release.yml
+	scripts/release/**
+	tests/lib/**
+
+tests/workflows/release/release-checkout.test.sh
+	.github/workflows/**
+	tests/lib/**
+
+tests/workflows/release/release-contract.test.sh
+	.github/workflows/**
+	tests/lib/**
+
+tests/workflows/release/release-plan.test.sh
+	.github/workflows/release.yml
+	scripts/upstream/**
+	tests/lib/**
+
+tests/workflows/release/release-publish.test.sh
+	.github/workflows/release.yml
+	tests/lib/**
+
+tests/workflows/release/release-second-signature.test.sh
+	.github/workflows/release.yml
+	scripts/release/**
+	keyring/**
+	tests/lib/**
+
+tests/workflows/release/release-signing-step.test.sh
+	.github/workflows/release.yml
+	scripts/release/**
+	keyring/**
+	tests/lib/**
+
+tests/workflows/release/release-upgrade-job.test.sh
+	.github/workflows/release.yml
+	keyring/**
+	tests/lib/**
+
+tests/workflows/watchdog/watchdog-delivery-lag.test.sh
+	.github/workflows/**
+	tests/lib/**
+
+tests/workflows/watchdog/watchdog-freshness.test.sh
+	.github/workflows/keyring-watch.yml
+	.github/workflows/mutation.yml
+	.github/workflows/watchdog.yml
+	scripts/monitoring/**
