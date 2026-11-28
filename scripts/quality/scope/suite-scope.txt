@@ -109,6 +109,7 @@ tests/mutation/run-mutations.test.sh
 	tests/mutation/run-mutations.sh
 	tests/lib/**
 	tests/mutation/catalog.txt
+	tests/mutation/catalog-tests.txt
 
 tests/package/build-payload.test.sh
 	scripts/package/**
@@ -182,6 +183,7 @@ tests/quality/check-mutation-coverage.test.sh
 	.github/scripts/**
 	.github/workflows/**
 	tests/mutation/catalog.txt
+	tests/mutation/catalog-tests.txt
 	tests/mutation/exemptions.txt
 	.github/dependabot.yml
 

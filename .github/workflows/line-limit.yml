@@ -16,3 +16,9 @@ defaults:
 jobs:
   line-limit:
     uses: ./.github/workflows/reusable-line-limit.yml
+    with:
+      # The reusable's default list has no `txt`, so the lists and the maps the
+      # tools read would not be counted: the mutation catalogue, the exemptions
+      # and the map that decides which suites a pull request runs. Passed from
+      # the caller so this repository's choice stays visible here.
+      extensions: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte yml yaml txt"
