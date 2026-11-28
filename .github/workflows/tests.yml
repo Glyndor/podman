@@ -1,15 +1,19 @@
 name: tests
 
+# A pull request runs the suites its change can affect. mutation.yml calls this
+# workflow once a week and by hand, and any event but a pull request runs every
+# suite: that full run is what notices a map that skips a suite it should run.
 on:
   pull_request:
     branches: ["main"]
+  workflow_call:
 
 permissions: {}
 
-# The workflow runs on a pull request and on nothing else. A newer push to that
-# pull request makes the run for the older commit pointless, so it is cancelled.
-# A merge is judged by the pull request that produced it, so no run happens again
-# on main: the same tree would be run twice for one change.
+# Of its own the workflow runs on a pull request and on nothing else. A newer
+# push to that pull request makes the run for the older commit pointless, so it is
+# cancelled. Nothing runs it on a merge: the pull request that produced it judged
+# that tree. A run called from another workflow is in a group of its own.
 concurrency:
   group: tests-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

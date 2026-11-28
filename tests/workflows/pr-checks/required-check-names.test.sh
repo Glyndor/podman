@@ -51,7 +51,7 @@ line-limit.yml	pull_request
 mutation.yml	pull_request schedule workflow_dispatch
 package-check.yml	pull_request
 release.yml	schedule push workflow_dispatch
-tests.yml	pull_request
+tests.yml	pull_request workflow_call
 watchdog.yml	schedule push workflow_dispatch
 workflow-lint.yml	pull_request"
 
@@ -65,6 +65,7 @@ NAMES="commit identity	commit-hygiene.yml	yes
 deprecations	deprecations.yml	no
 dco / Signed-off-by present on every commit	dco.yml	yes
 every catalogued guard is noticed	mutation.yml	yes
+full suite / test	mutation.yml	no
 line-limit / line limit	line-limit.yml	yes
 package builds	build-check.yml	yes
 packages build	package-check.yml	no
@@ -121,7 +122,7 @@ files = {os.path.basename(path): load(path) for path in paths}
 # The names the jobs of a reusable produce, so the caller of one is named after them.
 inner = {}
 for name, doc in files.items():
-    if name.startswith("reusable-"):
+    if "workflow_call" in triggers(doc):
         inner[name] = {job: str(cfg.get("name", job)) for job, cfg in (doc.get("jobs") or {}).items()}
 
 

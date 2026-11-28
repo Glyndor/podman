@@ -247,6 +247,7 @@ keyring-watch-comparison-failed	.github/workflows/keyring-watch.yml	[ "$rc" -le 
 keyring-watch-health-run-is-red-beside-the-issue	.github/workflows/keyring-watch.yml	echo "::error::$title"; exit 1	echo "::error::$title"	tests/workflows/keyring/keyring-watch-health.test.sh
 mutation-gate-decide-did-not-succeed	.github/workflows/mutation.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/mutation/mutation-workflow.test.sh
 mutation-gate-an-answer-and-a-result-that-do-not-match	.github/workflows/mutation.yml	*)	__never__)	tests/mutation/mutation-workflow.test.sh
+mutation-the-full-run-includes-the-schedule	.github/workflows/mutation.yml	if: github.event_name != 'pull_request'	if: github.event_name == 'workflow_dispatch'	tests/mutation/mutation-workflow.test.sh
 release-plan-lightweight-tag	.github/workflows/release.yml	[ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }	[ -n "$sha" ] || true	tests/workflows/release/release-plan.test.sh
 release-no-signing-key	.github/workflows/release.yml	if [ "${DRY_RUN:-}" != true ] && [ -z "$GLYNDOR_RELEASE_ED25519_KEY" ]; then	if false; then	tests/workflows/policy/workflows-contract.test.sh
 release-previous-signature-unknown	.github/workflows/release.yml	*) echo "::error::the plan did not say whether the newest release carries the second signature ('$PREVIOUS_MLDSA'); refusing to guess."; exit 1 ;;	*) ;;	tests/workflows/release/release-signing-step.test.sh

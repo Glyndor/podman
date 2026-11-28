@@ -16,6 +16,14 @@ name: mutation
 # event names so a pull request cannot narrow its own sweep, and it fails open to
 # every entry.
 #
+# The full run. A pull request runs only the suites its paths can affect, and
+# nothing runs them on main after the merge, so a map that skips a suite it should
+# run would be found by nobody. Every event but a pull request therefore also runs
+# every suite, through tests.yml, in a job of its own: `full suite`, which is not
+# the required `test` and which no ruleset requires. A red scheduled run has the
+# notification of GitHub and nothing else; watchdog.yml says when the schedule
+# stops firing.
+#
 # Cost. The whole sweep is measured beside timeout-minutes below. A pull request that
 # touches no guarded script, no suite an entry names and nothing those suites read
 # pays for the decision only.
@@ -130,6 +138,13 @@ jobs:
             read -r -a selected <<< "$IDS"
           fi
           bash tests/mutation/run-mutations.sh "${selected[@]}"
+
+  full:
+    name: full suite
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/tests.yml
 
   gate:
     name: every catalogued guard is noticed
