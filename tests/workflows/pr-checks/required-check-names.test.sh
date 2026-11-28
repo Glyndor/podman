@@ -43,6 +43,7 @@ check() { # <desc> <want> <got>
 # the pull request it arms and on the push that says a person took over.
 EVENTS="build-check.yml	pull_request
 commit-hygiene.yml	pull_request
+deprecations.yml	pull_request
 dco.yml	pull_request
 dependabot-automerge.yml	pull_request_target push
 keyring-watch.yml	schedule workflow_dispatch
@@ -61,6 +62,7 @@ workflow-lint.yml	pull_request"
 # of the gate, and a name that three of them use cannot stand in for a check, so
 # they are written here with the three that produce them.
 NAMES="commit identity	commit-hygiene.yml	yes
+deprecations	deprecations.yml	no
 dco / Signed-off-by present on every commit	dco.yml	yes
 every catalogued guard is noticed	mutation.yml	yes
 line-limit / line limit	line-limit.yml	yes

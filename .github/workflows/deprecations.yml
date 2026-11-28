@@ -1,0 +1,70 @@
+name: deprecations
+
+# A run that is green with a deprecation warning stops working on a date nobody
+# wrote down: a Node runtime an action still uses, a command GitHub retired. The
+# warning is an annotation on a job, and the checks of this repository are eight
+# workflows, so this reads the annotations of every job of every run the pull
+# request started. It reads and writes nothing: `actions: read` and `checks: read`
+# are all it holds.
+#
+# The script is the base commit's copy, so a pull request cannot make its own
+# warning pass; the one that adds the script has no base copy and runs its own once.
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions: {}
+
+# Every run step goes through `bash -e -o pipefail`, which is what `shell: bash` means to Actions. Without it
+# the shell is `bash -e` alone, and a pipeline hides the failure of all but its last command.
+defaults:
+  run:
+    shell: bash
+
+# The workflow runs on a pull request and on nothing else. A newer push to that
+# pull request makes the run for the older commit pointless, so it is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  deprecations:
+    name: deprecations
+    # ubuntu-latest resolved to ubuntu-26.04 in this repository's runs on 2026-11-20,
+    # and ubuntu-24.04-arm to 24.04. The label is named so a change of image is a
+    # commit.
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    # Ceiling, not measured: it waits for the runs of the commit to finish and then
+    # reads the annotations of their jobs, so the ceiling is above the 90 minutes the
+    # script waits, and it holds a runner while it waits. On 2026-11-26 the runs of
+    # one commit took 39 minutes from the first to the last.
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: No job of the commit carries a deprecation warning
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # The script that reads the warnings is the one on the base branch: the
+          # checkout is the pull request's own tree, and a change that rewrote the
+          # check would be the one deciding whether it passes. The copy of the tree
+          # is used only when the base has none, the commit that introduces it.
+          tool=scripts/quality/lint/no-deprecation-notices
+          if git cat-file -e "$BASE:$tool.sh" 2>/dev/null; then
+            git show "$BASE:$tool.sh" > "$RUNNER_TEMP/no-deprecation-notices.sh"
+          else
+            cp "$tool.sh" "$RUNNER_TEMP/no-deprecation-notices.sh"
+          fi
+          bash "$RUNNER_TEMP/no-deprecation-notices.sh"

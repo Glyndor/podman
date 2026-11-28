@@ -607,3 +607,5 @@ read-released-record-names-its-release	scripts/upstream/read-released.sh	if [ "$
 read-released-signing-library	scripts/upstream/read-released.sh	echo "the signing library could not be installed to verify components.txt" >&2	echo x >&2	tests/upstream/read-released.test.sh
 read-released-verifies-downloaded-mldsa	scripts/upstream/read-released.sh	args+=(--mldsa-sig "$record.mldsa65.sig" --mldsa-keys "$anchor" --require-mldsa)	:	tests/upstream/read-released.test.sh
 read-released-signature-is-there	scripts/upstream/read-released.sh	|| { echo "release $latest carries no readable signature of its components.txt" >&2; exit 1; }	|| true	tests/upstream/read-released.test.sh
+deprecations-a-sha-that-is-not-a-sha-is-refused	scripts/quality/lint/no-deprecation-notices.sh	echo "::error::HEAD_SHA is not the sha of a commit" >&2; exit 1	echo "::error::HEAD_SHA is not the sha of a commit" >&2; exit 0	tests/quality/lint/no-deprecation-notices.test.sh
+deprecations-the-verdict-reaches-the-caller	scripts/quality/lint/no-deprecation-notices.sh	exit "$found"	exit 0	tests/quality/lint/no-deprecation-notices.test.sh
