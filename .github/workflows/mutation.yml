@@ -16,6 +16,14 @@ name: mutation
 # event names so a pull request cannot narrow its own sweep, and it fails open to
 # every entry.
 #
+# The full run. A pull request runs only the suites its paths can affect, and
+# nothing runs them on main after the merge, so a map that skips a suite it should
+# run would be found by nobody. Every event but a pull request therefore also runs
+# every suite, through tests.yml, in a job of its own: `full suite`, which is not
+# the required `test` and which no ruleset requires. A red scheduled run has the
+# notification of GitHub and nothing else; watchdog.yml says when the schedule
+# stops firing.
+#
 # Cost. The whole sweep is measured beside timeout-minutes below. A pull request that
 # touches no guarded script, no suite an entry names and nothing those suites read
 # pays for the decision only.
@@ -111,12 +119,13 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-    # Measured on 2026-11-21, on a workstation shared with other jobs: the whole
-    # sweep, 140 entries, in 4 minutes 13 seconds, most of it the 17 entries of
-    # build-deb.test.sh at about 9 seconds each. Not yet seen on a GitHub runner.
-    # Thirty minutes is seven times that and still bounds a hang, which would
-    # otherwise cost the six-hour default; raise it when a whole sweep passes fifteen.
-    timeout-minutes: 30
+    # Measured on 2026-11-28 on a GitHub runner: a whole sweep reached 519 of its
+    # 572 entries in the 30 minutes it had then and was cancelled, which is about
+    # 33 minutes for all of it. The slowest suites take 6 to 22 seconds each time
+    # an entry runs them. Sixty minutes is under twice that and still bounds a
+    # hang, which would otherwise cost the six-hour default; split the sweep when
+    # a whole one passes forty.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -130,6 +139,13 @@ jobs:
             read -r -a selected <<< "$IDS"
           fi
           bash tests/mutation/run-mutations.sh "${selected[@]}"
+
+  full:
+    name: full suite
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/tests.yml
 
   gate:
     name: every catalogued guard is noticed

@@ -41,6 +41,14 @@ for k, v in want.items():
         print(f"{k} is {env.get(k)!r}, not ${{{{ {v} }}}}")
 if str(sweep.get("if", "")).replace(" ", "") != "needs.decide.outputs.run=='true'":
     print(f"the sweep runs on {sweep.get('if')!r}, not on the decision")
+# The one run of every suite there is on main: a pull request runs only a part.
+full = jobs.get("full") or {}
+if full.get("uses") != "./.github/workflows/tests.yml":
+    print("no job runs every suite through tests.yml")
+if str(full.get("if", "")).replace(" ", "") != "github.event_name!='pull_request'":
+    print(f"the full run runs on {full.get('if')!r}, not on every event but a pull request")
+if full.get("needs"):
+    print("the full run waits for another job")
 PY
 }
 check "the gate runs always, needs decide and the sweep, and reads their results" "" "$(wiring)"
@@ -50,6 +58,13 @@ sed 's/^    if: always()$/    if: success()/' "$HERE/.github/workflows/mutation.
 check "a gate that is skipped when a need fails is named" "the gate does not run whatever its needs ended as" "$(wiring "$BAD")"
 sed 's/^      SWEEP: \${{ needs.sweep.result }}$/      SWEEP: success/' "$HERE/.github/workflows/mutation.yml" > "$BAD/mutation.yml"
 check "a result that is not read from its job is named" "SWEEP is 'success', not \${{ needs.sweep.result }}" "$(wiring "$BAD")"
+sed 's/^    uses: \.\/\.github\/workflows\/tests\.yml$/    uses: .\/.github\/workflows\/dco.yml/' "$HERE/.github/workflows/mutation.yml" > "$BAD/mutation.yml"
+check "a full run that calls something else is named" "no job runs every suite through tests.yml" "$(wiring "$BAD")"
+sed "s/^    if: github.event_name != 'pull_request'$/    if: github.event_name == 'workflow_dispatch'/" "$HERE/.github/workflows/mutation.yml" > "$BAD/mutation.yml"
+check "a full run that leaves out the schedule is named" \
+	"the full run runs on \"github.event_name == 'workflow_dispatch'\", not on every event but a pull request" "$(wiring "$BAD")"
+sed 's/^    name: full suite$/    name: full suite\n    needs: sweep/' "$HERE/.github/workflows/mutation.yml" > "$BAD/mutation.yml"
+check "a full run that a failed sweep would skip is named" "the full run waits for another job" "$(wiring "$BAD")"
 
 # --- the gate ---------------------------------------------------------------------
 G="$WORK/gate"

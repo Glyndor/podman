@@ -1,0 +1,130 @@
+# The tooling each suite needs that the runner of ubuntu-26.04 does not have.
+# Exact suite path followed by the tools; '-' explicitly needs no additions.
+# Read from BASE. Missing or unknown suites and malformed entries install
+# everything, so a new suite is not listed until its tools have been reviewed
+# and therefore gets the full install automatically.
+# No globs, inheritance or package groups.
+#
+# What is in it today:
+#
+#   mldsa-wheel   the virtual environment of the pinned cryptography wheel
+#                 (.github/scripts/release/sign-requirements.txt), which the
+#                 runner builds for the one suite that makes and verifies real
+#                 ML-DSA-65 signatures. The wheel is installed only when a suite
+#                 that needs it is among the ones the change can affect.
+#
+# Found by reading each suite and noting what it executes: the suites that read
+# a workflow need PyYAML, which the runner image ships, and the suite that runs
+# the linter needs shellcheck, which the job installs for itself.
+
+tests/build/build-deb-pasta-profile.test.sh -
+tests/build/build-deb.test.sh -
+tests/build/dockerfile-base-images.test.sh -
+tests/build/dockerfile-sources.test.sh -
+tests/build/install-common-config.test.sh -
+tests/build/recipe-id.test.sh -
+tests/ci/decide-build.test.sh -
+tests/ci/decide-package.test.sh -
+tests/docs/contributing-workflows.test.sh -
+tests/docs/verify-key-file.test.sh -
+tests/docs/verify-second-signature.test.sh -
+tests/monitoring/check-tool-versions.test.sh -
+tests/monitoring/delivery-lag.test.sh -
+tests/monitoring/schedule-freshness.test.sh -
+tests/mutation/mutation-workflow.test.sh -
+tests/mutation/run-mutations.test.sh -
+tests/package/build-payload.test.sh -
+tests/package/dependabot-images.test.sh -
+tests/package/distros.test.sh -
+tests/package/image-tags.test.sh -
+tests/package/package-version.test.sh -
+tests/package/require-tools.test.sh -
+tests/package/rpm/build-extras.test.sh -
+tests/package/rpm/build-rpm.test.sh -
+tests/package/rpm/check-replacement.test.sh -
+tests/package/rpm/fetch-extras.test.sh -
+tests/package/rpm/install-build-deps.test.sh -
+tests/package/rpm/make-repo.test.sh -
+tests/package/rpm/run-build.test.sh -
+tests/package/rpm/spec-scriptlets.test.sh -
+tests/package/verify/engine-files.test.sh -
+tests/package/verify/prepare-runner.test.sh -
+tests/package/verify/rpm-test.test.sh -
+tests/package/verify/runtime-checks.test.sh -
+tests/quality/check-commit-identity.test.sh -
+tests/quality/check-folder-size.test.sh -
+tests/quality/check-mutation-coverage.test.sh -
+tests/quality/check-secrets.test.sh -
+tests/quality/check-test-coverage.test.sh -
+tests/quality/lint/no-deprecation-notices.test.sh -
+tests/quality/mutation-scope.test.sh -
+tests/quality/mutation_refusals.test.sh -
+tests/quality/scope/ci-job-scope.test.sh -
+tests/quality/scope/ci-job-scope-suites.test.sh -
+tests/quality/scope/suite-scope-map.test.sh -
+tests/quality/scope/suite-scope-reads.test.sh -
+tests/release/check-artifacts.test.sh -
+tests/release/dry-run-keys.test.sh -
+tests/release/release-signing-hybrid.test.sh -
+tests/release/release-signing-mldsa.test.sh mldsa-wheel
+tests/release/release-signing.test.sh -
+tests/release/sign-requirements.test.sh -
+tests/release/signed-set.test.sh -
+tests/release/verify-sig-key-bytes.test.sh -
+tests/upstream/gpg-verdict.test.sh -
+tests/upstream/keyring-diff.test.sh -
+tests/upstream/keyring-health.test.sh -
+tests/upstream/latest-stable.test.sh -
+tests/upstream/plan-release.test.sh -
+tests/upstream/read-released.test.sh -
+tests/upstream/repo.test.sh -
+tests/upstream/verify-tag-formats.test.sh -
+tests/upstream/verify-tag.test.sh -
+tests/verify/config-upgrade-test.test.sh -
+tests/verify/package-state-contents.test.sh -
+tests/verify/package-state.test.sh -
+tests/verify/refuse-test.test.sh -
+tests/verify/rootless-stop-test.test.sh -
+tests/verify/rootless-test.test.sh -
+tests/verify/smoke-test.test.sh -
+tests/workflows/build/build-check-gate.test.sh -
+tests/workflows/build/build-check-matrix.test.sh -
+tests/workflows/build/build-verifies-upstream-tags.test.sh -
+tests/workflows/build/package-check-gate.test.sh -
+tests/workflows/build/package-repository-metadata.test.sh -
+tests/workflows/build/package-verifies-upstream-tags.test.sh -
+tests/workflows/build/reusable-build-hash.test.sh -
+tests/workflows/build/reusable-build-rootless-steps.test.sh -
+tests/workflows/build/reusable-build-upload-gate.test.sh -
+tests/workflows/dependabot/dependabot-automerge.test.sh -
+tests/workflows/dependabot/dependabot-config.test.sh -
+tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh -
+tests/workflows/keyring/keyring-watch-alarm.test.sh -
+tests/workflows/keyring/keyring-watch-copy.test.sh -
+tests/workflows/keyring/keyring-watch-health.test.sh -
+tests/workflows/mounts/verification-scripts-read-only.test.sh -
+tests/workflows/pins/tool-pins-agree.test.sh -
+tests/workflows/policy/concurrency-policy.test.sh -
+tests/workflows/policy/default-shell.test.sh -
+tests/workflows/policy/least-privilege.test.sh -
+tests/workflows/policy/tests-installs-mldsa-wheel.test.sh -
+tests/workflows/policy/tests-run-every-suite.test.sh -
+tests/workflows/policy/workflow-lint-pins-actionlint.test.sh -
+tests/workflows/policy/workflow-lint-runs-actionlint.test.sh -
+tests/workflows/policy/workflow-policy.test.sh -
+tests/workflows/policy/workflows-contract.test.sh -
+tests/workflows/pr-checks/commit-hygiene-range.test.sh -
+tests/workflows/pr-checks/dco-contract.test.sh -
+tests/workflows/pr-checks/line-limit-measures-workflows.test.sh -
+tests/workflows/pr-checks/required-check-names.test.sh -
+tests/workflows/release/release-alert.test.sh -
+tests/workflows/release/release-artifacts.test.sh -
+tests/workflows/release/release-checkout.test.sh -
+tests/workflows/release/release-contract.test.sh -
+tests/workflows/release/release-plan.test.sh -
+tests/workflows/release/release-publish.test.sh -
+tests/workflows/release/release-second-signature.test.sh -
+tests/workflows/release/release-signing-step.test.sh -
+tests/workflows/release/release-upgrade-job.test.sh -
+tests/workflows/watchdog/watchdog-delivery-lag.test.sh -
+tests/workflows/watchdog/watchdog-freshness.test.sh -

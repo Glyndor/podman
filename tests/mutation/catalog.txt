@@ -247,6 +247,7 @@ keyring-watch-comparison-failed	.github/workflows/keyring-watch.yml	[ "$rc" -le 
 keyring-watch-health-run-is-red-beside-the-issue	.github/workflows/keyring-watch.yml	echo "::error::$title"; exit 1	echo "::error::$title"	tests/workflows/keyring/keyring-watch-health.test.sh
 mutation-gate-decide-did-not-succeed	.github/workflows/mutation.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/mutation/mutation-workflow.test.sh
 mutation-gate-an-answer-and-a-result-that-do-not-match	.github/workflows/mutation.yml	*)	__never__)	tests/mutation/mutation-workflow.test.sh
+mutation-the-full-run-includes-the-schedule	.github/workflows/mutation.yml	if: github.event_name != 'pull_request'	if: github.event_name == 'workflow_dispatch'	tests/mutation/mutation-workflow.test.sh
 release-plan-lightweight-tag	.github/workflows/release.yml	[ -n "$sha" ] || { echo "$c $tag is not an annotated tag upstream" >&2; exit 1; }	[ -n "$sha" ] || true	tests/workflows/release/release-plan.test.sh
 release-no-signing-key	.github/workflows/release.yml	if [ "${DRY_RUN:-}" != true ] && [ -z "$GLYNDOR_RELEASE_ED25519_KEY" ]; then	if false; then	tests/workflows/policy/workflows-contract.test.sh
 release-previous-signature-unknown	.github/workflows/release.yml	*) echo "::error::the plan did not say whether the newest release carries the second signature ('$PREVIOUS_MLDSA'); refusing to guess."; exit 1 ;;	*) ;;	tests/workflows/release/release-signing-step.test.sh
@@ -308,6 +309,15 @@ check-folder-size-a-testdata-folder-is-left-out	scripts/quality/check-folder-siz
 check-folder-size-only-the-files-directly-inside-count	scripts/quality/check-folder-size.sh	dir = substr($0, 1, RSTART - 1)	dir = substr($0, 1, index($0, "/") - 1)	tests/quality/check-folder-size.test.sh
 tests-a-failed-suite-fails-the-job	.github/workflows/tests.yml	*) bash "$t" < /dev/null ;;	*) bash "$t" < /dev/null || true ;;	tests/workflows/policy/tests-run-every-suite.test.sh
 tests-a-suite-cannot-eat-the-list	.github/workflows/tests.yml	*) bash "$t" < /dev/null ;;	*) bash "$t" ;;	tests/workflows/policy/tests-run-every-suite.test.sh
+tests-the-suites-that-ran-are-the-selected	.github/workflows/tests.yml	if [ "$(LC_ALL=C sort "$ran_file")" != "$expected" ]; then	if false; then	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-an-empty-scope-file-runs-every-suite	.github/workflows/tests.yml	if [ -f "$scope_file" ] && grep -q . "$scope_file"; then	if [ -f "$scope_file" ]; then	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-only-a-pull-request-has-a-scope	.github/workflows/tests.yml	if [ "$EVENT" = pull_request ] \	if true \	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-a-resolver-that-fails-decides-nothing	.github/workflows/tests.yml	if ! decision="$(bash "$resolver" suites "${suites[@]}")"; then	decision="$(bash "$resolver" suites "${suites[@]}" || true)"; if false; then	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-the-name-of-a-suite-installs-the-wheel	.github/workflows/tests.yml	*-mldsa.test.sh) mldsa=true ;;	*-mldsa.test.sh) ;;	tests/quality/scope/ci-job-scope-suites.test.sh
+tests-an-unsure-dependency-installs-the-wheel	.github/workflows/tests.yml	[ "$entry" = "2 -" ] || mldsa=true	[ "$entry" != "2 mldsa-wheel" ] || mldsa=true	tests/quality/scope/ci-job-scope-suites.test.sh
+ci-job-scope-a-shared-file-runs-every-suite	scripts/quality/scope/ci-job-scope.sh	if scope is None or any(shared(path, root) for path in paths):	if scope is None:	tests/quality/scope/ci-job-scope.test.sh
+ci-job-scope-a-new-name-at-the-root-runs-every-suite	scripts/quality/scope/ci-job-scope.sh	if top not in root and name.isidentifier():	if False:	tests/quality/scope/ci-job-scope.test.sh
+ci-job-scope-every-kind-of-init-runs-every-suite	scripts/quality/scope/ci-job-scope.sh	    "*/__init__.*",	    "*/__init__.py",	tests/quality/scope/ci-job-scope.test.sh
 watchdog-a-late-delivery-fails-the-job	.github/workflows/watchdog.yml	exit "$late"	exit 0	tests/workflows/watchdog/watchdog-delivery-lag.test.sh
 watchdog-a-stale-keyring-watch-fails-the-job	.github/workflows/watchdog.yml	exit "$keyring_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
 watchdog-a-stale-sweep-fails-the-job	.github/workflows/watchdog.yml	exit "$sweep_stale"	exit 0	tests/workflows/watchdog/watchdog-freshness.test.sh
