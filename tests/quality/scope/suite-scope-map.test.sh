@@ -315,9 +315,10 @@ lacks() { # <suite> <decision>
 
 # The suites of the repository, which is what the decision is taken over.
 ALL_SUITES="$(cd "$HERE" && find tests -name '*.test.sh' | LC_ALL=C sort)"
+mapfile -t SUITE_LIST <<< "$ALL_SUITES"
 
 real_repo readme; echo more >> "$R/README.md"; real_merge
-got="$(real_decide $ALL_SUITES)"
+got="$(real_decide "${SUITE_LIST[@]}")"
 check "a README-only change runs the suite that reads the README" "1" \
 	"$(has tests/docs/verify-second-signature.test.sh "$got")"
 check "a README-only change runs the suites that walk the whole tree" "11" \
@@ -334,14 +335,14 @@ check "and it runs fewer suites than the repository has" "1" \
 	"$([ "$(printf '%s\n' "$got" | grep -c .)" -lt "$(printf '%s\n' "$ALL_SUITES" | grep -c .)" ] && echo 1 || echo 0)"
 
 real_repo contributing; echo more >> "$R/CONTRIBUTING.md"; real_merge
-got="$(real_decide $ALL_SUITES)"
+got="$(real_decide "${SUITE_LIST[@]}")"
 check "a CONTRIBUTING-only change runs the suite that reads CONTRIBUTING" "1" \
 	"$(has tests/docs/contributing-workflows.test.sh "$got")"
 check "a CONTRIBUTING-only change does not run the secret scan suite" "1" \
 	"$(lacks tests/quality/check-secrets.test.sh "$got")"
 
 real_repo script; echo more >> "$R/scripts/quality/hygiene.sh"; real_merge
-got="$(real_decide $ALL_SUITES)"
+got="$(real_decide "${SUITE_LIST[@]}")"
 check "a change to a script of scripts/quality runs the suites that read it" "1" \
 	"$(has tests/quality/check-secrets.test.sh "$got")"
 check "and the suites that walk every script" "1" \

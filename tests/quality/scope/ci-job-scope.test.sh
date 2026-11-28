@@ -319,6 +319,7 @@ check "the resolver in a mode it does not have prints no suite" "" "$out"
 
 repo nogit
 rm -rf "$R/.git"
+# shellcheck disable=SC2086 # a list of plain words, split on purpose
 out="$( cd "$R" && bash scripts/quality/scope/ci-job-scope.sh suites $SUITES 2>/dev/null | tr '\n' ' ' | sed 's/ $//' )"
 check "a tree that is not a repository runs every suite" "$ALL" "$out"
 
