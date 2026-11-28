@@ -273,3 +273,4 @@ package-check-gate-decide-gave-no-answer	.github/workflows/package-check.yml	*)	
 dependabot-images-take-the-dated-amazon-tags	.github/dependabot.yml	        versions: [">2023"]	        versions: []	tests/package/image-tags.test.sh
 deprecations-a-sha-that-is-not-a-sha-is-refused	scripts/quality/lint/no-deprecation-notices.sh	echo "::error::HEAD_SHA is not the sha of a commit" >&2; exit 1	echo "::error::HEAD_SHA is not the sha of a commit" >&2; exit 0	tests/quality/lint/no-deprecation-notices.test.sh
 deprecations-the-verdict-reaches-the-caller	scripts/quality/lint/no-deprecation-notices.sh	exit "$found"	exit 0	tests/quality/lint/no-deprecation-notices.test.sh
+mutation-scope-a-removed-entry-runs-every-entry	scripts/quality/mutation-scope.sh	if gone:	if False:	tests/quality/mutation-scope.test.sh
