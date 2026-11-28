@@ -16,7 +16,9 @@
 #     change to a workflow that no pattern of its entry covers merges without
 #     that suite running. The reads are the ones a suite spells from the root of
 #     the repository (`$HERE/.github/workflows/<file>`, a glob of them or the
-#     folder); a file it writes into a copy is not one.
+#     folder), and the globs of them in a library of tests/lib the suite sources:
+#     a library that copies every workflow makes its suites read them all. A file
+#     a suite writes into a copy is not one.
 #
 # This reads the list of suites the job runs and the map from the working tree
 # and requires them to agree, with planted copies of each defect so the checker
@@ -112,6 +114,7 @@ def folder_covers(pattern, path):
 
 
 reads = re.compile(r'\$\{?HERE\}?"?/(\.github/workflows(?:/[A-Za-z0-9_.*?-]+)?)')
+sourced = re.compile(r'(?m)^\s*(?:\.|source)\s+"?\$\{?HERE\}?"?/(tests/lib/[A-Za-z0-9_./-]+\.sh)')
 for s, patterns in scope.items():
     if not os.path.isfile(os.path.join(root, s)):
         continue
@@ -121,7 +124,15 @@ for s, patterns in scope.items():
     # builds the name of.
     text = re.sub(r'\$\{1:-\$HERE/\.github/workflows\}(/[A-Za-z0-9_.*?-]+)',
                   r'$HERE/.github/workflows\1', text)
-    for ref in sorted(set(r.rstrip(".") for r in reads.findall(text))):
+    refs = set(reads.findall(text))
+    # Only the globs of a library count: a name it builds from an argument is the
+    # workflow its caller asks for, which the caller does not spell as a path.
+    for library in sorted(set(sourced.findall(text))):
+        path = os.path.join(root, library)
+        if os.path.isfile(path):
+            body = open(path, errors="replace").read()
+            refs.update(r for r in reads.findall(body) if "*" in r)
+    for ref in sorted(set(r.rstrip(".") for r in refs)):
         # The folder alone is every workflow in it.
         wanted = ref + "/*" if ref == ".github/workflows" else ref
         if any_file(wanted) and not any(covers(p, wanted) or folder_covers(p, wanted)
@@ -213,6 +224,21 @@ check "and naming that workflow covers it" "" "$(problems "$D")"
 D="$(reader written 'cp x "$d/.github/workflows/one.yml"')"
 mkdir -p "$D/.github/workflows"; printf 'name: x\n' > "$D/.github/workflows/one.yml"
 check "a workflow the suite writes into a copy is not a read" "" "$(problems "$D")"
+
+# A library the suite sources reads for it.
+library() { # <tree name> <the line the library runs>: a suite that sources it
+	local d; d="$(reader "$1" '. "$HERE/tests/lib/copy.sh"')"
+	mkdir -p "$d/.github/workflows" "$d/tests/lib"; printf 'name: x\n' > "$d/.github/workflows/one.yml"
+	printf '%s\n' "$2" > "$d/tests/lib/copy.sh"
+	printf '%s' "$d"
+}
+D="$(library lib-glob 'copy() { cp "$HERE"/.github/workflows/*.yml "$1/"; }')"
+check "a glob of the workflows in a sourced library, with an entry that names none, is reported" \
+	"reads a workflow its entry does not name: .github/workflows/*.yml (tests/a/two.test.sh)" "$(problems "$D")"
+printf '\t.github/workflows/**\n' >> "$D/scripts/quality/scope/suite-scope.txt"
+check "and the folder pattern covers it" "" "$(problems "$D")"
+D="$(library lib-argument 'step() { cat "$HERE/.github/workflows/$1"; }')"
+check "a workflow a library names from its argument is not a read of every one" "" "$(problems "$D")"
 
 check "the real map agrees with the real tree and the real list of suites" "" "$(problems "$HERE")"
 
