@@ -24,10 +24,6 @@
 #     under tests/ that is not a suite, and what Python can import from the root.
 #     A suite added below later cannot forget it.
 #
-#   * The names of the suites here are the paths the step of tests.yml runs, so the
-#     step still finds every suite and tests/workflows/policy/tests-run-every-suite.test.sh
-#     still sees a complete list. Only the decision to EXECUTE a suite changes.
-#
 # HOW THE ENTRIES WERE DERIVED
 #
 # Each suite was run under strace and every file of the repository it opened or
@@ -39,18 +35,12 @@
 # for a path a suite or a step it runs only names, so a few entries are wider than
 # what the suite opens.
 #
-# PATTERN SYNTAX
+# PATTERNS: `*` and `?` match within one path segment, `**` any number of
+# segments, none included, and a bare path itself.
 #
-#   *   matches within one path segment.
-#   ?   matches one character within one path segment.
-#   **  matches any number of segments, including none.
-#   A bare path matches that path exactly.
-#
-# HOW TO EXTEND IT
-#
-# A new suite arrives without an entry, so it always runs until somebody writes
-# one. When you add an entry, measure it the way these were measured:
-# `strace -f -y -e trace=%file bash <suite>`.
+# TO EXTEND IT: a new suite has no entry, so it always runs until it gets one.
+# Measure an entry with `strace -f -y -e trace=%file bash <suite>`, and again
+# whenever the suite starts to read something else.
 #
 # ---------------------------------------------------------------------------
 
@@ -357,6 +347,8 @@ tests/workflows/dependabot/dependabot-automerge.test.sh
 
 tests/workflows/dependabot/dependabot-config.test.sh
 	.github/dependabot.yml
+	scripts/build/**
+	scripts/package/images/**
 
 tests/workflows/dependabot/dependabot-rebase-only-behind.test.sh
 	.github/workflows/dependabot-automerge.yml
